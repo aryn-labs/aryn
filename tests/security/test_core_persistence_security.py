@@ -23,6 +23,7 @@ from database.repositories.audit_repo import AuditRepository
 from database.repositories.exceptions import TenantIsolationError
 
 from packages.contracts.core import Actor, ActorType, AuditStatus, SecurityContext
+from tests.conftest import bind_test_context
 from packages.contracts.runtime import (
     RunRequest,
     RunResult,
@@ -149,11 +150,11 @@ async def test_cross_tenant_denial_on_run_execution(seeded_db):
     coordinator = RunCoordinator(runtime_adapter=adapter, db_manager=seeded_db)
 
     # Actor from Org Alpha trying to target Org Beta's project
-    invalid_context = SecurityContext(
+    invalid_context = bind_test_context(SecurityContext(
         actor=Actor(actor_id="user_alpha_admin", organization_id="org_alpha", roles=["admin"]),
         organization_id="org_alpha",  # context org is alpha
         project_id="proj_beta_main",  # target project is in beta!
-    ).sign()
+    ))
 
     req = RunRequest(prompt="Hello", model="mock-deterministic")
 
@@ -179,12 +180,12 @@ async def test_duplicate_request_idempotency_returns_cached_result(seeded_db):
     adapter = DeterministicMockRuntimeAdapter()
     coordinator = RunCoordinator(runtime_adapter=adapter, db_manager=seeded_db)
 
-    ctx = SecurityContext(
+    ctx = bind_test_context(SecurityContext(
         actor=Actor(actor_id="user_alpha_admin", organization_id="org_alpha", roles=["admin"]),
         organization_id="org_alpha",
         project_id="proj_alpha_main",
         correlation_id="corr_idempotent_01",
-    ).sign()
+    ))
 
     req = RunRequest(
         prompt="Execute calculation #1",
@@ -224,11 +225,11 @@ def test_restart_recovery_transitions_in_flight_runs(seeded_db):
     adapter = DeterministicMockRuntimeAdapter()
     coordinator = RunCoordinator(runtime_adapter=adapter, db_manager=seeded_db)
 
-    ctx = SecurityContext(
+    ctx = bind_test_context(SecurityContext(
         actor=Actor(actor_id="user_alpha_admin", organization_id="org_alpha", roles=["admin"]),
         organization_id="org_alpha",
         project_id="proj_alpha_main",
-    ).sign()
+    ))
 
     # Seed 3 runs: 1 queued, 1 running, 1 already completed
     with seeded_db.session() as session:
@@ -280,12 +281,12 @@ async def test_budget_exhaustion_preflight_denial(seeded_db):
     adapter = DeterministicMockRuntimeAdapter()
     coordinator = RunCoordinator(runtime_adapter=adapter, db_manager=seeded_db)
 
-    ctx = SecurityContext(
+    ctx = bind_test_context(SecurityContext(
         actor=Actor(actor_id="user_alpha_admin", organization_id="org_alpha", roles=["admin"]),
         organization_id="org_alpha",
         project_id="proj_alpha_main",
         correlation_id="corr_budget_exceeded_01",
-    ).sign()
+    ))
 
     # Restrict budget to 256 tokens
     with seeded_db.session() as session:
@@ -320,12 +321,12 @@ async def test_audit_scrubs_secrets_before_persisting_to_db(seeded_db):
     adapter = DeterministicMockRuntimeAdapter()
     coordinator = RunCoordinator(runtime_adapter=adapter, db_manager=seeded_db)
 
-    ctx = SecurityContext(
+    ctx = bind_test_context(SecurityContext(
         actor=Actor(actor_id="user_alpha_admin", organization_id="org_alpha", roles=["admin"]),
         organization_id="org_alpha",
         project_id="proj_alpha_main",
         correlation_id="corr_secret_test_01",
-    ).sign()
+    ))
 
     raw_secret_key = "sk-ant-api03-TOP_SECRET_CREDENTIAL"
     raw_bearer = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.sensitivePayload"

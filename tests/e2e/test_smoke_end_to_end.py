@@ -33,6 +33,7 @@ from modules.core.usage.engine import BudgetEngine
 from modules.core.workflows.coordinator import RunCoordinator
 from database.connection import DatabaseManager, create_db_engine
 from database.schema import Base
+from tests.conftest import bind_test_context
 from database.repositories.organization_repo import OrganizationRepository
 
 hermes_module = importlib.import_module("packages.runtime-adapters.hermes")
@@ -76,11 +77,11 @@ async def test_live_end_to_end_smoke():
         organization_id="org_aryn_hq",
         project_id="proj_pilot",
     )
-    context = SecurityContext(
+    context = bind_test_context(SecurityContext(
         actor=actor,
         organization_id="org_aryn_hq",
         project_id="proj_pilot",
-    ).sign()
+    ))
 
     with db_manager.session() as s:
         org_repo = OrganizationRepository(s)
@@ -171,7 +172,7 @@ async def test_mocked_end_to_end_smoke_isolated():
     db_manager = DatabaseManager(engine=db_engine)
 
     actor = Actor(actor_id="test_actor", roles=["operator"], organization_id="org_mock", project_id="proj_mock")
-    context = SecurityContext(actor=actor, organization_id="org_mock", project_id="proj_mock").sign()
+    context = bind_test_context(SecurityContext(actor=actor, organization_id="org_mock", project_id="proj_mock"))
 
     with db_manager.session() as s:
         org_repo = OrganizationRepository(s)

@@ -28,6 +28,7 @@ from packages.contracts.core import Actor, ActorType, AuditStatus, SecurityConte
 from packages.contracts.agent import AgentVersion, AgentVersionStatus
 from packages.contracts.bench import BenchCategory, BenchScenario, ScenarioResult, BenchEvaluationResult
 from packages.contracts.runtime import RunRequest, RunResult, RunStatus, RunUsage, RuntimeAdapter, RuntimeHealth, RuntimeCapabilities, RuntimeTrace
+from tests.conftest import bind_test_context
 from modules.bench.scenarios import get_standard_research_bench_scenarios
 from modules.bench.runner import BenchRunner
 from modules.bench.quality_gate import BenchQualityGate, QualityGateFailedError
@@ -109,12 +110,12 @@ def test_db():
 
 @pytest.fixture
 def admin_context():
-    return SecurityContext(
+    return bind_test_context(SecurityContext(
         actor=Actor(actor_id="user_admin", organization_id="org_test", roles=["admin"]),
         organization_id="org_test",
         project_id="proj_research",
         correlation_id="corr_unit_01",
-    ).sign()
+    ))
 
 
 # -----------------------------------------------------------------------------
@@ -301,20 +302,20 @@ def test_approval_engine_role_and_hash_binding(test_db, admin_context):
         )
 
     # Agent cannot self-approve
-    agent_ctx = SecurityContext(
+    agent_ctx = bind_test_context(SecurityContext(
         actor=Actor(actor_id="agent_self", actor_type=ActorType.AGENT, organization_id="org_test", roles=["admin"]),
         organization_id="org_test",
         project_id="proj_research",
-    ).sign()
+    ))
     with pytest.raises(UnauthorizedApproverError, match="Agents cannot grant approvals"):
         engine.grant_approval(agent_ctx, "agent_version", "av_agent_attempt", "some_hash")
 
     # Non-admin user cannot approve
-    viewer_ctx = SecurityContext(
+    viewer_ctx = bind_test_context(SecurityContext(
         actor=Actor(actor_id="user_viewer", actor_type=ActorType.USER, organization_id="org_test", roles=["viewer"]),
         organization_id="org_test",
         project_id="proj_research",
-    ).sign()
+    ))
     with pytest.raises(UnauthorizedApproverError, match="lacks 'admin' role"):
         engine.grant_approval(viewer_ctx, "agent_version", "av_viewer_attempt", "some_hash")
 

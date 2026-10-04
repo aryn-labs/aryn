@@ -17,6 +17,7 @@ from modules.core.audit.logger import AuditLogger
 from database.connection import DatabaseManager, create_db_engine
 from database.schema import Base
 from database.repositories.organization_repo import OrganizationRepository
+from tests.conftest import bind_test_context
 
 
 def test_permission_engine_enforces_roles():
@@ -30,18 +31,18 @@ def test_permission_engine_enforces_roles():
         org_repo.add_member("org_test", "op_1", role="operator")
         org_repo.add_member("org_test", "vw_1", role="viewer")
 
-        ctx_setup = SecurityContext(
+        ctx_setup = bind_test_context(SecurityContext(
             actor=Actor(actor_id="op_1", actor_type=ActorType.USER, organization_id="org_test"),
             organization_id="org_test",
             project_id="proj_test",
-        ).sign()
+        ))
         org_repo.create_project(ctx_setup, "proj_test", "Test Project", "test-proj")
         org_repo.add_project_member("proj_test", "op_1", role="operator")
         org_repo.add_project_member("proj_test", "vw_1", role="viewer")
 
     engine = PermissionEngine(db_manager=db_manager)
     actor_op = Actor(actor_id="op_1", actor_type=ActorType.USER, roles=["operator"], organization_id="org_test")
-    context_op = SecurityContext(actor=actor_op, organization_id="org_test", project_id="proj_test").sign()
+    context_op = bind_test_context(SecurityContext(actor=actor_op, organization_id="org_test", project_id="proj_test"))
 
     # Operator can create run
     decision = engine.evaluate("run:create", context_op, "org_test", "proj_test")
@@ -49,7 +50,7 @@ def test_permission_engine_enforces_roles():
 
     # Viewer cannot create run
     actor_viewer = Actor(actor_id="vw_1", actor_type=ActorType.USER, roles=["viewer"], organization_id="org_test")
-    context_viewer = SecurityContext(actor=actor_viewer, organization_id="org_test", project_id="proj_test").sign()
+    context_viewer = bind_test_context(SecurityContext(actor=actor_viewer, organization_id="org_test", project_id="proj_test"))
 
     decision_viewer = engine.evaluate("run:create", context_viewer, "org_test", "proj_test")
     assert decision_viewer.allowed is False
@@ -69,24 +70,24 @@ def test_permission_engine_enforces_tenant_isolation():
         org_repo.create_organization("org_alpha", "Alpha Corp", "alpha-corp")
         org_repo.add_member("org_alpha", "adm_1", role="admin")
 
-        ctx_alpha = SecurityContext(
+        ctx_alpha = bind_test_context(SecurityContext(
             actor=Actor(actor_id="adm_1", actor_type=ActorType.USER, organization_id="org_alpha"),
             organization_id="org_alpha",
             project_id="proj_alpha",
-        ).sign()
+        ))
         org_repo.create_project(ctx_alpha, "proj_alpha", "Alpha Project", "alpha-proj")
 
         org_repo.create_organization("org_beta", "Beta Corp", "beta-corp")
-        ctx_beta = SecurityContext(
+        ctx_beta = bind_test_context(SecurityContext(
             actor=Actor(actor_id="user_beta", actor_type=ActorType.USER, organization_id="org_beta"),
             organization_id="org_beta",
             project_id="proj_beta",
-        ).sign()
+        ))
         org_repo.create_project(ctx_beta, "proj_beta", "Beta Project", "beta-proj")
 
     engine = PermissionEngine(db_manager=db_manager)
     actor_admin = Actor(actor_id="adm_1", actor_type=ActorType.USER, roles=["admin"], organization_id="org_alpha")
-    context_admin = SecurityContext(actor=actor_admin, organization_id="org_alpha", project_id="proj_alpha").sign()
+    context_admin = bind_test_context(SecurityContext(actor=actor_admin, organization_id="org_alpha", project_id="proj_alpha"))
 
     # Attempting to access org_beta
     decision = engine.evaluate("run:create", context_admin, "org_beta", "proj_beta")

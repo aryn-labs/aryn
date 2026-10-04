@@ -70,7 +70,13 @@ class PermissionEngine:
         identity_binder: Optional[TrustedIdentityBinder] = None,
     ) -> None:
         self.db_manager = db_manager
-        self.identity_binder = identity_binder or TrustedIdentityBinder()
+        if identity_binder is not None:
+            self.identity_binder = identity_binder
+        else:
+            try:
+                self.identity_binder = TrustedIdentityBinder()
+            except (ValueError, TypeError):
+                self.identity_binder = None
 
     def evaluate(
         self,
@@ -80,6 +86,13 @@ class PermissionEngine:
         target_project_id: Optional[str] = None,
     ) -> PolicyDecision:
         # 1. Authoritative Identity Binding Verification (Fail-closed on untrusted/forged actor claims)
+        if self.identity_binder is None:
+            return PolicyDecision(
+                allowed=False,
+                reason="Authorization denied: Core boundary missing trusted identity binder (fail-closed).",
+                matched_rules=["RULE_IDENTITY_UNTRUSTED", "RULE_DENY_BY_DEFAULT"],
+            )
+
         identity_decision = self.identity_binder.verify_context(context)
         if not identity_decision.allowed:
             return identity_decision

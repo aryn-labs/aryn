@@ -28,6 +28,7 @@ from packages.contracts.core import Actor, ActorType, SecurityContext
 from packages.contracts.runtime import RunRequest, RunResult, RunStatus, RunUsage, RuntimeAdapter, RuntimeHealth, RuntimeCapabilities, RuntimeTrace
 from packages.contracts.bench import BenchEvaluationResult
 from packages.runtime_adapters import HermesRuntimeAdapter
+from tests.conftest import bind_test_context
 from packages.model_adapters import ModelRouter
 
 from modules.agent_factory.service import (
@@ -144,12 +145,12 @@ def workflow_db():
 
 @pytest.fixture
 def admin_security_context():
-    return SecurityContext(
+    return bind_test_context(SecurityContext(
         actor=Actor(actor_id="lead_analyst_01", organization_id="org_acme", roles=["admin"]),
         organization_id="org_acme",
         project_id="proj_macro_intel",
         correlation_id="corr_workflow_e2e_01",
-    ).sign()
+    ))
 
 
 @pytest.mark.asyncio

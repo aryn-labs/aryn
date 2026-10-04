@@ -45,11 +45,6 @@ class SecurityContext(BaseModel):
             return False
         return True
 
-    def sign(self, secret_key: Optional[str] = None) -> SecurityContext:
-        """Binds an authoritative cryptographic identity token to this context."""
-        from modules.core.identity.binder import TrustedIdentityBinder
-        return TrustedIdentityBinder(secret_key=secret_key).sign_context(self)
-
 
 class PolicyDecision(BaseModel):
     allowed: bool
