@@ -31,6 +31,7 @@ class ApprovalRepository:
         approved_by: str,
         status: str = "approved",
         comments: Optional[str] = None,
+        evaluation_id: Optional[str] = None,
     ) -> ApprovalModel:
         approval = ApprovalModel(
             id=approval_id,
@@ -42,6 +43,7 @@ class ApprovalRepository:
             approved_by=approved_by,
             status=status,
             comments=comments,
+            evaluation_id=evaluation_id,
             created_at=utc_now(),
         )
         self.session.add(approval)
@@ -60,6 +62,7 @@ class ApprovalRepository:
         target_type: str,
         target_id: str,
         payload_hash: str,
+        evaluation_id: Optional[str] = None,
     ) -> Optional[ApprovalModel]:
         """Looks up an active approval record matching exact target and payload hash."""
         return (
@@ -71,6 +74,8 @@ class ApprovalRepository:
                 target_id=target_id,
                 payload_hash=payload_hash,
                 status="approved",
+                evaluation_id=evaluation_id,
             )
+            .order_by(ApprovalModel.created_at.desc(), ApprovalModel.id.desc())
             .first()
         )

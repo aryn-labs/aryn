@@ -290,3 +290,5 @@ class ApprovalModel(Base):
     status = Column(String(32), default="approved", nullable=False)
     comments = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    evaluation_id = Column(String(64), nullable=True)
+    attestation = Column(String(64), nullable=False, default="")

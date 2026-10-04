@@ -228,7 +228,7 @@ class PermissionEngine:
                 effective_role = org_role
 
         # 8. Agent confinement: autonomous agents cannot perform governance/approval actions
-        if context.actor.actor_type == ActorType.AGENT and action in self.HUMAN_ONLY_ACTIONS:
+        if context.actor.actor_type != ActorType.USER and action in self.HUMAN_ONLY_ACTIONS:
             return PolicyDecision(
                 allowed=False,
                 reason=f"Action '{action}' is strictly reserved for human operators (agents cannot perform governance/approval actions).",

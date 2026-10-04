@@ -73,9 +73,11 @@ class DatabaseManager:
         return self._evidence_signer
 
     @contextmanager
-    def session(self) -> Generator[Session, None, None]:
+    def session(self, write: bool = False) -> Generator[Session, None, None]:
         session: Session = self.session_factory()
         try:
+            if write and self.engine.dialect.name == "sqlite":
+                session.execute(text("BEGIN IMMEDIATE"))
             yield session
             session.commit()
         except Exception:

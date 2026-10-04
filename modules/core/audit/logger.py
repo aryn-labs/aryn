@@ -52,6 +52,7 @@ class AuditLogger:
         status: AuditStatus,
         payload: Optional[Dict[str, Any]] = None,
         causation_id: Optional[str] = None,
+        session=None,
     ) -> AuditEvent:
         """Creates, redacts, signs, and records an audit event envelope."""
         clean_payload = self.redact_secrets(payload or {})
@@ -72,7 +73,10 @@ class AuditLogger:
         self._events.append(event)
 
         # Persist to database if db_manager is configured
-        if self.db_manager:
+        if session is not None:
+            from database.repositories.audit_repo import AuditRepository
+            AuditRepository(session).record_event(event)
+        elif self.db_manager:
             from database.repositories.audit_repo import AuditRepository
             with self.db_manager.session() as session:
                 repo = AuditRepository(session)

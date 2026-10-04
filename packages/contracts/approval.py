@@ -29,4 +29,6 @@ class ApprovalRecord(BaseModel):
     approved_by: str  # Human user ID
     status: ApprovalStatus = ApprovalStatus.APPROVED
     comments: Optional[str] = None
+    evaluation_id: Optional[str] = None
+    attestation: str = ""
     created_at: str = Field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())

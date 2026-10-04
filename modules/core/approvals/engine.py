@@ -1,195 +1,122 @@
-"""Authoritative cryptographic approval engine for ARYN infrastructure.
+"""Core human approval authority with scoped, durable evidence attestations."""
 
-Enforces payload hash binding, admin authorization, human-only approval, and immutable audit trails.
-Complies with ARYN-ARCH-001 Section 05 and AGENTS.md rules 4, 7.
-"""
-
-from __future__ import annotations
-
+from contextlib import nullcontext
+import datetime
 import uuid
 from typing import Optional
-from packages.contracts.core import ActorType, AuditStatus, SecurityContext
-from packages.contracts.approval import ApprovalRecord, ApprovalStatus
+
 from database.connection import DatabaseManager
+from database.repositories.agent_repo import AgentRepository
 from database.repositories.approval_repo import ApprovalRepository
+from database.repositories.bench_repo import BenchRepository
+from database.repositories.exceptions import InvalidStateTransitionError
+from database.schema import ApprovalModel
 from modules.core.audit.logger import AuditLogger
+from modules.core.permissions.engine import PermissionDeniedError, PermissionEngine
+from packages.contracts.approval import ApprovalRecord
+from packages.contracts.core import ActorType, AuditStatus, SecurityContext
 
 
 class ApprovalRequiredError(Exception):
-    """Raised when an operation requires prior human authorization."""
     pass
 
 
 class UnauthorizedApproverError(Exception):
-    """Raised when an actor lacks authority to grant an approval."""
     pass
 
 
 class PayloadHashMismatchError(Exception):
-    """Raised when a target configuration has mutated away from its approved payload hash."""
     pass
 
 
 class ApprovalEngine:
-    """Authoritative gatekeeper for sensitive actions requiring human approval."""
-
-    def __init__(
-        self,
-        db_manager: DatabaseManager,
-        audit_logger: Optional[AuditLogger] = None,
-        permission_engine: Optional[Any] = None,
-    ) -> None:
+    def __init__(self, db_manager: DatabaseManager, audit_logger=None, permission_engine=None):
         self.db_manager = db_manager
         self.audit_logger = audit_logger or AuditLogger(db_manager=db_manager)
-        from modules.core.permissions.engine import PermissionEngine
         self.permission_engine = permission_engine or PermissionEngine(db_manager=db_manager)
 
-    def grant_approval(
-        self,
-        context: SecurityContext,
-        target_type: str,
-        target_id: str,
-        payload_hash: str,
-        comments: Optional[str] = None,
-    ) -> ApprovalRecord:
-        """Grants human authorization tied cryptographically to the exact payload hash."""
-        # 1. Prevent agent self-approval / privilege escalation (AGENTS.md Rule 7)
-        if context.actor.actor_type == ActorType.AGENT:
-            self.audit_logger.record(
-                event_type="core.approval.denied",
-                context=context,
-                resource_id=target_id,
-                status=AuditStatus.DENIED,
-                payload={"reason": "Agents are strictly forbidden from self-approving or self-publishing."},
-            )
-            raise UnauthorizedApproverError("Agents cannot grant approvals or self-publish.")
-
-        # 2. Enforce admin role and active membership authoritatively via PermissionEngine
-        from modules.core.permissions.engine import PermissionDeniedError
-        try:
-            self.permission_engine.enforce(
-                "version:approve",
-                context,
-                target_org_id=context.organization_id,
-                target_project_id=context.project_id,
-            )
-        except PermissionDeniedError as exc:
-            self.audit_logger.record(
-                event_type="core.approval.denied",
-                context=context,
-                resource_id=target_id,
-                status=AuditStatus.DENIED,
-                payload={"reason": str(exc)},
-            )
-            raise UnauthorizedApproverError(
-                f"Actor '{context.actor.actor_id}' lacks 'admin' role required to grant approvals: {exc}"
-            ) from exc
-
-        # 3. Persist approval with idempotency
-        with self.db_manager.session() as session:
-            repo = ApprovalRepository(session)
-            existing = repo.get_approval(context, target_type, target_id, payload_hash)
-            if existing:
-                return ApprovalRecord(
-                    approval_id=existing.id,
-                    organization_id=existing.organization_id,
-                    project_id=existing.project_id,
-                    target_type=existing.target_type,
-                    target_id=existing.target_id,
-                    payload_hash=existing.payload_hash,
-                    approved_by=existing.approved_by,
-                    status=ApprovalStatus(existing.status),
-                    comments=existing.comments,
-                    created_at=existing.created_at.isoformat(),
-                )
-
-            approval_id = f"appr_{uuid.uuid4().hex[:16]}"
-            model = repo.record_approval(
-                context=context,
-                approval_id=approval_id,
-                target_type=target_type,
-                target_id=target_id,
-                payload_hash=payload_hash,
-                approved_by=context.actor.actor_id,
-                status="approved",
-                comments=comments,
-            )
-
-            record = ApprovalRecord(
-                approval_id=model.id,
-                organization_id=model.organization_id,
-                project_id=model.project_id,
-                target_type=model.target_type,
-                target_id=model.target_id,
-                payload_hash=model.payload_hash,
-                approved_by=model.approved_by,
-                status=ApprovalStatus.APPROVED,
-                comments=model.comments,
-                created_at=model.created_at.isoformat(),
-            )
-
-        # 4. Audit trail
-        self.audit_logger.record(
-            event_type="core.approval.granted",
-            context=context,
-            resource_id=target_id,
-            status=AuditStatus.ALLOWED,
-            payload={
-                "target_type": target_type,
-                "payload_hash": payload_hash,
-                "approved_by": context.actor.actor_id,
-            },
+    @staticmethod
+    def contract(row):
+        created_at = row.created_at
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=datetime.timezone.utc)
+        return ApprovalRecord(
+            approval_id=row.id, organization_id=row.organization_id, project_id=row.project_id,
+            target_type=row.target_type, target_id=row.target_id, payload_hash=row.payload_hash,
+            approved_by=row.approved_by, status=row.status, comments=row.comments,
+            created_at=created_at.isoformat(), evaluation_id=row.evaluation_id,
+            attestation=row.attestation or "",
         )
 
+    def verify_signature(self, row):
+        record = self.contract(row)
+        payload = record.model_dump(mode="json", exclude={"attestation"})
+        if not self.db_manager.evidence_signer.verify("human_approval", payload, record.attestation):
+            raise ApprovalRequiredError("Approval provenance is not verified.")
+        approver = self.permission_engine.identity_binder.create_trusted_context(
+            record.approved_by, record.organization_id, record.project_id)
+        try:
+            self.permission_engine.enforce("version:approve", approver, record.organization_id, record.project_id)
+        except PermissionDeniedError as exc:
+            raise ApprovalRequiredError("Human approver no longer has valid authority.") from exc
         return record
 
-    def verify_approval(
-        self,
-        context: SecurityContext,
-        target_type: str,
-        target_id: str,
-        expected_payload_hash: str,
-    ) -> ApprovalRecord:
-        """Verifies that an approved record exists matching the target and exact payload hash."""
-        with self.db_manager.session() as session:
-            repo = ApprovalRepository(session)
-            approval = repo.get_approval(context, target_type, target_id, expected_payload_hash)
-            if not approval:
-                # Check if approval exists for this target with a DIFFERENT payload hash
-                any_approval = (
-                    session.query(repo.session.query(ApprovalRepository).class_ if False else None)  # simple query
-                )
-                from database.schema import ApprovalModel
-                diff_approval = (
-                    session.query(ApprovalModel)
-                    .filter_by(
-                        organization_id=context.organization_id,
-                        project_id=context.project_id,
-                        target_type=target_type,
-                        target_id=target_id,
-                        status="approved",
-                    )
-                    .first()
-                )
-                if diff_approval:
-                    raise PayloadHashMismatchError(
-                        f"Target '{target_id}' was approved with payload hash '{diff_approval.payload_hash}', "
-                        f"but current configuration produces '{expected_payload_hash}'. Modification after approval is forbidden."
-                    )
+    def current_evidence(self, context, target_type, target_id, payload_hash, session):
+        if target_type != "agent_version":
+            return None
+        version = AgentRepository(session).get_version(context, target_id, for_update=True)
+        if version.payload_hash != payload_hash:
+            raise PayloadHashMismatchError("Actual configuration differs from reviewed payload hash.")
+        if version.status not in {"draft", "approved", "published"}:
+            raise InvalidStateTransitionError("Human approval requires finished Bench evidence.")
+        evidence = BenchRepository(session, self.db_manager.evidence_signer).get_latest_passing_evaluation(context, target_id)
+        if evidence is None:
+            from modules.bench.quality_gate import QualityGateFailedError
+            raise QualityGateFailedError("No current passing Bench evaluation found.")
+        return evidence.id
 
-                raise ApprovalRequiredError(
-                    f"No approval record found for {target_type} '{target_id}' with hash '{expected_payload_hash}'."
-                )
+    def grant_approval(self, context: SecurityContext, target_type: str, target_id: str,
+                       payload_hash: str, comments: Optional[str] = None, session=None) -> ApprovalRecord:
+        if context.actor.actor_type != ActorType.USER:
+            reason = "Agents cannot grant approvals or self-publish." if context.actor.actor_type == ActorType.AGENT else "Only human users can grant approvals."
+            raise UnauthorizedApproverError(reason)
+        try:
+            self.permission_engine.enforce("version:approve", context, context.organization_id, context.project_id)
+        except PermissionDeniedError as exc:
+            raise UnauthorizedApproverError(f"Actor lacks 'admin' role required to grant approvals: {exc}") from exc
+        with (nullcontext(session) if session is not None else self.db_manager.session(write=True)) as active:
+            evaluation_id = self.current_evidence(context, target_type, target_id, payload_hash, active)
+            if target_type == "agent_version":
+                version = AgentRepository(active).get_version(context, target_id)
+                if version.status == "published":
+                    raise InvalidStateTransitionError("Published versions cannot receive new approval.")
+            repo = ApprovalRepository(active)
+            existing = repo.get_approval(context, target_type, target_id, payload_hash, evaluation_id)
+            if existing:
+                return self.verify_signature(existing)
+            row = repo.record_approval(context, f"appr_{uuid.uuid4().hex}", target_type,
+                                       target_id, payload_hash, context.actor.actor_id,
+                                       comments=comments, evaluation_id=evaluation_id)
+            record = self.contract(row)
+            row.attestation = self.db_manager.evidence_signer.sign(
+                "human_approval", record.model_dump(mode="json", exclude={"attestation"}))
+            active.flush()
+            self.audit_logger.record("core.approval.granted", context, target_id, AuditStatus.ALLOWED,
+                                     {"target_type": target_type, "payload_hash": payload_hash,
+                                      "approved_by": context.actor.actor_id, "evaluation_id": evaluation_id}, session=active)
+            return self.contract(row)
 
-            return ApprovalRecord(
-                approval_id=approval.id,
-                organization_id=approval.organization_id,
-                project_id=approval.project_id,
-                target_type=approval.target_type,
-                target_id=approval.target_id,
-                payload_hash=approval.payload_hash,
-                approved_by=approval.approved_by,
-                status=ApprovalStatus(approval.status),
-                comments=approval.comments,
-                created_at=approval.created_at.isoformat(),
-            )
+    def verify_approval(self, context: SecurityContext, target_type: str, target_id: str,
+                        expected_payload_hash: str, session=None) -> ApprovalRecord:
+        self.permission_engine.enforce("run:read", context, context.organization_id, context.project_id)
+        with (nullcontext(session) if session is not None else self.db_manager.session()) as active:
+            evaluation_id = self.current_evidence(context, target_type, target_id, expected_payload_hash, active)
+            approval = ApprovalRepository(active).get_approval(context, target_type, target_id, expected_payload_hash, evaluation_id)
+            if approval is None:
+                different = active.query(ApprovalModel).filter_by(
+                    organization_id=context.organization_id, project_id=context.project_id,
+                    target_type=target_type, target_id=target_id, status="approved").first()
+                if different and different.payload_hash != expected_payload_hash:
+                    raise PayloadHashMismatchError("Modification after approval is forbidden.")
+                raise ApprovalRequiredError("No current human approval bound to this configuration and Bench evaluation.")
+            return self.verify_signature(approval)

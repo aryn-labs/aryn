@@ -168,6 +168,7 @@ def test_agent_version_immutability(test_db, admin_context):
 
         # Valid transitions: draft -> evaluating -> approved -> published
         repo.update_version_status(admin_context, "av_001", "evaluating")
+        repo.update_version_status(admin_context, "av_001", "draft")
         repo.update_version_status(admin_context, "av_001", "approved")
         pub = repo.update_version_status(admin_context, "av_001", "published", published_by="user_admin")
         assert pub.status == "published"
@@ -276,7 +277,7 @@ def test_approval_engine_role_and_hash_binding(test_db, admin_context):
     # Human admin grants approval: success
     appr = engine.grant_approval(
         context=admin_context,
-        target_type="agent_version",
+        target_type="test_action",
         target_id="av_test_approval",
         payload_hash=valid_hash,
         comments="Approved by lead engineer.",
@@ -287,7 +288,7 @@ def test_approval_engine_role_and_hash_binding(test_db, admin_context):
     # Verify approval with exact hash: success
     verified = engine.verify_approval(
         context=admin_context,
-        target_type="agent_version",
+        target_type="test_action",
         target_id="av_test_approval",
         expected_payload_hash=valid_hash,
     )
@@ -297,7 +298,7 @@ def test_approval_engine_role_and_hash_binding(test_db, admin_context):
     with pytest.raises(PayloadHashMismatchError, match="Modification after approval is forbidden"):
         engine.verify_approval(
             context=admin_context,
-            target_type="agent_version",
+            target_type="test_action",
             target_id="av_test_approval",
             expected_payload_hash="mutated_hash_99999999999999999999999999999999999999999999999999999999",
         )
@@ -309,7 +310,7 @@ def test_approval_engine_role_and_hash_binding(test_db, admin_context):
         project_id="proj_research",
     ))
     with pytest.raises(UnauthorizedApproverError, match="Agents cannot grant approvals"):
-        engine.grant_approval(agent_ctx, "agent_version", "av_agent_attempt", "some_hash")
+        engine.grant_approval(agent_ctx, "test_action", "av_agent_attempt", "some_hash")
 
     # Non-admin user cannot approve
     viewer_ctx = bind_test_context(SecurityContext(
@@ -318,7 +319,7 @@ def test_approval_engine_role_and_hash_binding(test_db, admin_context):
         project_id="proj_research",
     ))
     with pytest.raises(UnauthorizedApproverError, match="lacks 'admin' role"):
-        engine.grant_approval(viewer_ctx, "agent_version", "av_viewer_attempt", "some_hash")
+        engine.grant_approval(viewer_ctx, "test_action", "av_viewer_attempt", "some_hash")
 
 
 # -----------------------------------------------------------------------------

@@ -90,7 +90,7 @@ class AgentFactoryService:
         self.permission_engine.enforce("run:create", context, context.organization_id, context.project_id)
 
         blueprint_id = f"abp_{uuid.uuid4().hex[:16]}"
-        with self.db_manager.session() as session:
+        with self.db_manager.session(write=True) as session:
             repo = AgentRepository(session)
             model = repo.create_blueprint(
                 context=context,
@@ -164,7 +164,7 @@ class AgentFactoryService:
         )
         payload_hash = v_temp.calculate_payload_hash()
 
-        with self.db_manager.session() as session:
+        with self.db_manager.session(write=True) as session:
             repo = AgentRepository(session)
             m = repo.create_version(
                 context=context,
@@ -224,9 +224,9 @@ class AgentFactoryService:
             if scenarios != get_standard_research_bench_scenarios():
                 raise QualityGateFailedError("The complete current research suite is mandatory.")
         # Retrieve version
-        with self.db_manager.session() as session:
+        with self.db_manager.session(write=True) as session:
             repo = AgentRepository(session)
-            m = repo.get_version(context, version_id)
+            m = repo.get_version(context, version_id, for_update=True)
             version_contract = AgentVersion(
                 id=m.id,
                 blueprint_id=m.blueprint_id,
@@ -241,6 +241,8 @@ class AgentFactoryService:
                 payload_hash=m.payload_hash,
                 created_at=m.created_at.isoformat(),
             )
+            if m.status not in {"draft", "rejected", "approved"}:
+                raise InvalidStateTransitionError("Bench evaluation is already active or version is immutable.")
             # Mark version as evaluating
             repo.update_version_status(context, version_id, "evaluating")
 
@@ -249,14 +251,17 @@ class AgentFactoryService:
         try:
             result = await self.bench_runner.evaluate_agent_version(context, version_contract, scenarios)
         except BaseException:
-            with self.db_manager.session() as session:
+            with self.db_manager.session(write=True) as session:
                 AgentRepository(session).update_version_status(context, version_id, "rejected")
             raise
 
         # Store evaluation and update version status
-        with self.db_manager.session() as session:
+        with self.db_manager.session(write=True) as session:
             bench_repo = BenchRepository(session, self.db_manager.evidence_signer)
             agent_repo = AgentRepository(session)
+            current = agent_repo.get_version(context, version_id, for_update=True)
+            if current.status != "evaluating" or current.payload_hash != result.payload_hash:
+                raise InvalidStateTransitionError("Evaluation no longer owns the current version state.")
             bench_repo.record_evaluation(context, result)
 
             if result.passed:
@@ -289,46 +294,21 @@ class AgentFactoryService:
         version_id: str,
         comments: Optional[str] = None,
     ) -> ApprovalRecord:
-        """Enforces that an agent version passes Bench quality gate before human approval is granted."""
-        # 1. Enforce that agent cannot approve itself
+        """Approve current attested Bench evidence and transition atomically."""
         if context.actor.actor_type == ActorType.AGENT:
             raise PermissionDeniedError("Agents cannot grant approvals or self-publish.")
-
-        # 2. Check latest passing evaluation
-        with self.db_manager.session() as session:
-            bench_repo = BenchRepository(session, self.db_manager.evidence_signer)
+        with self.db_manager.session(write=True) as session:
             agent_repo = AgentRepository(session)
-            m = agent_repo.get_version(context, version_id)
-
-            passing_eval = bench_repo.get_latest_passing_evaluation(context, version_id)
+            version = agent_repo.get_version(context, version_id, for_update=True)
+            passing_eval = BenchRepository(session, self.db_manager.evidence_signer).get_latest_passing_evaluation(context, version_id)
             if not passing_eval:
-                raise QualityGateFailedError(
-                    f"Agent version '{version_id}' cannot be approved: no passing Bench evaluation found."
-                )
-
-            payload_hash = m.payload_hash
-
-        # 3. Delegate to ApprovalEngine (enforces admin role and exact payload hash binding)
-        record = self.approval_engine.grant_approval(
-            context=context,
-            target_type="agent_version",
-            target_id=version_id,
-            payload_hash=payload_hash,
-            comments=comments,
-        )
-
-        # 4. Transition version to approved
-        with self.db_manager.session() as session:
-            agent_repo = AgentRepository(session)
+                raise QualityGateFailedError(f"Agent version '{version_id}' cannot be approved: no passing Bench evaluation found.")
+            record = self.approval_engine.grant_approval(
+                context, "agent_version", version_id, version.payload_hash, comments, session=session)
             agent_repo.update_version_status(context, version_id, "approved")
-
-        self.audit_logger.record(
-            event_type="factory.version.approved",
-            context=context,
-            resource_id=version_id,
-            status=AuditStatus.ALLOWED,
-            payload={"approval_id": record.approval_id, "payload_hash": payload_hash},
-        )
+            self.audit_logger.record("factory.version.approved", context, version_id, AuditStatus.ALLOWED,
+                                     {"approval_id": record.approval_id, "payload_hash": version.payload_hash,
+                                      "evaluation_id": passing_eval.id}, session=session)
         return record
 
     # -------------------------------------------------------------------------
@@ -347,10 +327,10 @@ class AgentFactoryService:
 
         self.permission_engine.enforce("version:publish", context, context.organization_id, context.project_id)
 
-        with self.db_manager.session() as session:
+        with self.db_manager.session(write=True) as session:
             agent_repo = AgentRepository(session)
             bench_repo = BenchRepository(session, self.db_manager.evidence_signer)
-            m = agent_repo.get_version(context, version_id)
+            m = agent_repo.get_version(context, version_id, for_update=True)
 
             # 2. Quality gate check
             passing_eval = bench_repo.get_latest_passing_evaluation(context, version_id)
@@ -365,7 +345,10 @@ class AgentFactoryService:
                 target_type="agent_version",
                 target_id=version_id,
                 expected_payload_hash=m.payload_hash,
+                session=session,
             )
+            if m.status not in {"approved", "published"}:
+                raise InvalidStateTransitionError("Publication requires the approved state.")
 
             # 4. Transition to published
             published_model = agent_repo.update_version_status(
@@ -422,7 +405,7 @@ class AgentFactoryService:
         """Assigns a published agent version to a project/division."""
         self.permission_engine.enforce("agent:assign", context, context.organization_id, context.project_id)
         assignment_id = f"asgn_{uuid.uuid4().hex[:16]}"
-        with self.db_manager.session() as session:
+        with self.db_manager.session(write=True) as session:
             repo = AgentRepository(session)
             m = repo.create_assignment(
                 context=context,
@@ -461,7 +444,7 @@ class AgentFactoryService:
 
     def get_assignment(self, context: SecurityContext, assignment_id: str) -> AgentAssignment:
         self.permission_engine.enforce("run:read", context, context.organization_id, context.project_id)
-        with self.db_manager.session() as session:
+        with self.db_manager.session(write=True) as session:
             repo = AgentRepository(session)
             m = repo.get_assignment(context, assignment_id)
             return AgentAssignment(

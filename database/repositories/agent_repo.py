@@ -27,8 +27,8 @@ class AgentRepository:
 
     VALID_VERSION_TRANSITIONS = {
         "draft": {"evaluating", "approved", "rejected"},
-        "evaluating": {"draft", "approved", "rejected"},
-        "approved": {"published", "draft", "rejected"},
+        "evaluating": {"draft", "rejected"},
+        "approved": {"published", "draft", "evaluating", "rejected"},
         "published": {"deprecated"},
         "deprecated": set(),
         "rejected": {"draft", "evaluating"},
@@ -159,8 +159,11 @@ class AgentRepository:
             ) from exc
         return version
 
-    def get_version(self, context: SecurityContext, version_id: str) -> AgentVersionModel:
-        version = self.session.query(AgentVersionModel).filter_by(id=version_id).first()
+    def get_version(self, context: SecurityContext, version_id: str, for_update: bool = False) -> AgentVersionModel:
+        query = self.session.query(AgentVersionModel).filter_by(id=version_id)
+        if for_update:
+            query = query.with_for_update()
+        version = query.first()
         if not version:
             raise EntityNotFoundError(f"Agent version '{version_id}' not found.")
         # Tenant boundary check via parent blueprint
@@ -176,7 +179,7 @@ class AgentRepository:
         published_by: Optional[str] = None,
         evaluation_id: Optional[str] = None,
     ) -> AgentVersionModel:
-        version = self.get_version(context, version_id)
+        version = self.get_version(context, version_id, for_update=True)
         current = version.status.lower()
         target = target_status.lower()
 
@@ -197,6 +200,8 @@ class AgentRepository:
             )
 
         version.status = target
+        if target == "evaluating":
+            version.evaluation_id = None
         if evaluation_id:
             version.evaluation_id = evaluation_id
 
