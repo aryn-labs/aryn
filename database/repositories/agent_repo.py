@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 
 from database.schema import AgentBlueprintModel, AgentVersionModel, AgentAssignmentModel, utc_now
 from packages.contracts.core import SecurityContext
-from packages.contracts.agent import AgentVersionStatus
+from packages.contracts.agent import AgentVersion
 from database.repositories.exceptions import (
     DuplicateEntityError,
     EntityNotFoundError,
@@ -141,6 +141,14 @@ class AgentRepository:
             metadata_json=json.dumps(metadata or {}),
             payload_hash=payload_hash,
         )
+        # Validate caller-supplied hash against the exact data about to be stored.
+        contract = AgentVersion(
+            id=version_id, blueprint_id=blueprint.id, version_number=version_number,
+            system_prompt=system_prompt, model=model, tool_grants=tool_grants,
+            temperature=temperature, max_tokens=max_tokens, metadata=metadata or {},
+            payload_hash=payload_hash,
+        )
+        contract.verify_integrity()
         self.session.add(version)
         try:
             self.session.flush()
@@ -157,6 +165,7 @@ class AgentRepository:
             raise EntityNotFoundError(f"Agent version '{version_id}' not found.")
         # Tenant boundary check via parent blueprint
         self.get_blueprint(context, version.blueprint_id)
+        AgentVersion.from_stored(version)
         return version
 
     def update_version_status(

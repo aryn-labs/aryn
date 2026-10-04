@@ -28,6 +28,7 @@ class BenchRunner:
         version: AgentVersion,
         scenarios: Optional[List[BenchScenario]] = None,
     ) -> BenchEvaluationResult:
+        version.verify_integrity()
         suite = scenarios or get_standard_research_bench_scenarios()
         scenario_results: List[ScenarioResult] = []
 

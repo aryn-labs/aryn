@@ -241,7 +241,8 @@ async def test_failed_bench_blocks_approval_and_publish(multi_tenant_db, alpha_a
 # 5. Tampered Approval Payload Hash Rejection
 # -----------------------------------------------------------------------------
 
-def test_tampered_payload_hash_blocks_publish(multi_tenant_db, alpha_admin_context):
+@pytest.mark.asyncio
+async def test_tampered_payload_hash_blocks_publish(multi_tenant_db, alpha_admin_context):
     from database.repositories.bench_repo import BenchRepository
     flawed_runtime = FlawedRuntimeAdapter()
     bench_runner = BenchRunner(runtime_adapter=flawed_runtime)
@@ -257,21 +258,9 @@ def test_tampered_payload_hash_blocks_publish(multi_tenant_db, alpha_admin_conte
         tool_grants=[],
     )
 
-    # Seed a passing evaluation directly
-    with multi_tenant_db.session() as s:
-        b_repo = BenchRepository(s)
-        b_repo.record_evaluation(
-            alpha_admin_context,
-            BenchEvaluationResult(
-                evaluation_id="eval_pass_seed",
-                blueprint_id=bp.id,
-                version_id=v.id,
-                passed=True,
-                total_scenarios=4,
-                passed_scenarios=4,
-                score=1.0,
-            ),
-        )
+    from tests.studio_runtime import IsolatedTestRuntime
+    service.bench_runner = BenchRunner(IsolatedTestRuntime())
+    await service.evaluate_version_with_bench(alpha_admin_context, v.id)
 
     # Approve with valid initial hash
     service.approve_version(alpha_admin_context, v.id)
@@ -284,7 +273,7 @@ def test_tampered_payload_hash_blocks_publish(multi_tenant_db, alpha_admin_conte
         v_model.payload_hash = "tampered_hash_00000000000000000000000000000000000000000000000000000"
 
     # Publishing must detect payload hash mismatch and reject
-    with pytest.raises(PayloadHashMismatchError, match="Modification after approval is forbidden"):
+    with pytest.raises(ValueError, match="integrity"):
         service.publish_version(alpha_admin_context, v.id)
 
 

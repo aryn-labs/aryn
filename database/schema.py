@@ -19,6 +19,8 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    event,
+    inspect,
 )
 from sqlalchemy.orm import declarative_base, relationship
 
@@ -213,6 +215,26 @@ class AgentVersionModel(Base):
     __table_args__ = (
         UniqueConstraint("blueprint_id", "version_number", name="uq_version_blueprint_number"),
     )
+
+
+@event.listens_for(AgentVersionModel, "before_update")
+def protect_published_configuration(mapper, connection, target):
+    """Protect legitimate ORM writes, including attempts to rewrite the hash."""
+    state = inspect(target)
+    old_status = state.attrs.status.history.deleted
+    prior = old_status[0] if old_status else target.status
+    if prior in {"published", "deprecated"}:
+        if target.status != prior and not (prior == "published" and target.status == "deprecated"):
+            from packages.contracts.agent import VersionIntegrityError
+            raise VersionIntegrityError("Published agent version status is immutable except deprecation.")
+        protected = (
+            "id", "blueprint_id", "version_number", "system_prompt", "model",
+            "tool_grants_json", "temperature", "max_tokens", "metadata_json",
+            "payload_hash", "evaluation_id", "published_at", "published_by", "created_at",
+        )
+        if any(state.attrs[name].history.has_changes() for name in protected):
+            from packages.contracts.agent import VersionIntegrityError
+            raise VersionIntegrityError("Published agent version configuration is immutable.")
 
 
 class AgentAssignmentModel(Base):

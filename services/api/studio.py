@@ -55,6 +55,7 @@ from modules.core.permissions.engine import PermissionDeniedError, PermissionEng
 from modules.core.usage.engine import BudgetExceededError
 from modules.core.workflows.coordinator import RunCoordinator
 from packages.contracts.bench import RESEARCH_BENCH_VERSION
+from packages.contracts.agent import VersionIntegrityError
 from packages.contracts.core import AuditStatus
 from packages.model_adapters import ModelRouter, ModelRoutingError
 from packages.runtime_adapters import HermesAdapterError, HermesRuntimeAdapter
@@ -299,6 +300,10 @@ def create_app(
         )
 
     exception_map = {
+        VersionIntegrityError: (
+            409,
+            "Integritas konfigurasi versi tidak valid atau memakai hash lama. Buat versi baru, jalankan Bench, dan setujui kembali.",
+        ),
         PermissionDeniedError: (
             403,
             "Akses ditolak oleh Core. Periksa keanggotaan proyek, peran, dan batas tool runtime.",

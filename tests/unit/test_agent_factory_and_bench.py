@@ -162,7 +162,7 @@ def test_agent_version_immutability(test_db, admin_context):
             system_prompt="You are an equity analyst.",
             model="mock-fast",
             tool_grants=[],
-            payload_hash="dummy_hash_123",
+            payload_hash=AgentVersion(id="av_001", blueprint_id="abp_002", version_number="1.0.0", system_prompt="You are an equity analyst.", model="mock-fast").calculate_payload_hash(),
         )
         assert v.status == "draft"
 
@@ -197,7 +197,7 @@ def test_assignment_requires_published_version(test_db, admin_context):
             system_prompt="Draft prompt.",
             model="mock-fast",
             tool_grants=[],
-            payload_hash="dummy_hash_draft",
+            payload_hash=AgentVersion(id="av_draft_only", blueprint_id="abp_003", version_number="0.1.0", system_prompt="Draft prompt.", model="mock-fast").calculate_payload_hash(),
         )
 
         # Attempt to assign a draft version must fail
@@ -229,6 +229,7 @@ async def test_bench_runner_and_quality_gate(test_db, admin_context):
         model="mock-fast",
     )
 
+    v.payload_hash = v.calculate_payload_hash()
     eval_result = await runner.evaluate_agent_version(admin_context, v)
     assert eval_result.passed is True
     assert eval_result.score == 1.0

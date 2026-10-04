@@ -16,6 +16,19 @@ from packages.contracts.core import SecurityContext
 TEST_IDENTITY_SECRET = "aryn-test-explicit-entropy-secret-key-32b-secure"
 
 
+def pytest_collection_modifyitems(items):
+    """A normal regression run must never submit a live model request."""
+    model_tests = {
+        "test_live_end_to_end_smoke",
+        "test_live_hermes_assigned_research_agent_run",
+        "test_live_hermes_run_lifecycle_and_cancellation",
+    }
+    if os.getenv("ARYN_RUN_LIVE_MODEL_TESTS") != "1":
+        for item in items:
+            if item.name in model_tests:
+                item.add_marker(pytest.mark.skip(reason="Live model tests require explicit opt-in after owner authorization."))
+
+
 @pytest.fixture(autouse=True)
 def setup_test_identity_env(monkeypatch: pytest.MonkeyPatch) -> Generator[None, None, None]:
     """Ensures an explicit test identity secret is configured for all tests.
