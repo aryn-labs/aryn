@@ -31,6 +31,9 @@ from modules.core.audit.logger import AuditLogger
 from modules.core.permissions.engine import PermissionEngine
 from modules.core.usage.engine import BudgetEngine
 from modules.core.workflows.coordinator import RunCoordinator
+from database.connection import DatabaseManager, create_db_engine
+from database.schema import Base
+from database.repositories.organization_repo import OrganizationRepository
 
 hermes_module = importlib.import_module("packages.runtime-adapters.hermes")
 HermesRuntimeAdapter = hermes_module.HermesRuntimeAdapter
@@ -60,22 +63,12 @@ async def test_live_end_to_end_smoke():
     if not api_key:
         pytest.skip("Hermes API_SERVER_KEY not found in local environment.")
 
-    # 1. Initialize ARYN Core infrastructure
-    adapter = HermesRuntimeAdapter(base_url="http://127.0.0.1:8642", api_key=api_key)
-    permission_engine = PermissionEngine()
-    budget_engine = BudgetEngine()
-    audit_logger = AuditLogger()
-    model_router = ModelRouter()
+    # 1. Initialize ARYN Core persistence and seed membership
+    db_engine = create_db_engine("sqlite:///:memory:")
+    Base.metadata.create_all(bind=db_engine)
+    db_manager = DatabaseManager(engine=db_engine)
 
-    coordinator = RunCoordinator(
-        runtime_adapter=adapter,
-        permission_engine=permission_engine,
-        budget_engine=budget_engine,
-        audit_logger=audit_logger,
-        model_router=model_router,
-    )
-
-    # 2. Build Authoritative Security Context
+    # 2. Build Authoritative Security Context & Seed Organization
     actor = Actor(
         actor_id="aryn_engineer_1",
         actor_type=ActorType.USER,
@@ -87,6 +80,28 @@ async def test_live_end_to_end_smoke():
         actor=actor,
         organization_id="org_aryn_hq",
         project_id="proj_pilot",
+    )
+
+    with db_manager.session() as s:
+        org_repo = OrganizationRepository(s)
+        org_repo.create_organization("org_aryn_hq", "ARYN HQ", "aryn-hq")
+        org_repo.add_member("org_aryn_hq", "aryn_engineer_1", role="operator")
+        org_repo.create_project(context, "proj_pilot", "Pilot", "pilot")
+
+    # 3. Initialize ARYN Core infrastructure
+    adapter = HermesRuntimeAdapter(base_url="http://127.0.0.1:8642", api_key=api_key)
+    permission_engine = PermissionEngine(db_manager=db_manager)
+    budget_engine = BudgetEngine(db_manager=db_manager)
+    audit_logger = AuditLogger(db_manager=db_manager)
+    model_router = ModelRouter()
+
+    coordinator = RunCoordinator(
+        runtime_adapter=adapter,
+        permission_engine=permission_engine,
+        budget_engine=budget_engine,
+        audit_logger=audit_logger,
+        model_router=model_router,
+        db_manager=db_manager,
     )
 
     # 3. Build Run Request
@@ -150,17 +165,28 @@ async def test_mocked_end_to_end_smoke_isolated():
         async def get_trace(self, run_id: str, context: SecurityContext) -> RuntimeTrace:
             return RuntimeTrace(run_id=run_id, events=[{"event": "completed"}])
 
-    mock_adapter = MockIsolatedAdapter()
-    coordinator = RunCoordinator(
-        runtime_adapter=mock_adapter,
-        permission_engine=PermissionEngine(),
-        budget_engine=BudgetEngine(),
-        audit_logger=AuditLogger(),
-        model_router=ModelRouter(),
-    )
+    db_engine = create_db_engine("sqlite:///:memory:")
+    Base.metadata.create_all(bind=db_engine)
+    db_manager = DatabaseManager(engine=db_engine)
 
     actor = Actor(actor_id="test_actor", roles=["operator"], organization_id="org_mock", project_id="proj_mock")
     context = SecurityContext(actor=actor, organization_id="org_mock", project_id="proj_mock")
+
+    with db_manager.session() as s:
+        org_repo = OrganizationRepository(s)
+        org_repo.create_organization("org_mock", "Mock Org", "mock-org")
+        org_repo.add_member("org_mock", "test_actor", role="operator")
+        org_repo.create_project(context, "proj_mock", "Mock Project", "mock-proj")
+
+    mock_adapter = MockIsolatedAdapter()
+    coordinator = RunCoordinator(
+        runtime_adapter=mock_adapter,
+        permission_engine=PermissionEngine(db_manager=db_manager),
+        budget_engine=BudgetEngine(db_manager=db_manager),
+        audit_logger=AuditLogger(db_manager=db_manager),
+        model_router=ModelRouter(),
+        db_manager=db_manager,
+    )
     request = RunRequest(prompt="ping", model="mock-fast")
 
     result = await coordinator.execute_managed_direct_turn(request, context)

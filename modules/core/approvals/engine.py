@@ -33,9 +33,16 @@ class PayloadHashMismatchError(Exception):
 class ApprovalEngine:
     """Authoritative gatekeeper for sensitive actions requiring human approval."""
 
-    def __init__(self, db_manager: DatabaseManager, audit_logger: Optional[AuditLogger] = None) -> None:
+    def __init__(
+        self,
+        db_manager: DatabaseManager,
+        audit_logger: Optional[AuditLogger] = None,
+        permission_engine: Optional[Any] = None,
+    ) -> None:
         self.db_manager = db_manager
         self.audit_logger = audit_logger or AuditLogger(db_manager=db_manager)
+        from modules.core.permissions.engine import PermissionEngine
+        self.permission_engine = permission_engine or PermissionEngine(db_manager=db_manager)
 
     def grant_approval(
         self,
@@ -57,18 +64,26 @@ class ApprovalEngine:
             )
             raise UnauthorizedApproverError("Agents cannot grant approvals or self-publish.")
 
-        # 2. Enforce admin role for approval
-        if "admin" not in context.actor.roles:
+        # 2. Enforce admin role and active membership authoritatively via PermissionEngine
+        from modules.core.permissions.engine import PermissionDeniedError
+        try:
+            self.permission_engine.enforce(
+                "version:approve",
+                context,
+                target_org_id=context.organization_id,
+                target_project_id=context.project_id,
+            )
+        except PermissionDeniedError as exc:
             self.audit_logger.record(
                 event_type="core.approval.denied",
                 context=context,
                 resource_id=target_id,
                 status=AuditStatus.DENIED,
-                payload={"reason": "Actor lacks admin role required for approval."},
+                payload={"reason": str(exc)},
             )
             raise UnauthorizedApproverError(
-                f"Actor '{context.actor.actor_id}' lacks 'admin' role required to grant approvals."
-            )
+                f"Actor '{context.actor.actor_id}' lacks 'admin' role required to grant approvals: {exc}"
+            ) from exc
 
         # 3. Persist approval with idempotency
         with self.db_manager.session() as session:

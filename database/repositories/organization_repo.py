@@ -43,20 +43,42 @@ class OrganizationRepository:
             raise EntityNotFoundError(f"Organization '{org_id}' not found.")
         return org
 
-    def add_member(self, org_id: str, user_id: str, role: str = "operator") -> MembershipModel:
+    def add_member(self, org_id: str, user_id: str, role: str = "operator", status: str = "active") -> MembershipModel:
         # Check org exists
         self.get_organization(org_id)
         existing = self.get_member(org_id, user_id)
         if existing:
             raise DuplicateEntityError(f"User '{user_id}' is already a member of organization '{org_id}'.")
 
-        member = MembershipModel(id=f"mem_{org_id}_{user_id}", organization_id=org_id, user_id=user_id, role=role)
+        member = MembershipModel(
+            id=f"mem_{org_id}_{user_id}",
+            organization_id=org_id,
+            user_id=user_id,
+            role=role,
+            status=status,
+        )
         self.session.add(member)
         try:
             self.session.flush()
         except IntegrityError as exc:
             self.session.rollback()
             raise DuplicateEntityError(f"User '{user_id}' is already a member of organization '{org_id}'.") from exc
+        return member
+
+    def revoke_member(self, org_id: str, user_id: str) -> MembershipModel:
+        member = self.get_member(org_id, user_id)
+        if not member:
+            raise EntityNotFoundError(f"Membership for user '{user_id}' in org '{org_id}' not found.")
+        member.status = "revoked"
+        self.session.flush()
+        return member
+
+    def suspend_member(self, org_id: str, user_id: str) -> MembershipModel:
+        member = self.get_member(org_id, user_id)
+        if not member:
+            raise EntityNotFoundError(f"Membership for user '{user_id}' in org '{org_id}' not found.")
+        member.status = "suspended"
+        self.session.flush()
         return member
 
     def get_member(self, org_id: str, user_id: str) -> Optional[MembershipModel]:

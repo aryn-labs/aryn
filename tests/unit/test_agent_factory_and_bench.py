@@ -96,6 +96,8 @@ def test_db():
     with db.session() as s:
         org_repo = OrganizationRepository(s)
         org_repo.create_organization("org_test", "Test Org", "test-org")
+        org_repo.add_member("org_test", "user_admin", role="admin")
+        org_repo.add_member("org_test", "user_viewer", role="viewer")
         ctx = SecurityContext(
             actor=Actor(actor_id="user_admin", organization_id="org_test", roles=["admin"]),
             organization_id="org_test",

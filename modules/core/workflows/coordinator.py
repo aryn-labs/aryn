@@ -44,8 +44,8 @@ class RunCoordinator:
         db_manager: Optional[Any] = None,
     ) -> None:
         self.runtime_adapter = runtime_adapter
-        self.permission_engine = permission_engine or PermissionEngine()
         self.db_manager = db_manager
+        self.permission_engine = permission_engine or PermissionEngine(db_manager=db_manager)
 
         # If db_manager is passed, pass to audit and budget engines if not explicitly provided
         self.audit_logger = audit_logger or AuditLogger(db_manager=db_manager)

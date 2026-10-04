@@ -68,6 +68,7 @@ class MembershipModel(Base):
     organization_id = Column(String(64), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column(String(64), nullable=False, index=True)
     role = Column(String(32), nullable=False, default="operator")  # admin, operator, viewer
+    status = Column(String(32), nullable=False, default="active")  # active, revoked, suspended
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
 
     organization = relationship("OrganizationModel", back_populates="memberships")

@@ -65,8 +65,12 @@ class AgentFactoryService:
         self.db_manager = db_manager
         self.bench_runner = bench_runner
         self.audit_logger = audit_logger or AuditLogger(db_manager=db_manager)
-        self.approval_engine = approval_engine or ApprovalEngine(db_manager=db_manager, audit_logger=self.audit_logger)
-        self.permission_engine = permission_engine or PermissionEngine()
+        self.permission_engine = permission_engine or PermissionEngine(db_manager=db_manager)
+        self.approval_engine = approval_engine or ApprovalEngine(
+            db_manager=db_manager,
+            audit_logger=self.audit_logger,
+            permission_engine=self.permission_engine,
+        )
         self.model_router = model_router or ModelRouter()
         self.quality_gate = BenchQualityGate(min_score_threshold=1.0)
 
@@ -329,6 +333,8 @@ class AgentFactoryService:
         if context.actor.actor_type == ActorType.AGENT:
             raise PermissionDeniedError("Agents cannot publish versions.")
 
+        self.permission_engine.enforce("version:publish", context, context.organization_id, context.project_id)
+
         with self.db_manager.session() as session:
             agent_repo = AgentRepository(session)
             bench_repo = BenchRepository(session)
@@ -402,6 +408,7 @@ class AgentFactoryService:
         division_id: Optional[str] = None,
     ) -> AgentAssignment:
         """Assigns a published agent version to a project/division."""
+        self.permission_engine.enforce("agent:assign", context, context.organization_id, context.project_id)
         assignment_id = f"asgn_{uuid.uuid4().hex[:16]}"
         with self.db_manager.session() as session:
             repo = AgentRepository(session)
@@ -441,6 +448,7 @@ class AgentFactoryService:
         return assignment
 
     def get_assignment(self, context: SecurityContext, assignment_id: str) -> AgentAssignment:
+        self.permission_engine.enforce("run:read", context, context.organization_id, context.project_id)
         with self.db_manager.session() as session:
             repo = AgentRepository(session)
             m = repo.get_assignment(context, assignment_id)

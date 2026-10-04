@@ -14,8 +14,30 @@ from modules.core.usage.engine import BudgetEngine, BudgetExceededError
 from modules.core.audit.logger import AuditLogger
 
 
+from database.connection import DatabaseManager, create_db_engine
+from database.schema import Base
+from database.repositories.organization_repo import OrganizationRepository
+
+
 def test_permission_engine_enforces_roles():
-    engine = PermissionEngine()
+    engine_db = create_db_engine("sqlite:///:memory:")
+    Base.metadata.create_all(bind=engine_db)
+    db_manager = DatabaseManager(engine=engine_db)
+
+    with db_manager.session() as s:
+        org_repo = OrganizationRepository(s)
+        org_repo.create_organization("org_test", "Test Org", "test-org")
+        org_repo.add_member("org_test", "op_1", role="operator")
+        org_repo.add_member("org_test", "vw_1", role="viewer")
+
+        ctx_setup = SecurityContext(
+            actor=Actor(actor_id="op_1", actor_type=ActorType.USER, organization_id="org_test"),
+            organization_id="org_test",
+            project_id="proj_test",
+        )
+        org_repo.create_project(ctx_setup, "proj_test", "Test Project", "test-proj")
+
+    engine = PermissionEngine(db_manager=db_manager)
     actor_op = Actor(actor_id="op_1", actor_type=ActorType.USER, roles=["operator"], organization_id="org_test")
     context_op = SecurityContext(actor=actor_op, organization_id="org_test", project_id="proj_test")
 
@@ -36,7 +58,31 @@ def test_permission_engine_enforces_roles():
 
 
 def test_permission_engine_enforces_tenant_isolation():
-    engine = PermissionEngine()
+    engine_db = create_db_engine("sqlite:///:memory:")
+    Base.metadata.create_all(bind=engine_db)
+    db_manager = DatabaseManager(engine=engine_db)
+
+    with db_manager.session() as s:
+        org_repo = OrganizationRepository(s)
+        org_repo.create_organization("org_alpha", "Alpha Corp", "alpha-corp")
+        org_repo.add_member("org_alpha", "adm_1", role="admin")
+
+        ctx_alpha = SecurityContext(
+            actor=Actor(actor_id="adm_1", actor_type=ActorType.USER, organization_id="org_alpha"),
+            organization_id="org_alpha",
+            project_id="proj_alpha",
+        )
+        org_repo.create_project(ctx_alpha, "proj_alpha", "Alpha Project", "alpha-proj")
+
+        org_repo.create_organization("org_beta", "Beta Corp", "beta-corp")
+        ctx_beta = SecurityContext(
+            actor=Actor(actor_id="user_beta", actor_type=ActorType.USER, organization_id="org_beta"),
+            organization_id="org_beta",
+            project_id="proj_beta",
+        )
+        org_repo.create_project(ctx_beta, "proj_beta", "Beta Project", "beta-proj")
+
+    engine = PermissionEngine(db_manager=db_manager)
     actor_admin = Actor(actor_id="adm_1", actor_type=ActorType.USER, roles=["admin"], organization_id="org_alpha")
     context_admin = SecurityContext(actor=actor_admin, organization_id="org_alpha", project_id="proj_alpha")
 
