@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Beaker,
@@ -7,7 +7,6 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
-  Command,
   FileText,
   Fingerprint,
   Layers3,
@@ -37,6 +36,8 @@ import { Approvals } from "./features/approvals";
 import { Runs } from "./features/runs";
 import { Governance } from "./features/governance";
 import { SettingsPage, Unavailable } from "./features/settings";
+import arynMark from "./assets/aryn-mark.png";
+import arynMarkDark from "./assets/aryn-mark-dark.png";
 const navigation = [
   { path: "/", label: "Ringkasan", icon: LayoutDashboard },
   { path: "/factory", label: "Agent Factory", icon: Bot },
@@ -165,14 +166,19 @@ export function App() {
         />
       )}
       <aside className="sidebar">
-        <Link to="/" className="brand" aria-label="ARYN Studio, Ringkasan">
-          <div className="brand-mark">
-            <Command size={23} />
-          </div>
+        <div className="brand">
+          <img
+            className="brand-mark"
+            src={theme.theme === "dark" ? arynMarkDark : arynMark}
+            alt="Logo ARYN"
+            width={38}
+            height={28}
+            draggable={false}
+          />
           <span>
             ARYN <small>Studio</small>
           </span>
-        </Link>
+        </div>
         <div className="workspace-switcher">
           <div className="workspace-avatar">
             <Layers3 size={17} />

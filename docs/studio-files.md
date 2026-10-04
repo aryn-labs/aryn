@@ -2,7 +2,7 @@
 
 Daftar file repository yang ditambah atau diubah dari baseline `033ce68` pada `development`. Database lokal, secret, dependensi, build output, dan bukti screenshot diabaikan Git.
 
-Total: 58 file.
+Total: 60 file.
 
 - `.gitignore`
 - `apps/web/components.json`
@@ -11,6 +11,8 @@ Total: 58 file.
 - `apps/web/package-lock.json`
 - `apps/web/package.json`
 - `apps/web/playwright.config.ts`
+- `apps/web/src/assets/aryn-mark-dark.png`
+- `apps/web/src/assets/aryn-mark.png`
 - `apps/web/src/components/agent-flow.tsx`
 - `apps/web/src/components/blueprint-form.tsx`
 - `apps/web/src/components/shared.tsx`

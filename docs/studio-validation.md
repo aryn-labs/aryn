@@ -60,3 +60,11 @@ Brief dan Relay hanya memiliki navigasi serta penjelasan status belum tersedia. 
 Identitas development diterbitkan server, binder internal tidak dibuka untuk browser, dan kredensial tidak dimasukkan bundle/Git. Layanan hanya loopback. Langkah berikutnya adalah pengujian pengguna terhadap Studio dan slice ini; pengembangan Brief/Relay tidak dilanjutkan.
 
 Lihat [cara menjalankan dan arsitektur](studio.md) serta [daftar lengkap file berubah](studio-files.md).
+
+## Pembaruan identitas visual — 5 Oktober 2026
+
+Sidebar memakai simbol dari logo resmi yang diberikan pemilik produk. Background dihapus dengan pemrosesan piksel lokal setelah persetujuan pengguna; hasil imagegen yang memiliki artefak tidak digunakan. PNG lengkap tersimpan di `D:\ARYN\Logo Aryn Transparan.png` (858 × 707, RGBA; 468.150 piksel transparan penuh dan 127.859 piksel opak penuh). File sumber tidak ditimpa. Asset simbol tema terang mempertahankan warna asli; varian tema gelap memakai foreground terang dengan aksen biru tetap dipertahankan.
+
+Brand berupa elemen statis tanpa tautan, handler klik, atau tab stop. Build TypeScript/Vite **PASS** dan enam pengujian Playwright **PASS** (25,7 detik). Pemeriksaan tambahan mencakup pemuatan PNG pada kedua tema, logo tanpa elemen interaktif, klik tetap di halaman Agent Factory, logo tidak menerima fokus keyboard, serta simbol tetap terlihat dan muat pada sidebar yang diciutkan dan navigasi mobile. Pengujian menjalankan API/Core/database terisolasi dengan runtime pengujian, tanpa menjalankan Bench atau Hermes live pada data pengguna untuk perubahan visual ini.
+
+Pemeriksaan visual browser lokal `127.0.0.1:8710` menunjukkan logo tanpa bidang putih pada kedua tema. Screenshot tersimpan di `.local/evidence/studio-logo-dark.jpg` dan `studio-logo-light.jpg`. Tidak ada perubahan API, kontrak, gate Core, atau konfigurasi runtime.

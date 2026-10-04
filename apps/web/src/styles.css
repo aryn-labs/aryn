@@ -247,12 +247,14 @@ pre {
   font-size: 19px;
   font-weight: 600;
   letter-spacing: 1px;
+  cursor: default;
+  user-select: none;
 }
 .brand-mark {
-  display: grid;
-  place-items: center;
-  color: var(--primary);
-  width: 28px;
+  display: block;
+  flex-shrink: 0;
+  object-fit: contain;
+  width: 38px;
   height: 28px;
 }
 .brand small {
@@ -2135,7 +2137,9 @@ tbody tr:hover {
   width: calc(100% - 76px);
 }
 .sidebar-collapsed .brand {
-  padding-left: 12px;
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
 }
 .sidebar-collapsed .brand > span,
 .sidebar-collapsed .workspace-label,
@@ -2554,7 +2558,9 @@ tbody tr:hover {
     justify-content: flex-start;
   }
   .sidebar-collapsed .brand {
+    justify-content: flex-start;
     padding-left: 10px;
+    padding-right: 10px;
   }
   .sidebar-collapsed .user-area {
     justify-content: flex-start;

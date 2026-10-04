@@ -13,6 +13,19 @@ test("navigasi, tema, empty state, aksesibilitas dan responsivitas", async ({
   await expect(
     page.getByText("Agent pertama Anda dimulai di sini"),
   ).toBeVisible();
+  const logo = page.getByRole("img", { name: "Logo ARYN" });
+  await expect(logo).toBeVisible();
+  await expect(logo).toHaveAttribute("draggable", "false");
+  await expect(logo).toHaveJSProperty("complete", true);
+  expect(
+    await logo.evaluate((image: HTMLImageElement) => image.naturalWidth),
+  ).toBeGreaterThan(0);
+  expect(
+    await logo.evaluate((image) =>
+      image.closest("a, button, [role='button'], [tabindex]"),
+    ),
+  ).toBeNull();
+  const darkLogo = await logo.getAttribute("src");
   const flowName = "Alur agent dari blueprint hingga eksekusi";
   const mutations: string[] = [];
   page.on("request", (request) => {
@@ -58,6 +71,11 @@ test("navigasi, tema, empty state, aksesibilitas dan responsivitas", async ({
     fullPage: true,
   });
   await page.getByRole("button", { name: "Gunakan tema terang" }).click();
+  await expect(logo).not.toHaveAttribute("src", darkLogo!);
+  await expect(logo).toHaveJSProperty("complete", true);
+  expect(
+    await logo.evaluate((image: HTMLImageElement) => image.naturalWidth),
+  ).toBeGreaterThan(0);
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await page.reload();
   await expect(
@@ -115,6 +133,7 @@ test("navigasi, tema, empty state, aksesibilitas dan responsivitas", async ({
     fullPage: true,
   });
   await page.getByRole("button", { name: "Buka navigasi" }).click();
+  await expect(logo).toBeVisible();
   await page
     .getByRole("navigation")
     .getByRole("link", { name: "Agent Factory", exact: true })
@@ -141,6 +160,12 @@ test("vertical slice HTTP nyata ke Core dengan runtime pengujian terisolasi", as
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/factory");
+  const logo = page.getByRole("img", { name: "Logo ARYN" });
+  const beforeLogoClick = page.url();
+  await logo.click();
+  await expect(page).toHaveURL(beforeLogoClick);
+  await logo.evaluate((image: HTMLImageElement) => image.focus());
+  await expect(logo).not.toBeFocused();
   await page
     .getByRole("button", { name: "Buat blueprint", exact: true })
     .first()
@@ -322,6 +347,7 @@ test("keyboard: dialog terperangkap fokus dan Escape, sidebar collapsible", asyn
   page,
 }) => {
   await page.goto("/factory");
+  const logo = page.getByRole("img", { name: "Logo ARYN" });
   await page
     .getByRole("button", { name: "Buat blueprint", exact: true })
     .first()
@@ -331,6 +357,13 @@ test("keyboard: dialog terperangkap fokus dan Escape, sidebar collapsible", asyn
   await expect(page.getByRole("dialog")).not.toBeVisible();
   await page.getByRole("button", { name: "Ciutkan sidebar" }).click();
   await expect(page.locator(".app")).toHaveClass(/sidebar-collapsed/);
+  await expect(logo).toBeVisible();
+  const collapsedLogo = await logo.boundingBox();
+  const collapsedSidebar = await page.locator(".sidebar").boundingBox();
+  expect(collapsedLogo!.x).toBeGreaterThanOrEqual(collapsedSidebar!.x);
+  expect(collapsedLogo!.x + collapsedLogo!.width).toBeLessThanOrEqual(
+    collapsedSidebar!.x + collapsedSidebar!.width,
+  );
   await page.reload();
   await expect(page.locator(".app")).toHaveClass(/sidebar-collapsed/);
   await page.getByRole("button", { name: "Perluas sidebar" }).click();
