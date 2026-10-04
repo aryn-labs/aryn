@@ -47,6 +47,7 @@ class RunRequest(BaseModel):
     system_instructions: Optional[str] = None
     model: str
     session_id: Optional[str] = None
+    idempotency_key: Optional[str] = None
     timeout_seconds: float = 30.0
     metadata: Dict[str, Any] = Field(default_factory=dict)
 

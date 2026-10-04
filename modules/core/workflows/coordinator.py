@@ -1,7 +1,7 @@
 """ARYN Core Run Coordinator.
 
 The authoritative orchestrator for agent runs. Enforces permissions, budget checks,
-audit trails, and lifecycle control around untrusted runtime adapters.
+audit trails, idempotency, persistent state machine, and lifecycle control around untrusted runtime adapters.
 Frontend NEVER accesses Hermes directly; all requests flow through this coordinator.
 Complies with ARYN-ARCH-001 Section 03 and AGENTS.md rules 3, 4, 5, 8.
 """
@@ -9,29 +9,30 @@ Complies with ARYN-ARCH-001 Section 03 and AGENTS.md rules 3, 4, 5, 8.
 from __future__ import annotations
 
 import asyncio
+import importlib
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
-from packages.contracts.core import AuditStatus, SecurityContext
+from packages.contracts.core import Actor, ActorType, AuditStatus, SecurityContext
 from packages.contracts.runtime import (
     RunRequest,
     RunResult,
     RunStatus,
+    RunUsage,
     RuntimeAdapter,
     RuntimeTrace,
 )
-import importlib
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from packages.model_adapters.router import ModelRouter
+
 from modules.core.audit.logger import AuditLogger
 from modules.core.permissions.engine import PermissionDeniedError, PermissionEngine
 from modules.core.usage.engine import BudgetEngine, BudgetExceededError
 
 
 class RunCoordinator:
-    """Core authority governing runtime execution."""
+    """Core authority governing runtime execution and state transitions."""
 
     def __init__(
         self,
@@ -40,13 +41,18 @@ class RunCoordinator:
         budget_engine: Optional[BudgetEngine] = None,
         audit_logger: Optional[AuditLogger] = None,
         model_router: Optional[Any] = None,
+        db_manager: Optional[Any] = None,
     ) -> None:
         self.runtime_adapter = runtime_adapter
         self.permission_engine = permission_engine or PermissionEngine()
-        self.budget_engine = budget_engine or BudgetEngine()
-        self.audit_logger = audit_logger or AuditLogger()
+        self.db_manager = db_manager
+
+        # If db_manager is passed, pass to audit and budget engines if not explicitly provided
+        self.audit_logger = audit_logger or AuditLogger(db_manager=db_manager)
+        self.budget_engine = budget_engine or BudgetEngine(db_manager=db_manager)
+
         if model_router is None:
-            mr_cls = importlib.import_module("packages.model-adapters").ModelRouter
+            mr_cls = importlib.import_module("packages.model_adapters").ModelRouter
             self.model_router = mr_cls()
         else:
             self.model_router = model_router
@@ -56,8 +62,8 @@ class RunCoordinator:
         request: RunRequest,
         context: SecurityContext,
     ) -> RunResult:
-        """Executes a direct turn under complete Core governance."""
-        # 1. Authoritative Permissions Gate
+        """Executes a direct turn under complete Core governance and state machine validation."""
+        # 1. Authoritative Permissions Gate (Deterministic tenant, project, role, permission check)
         try:
             self.permission_engine.enforce("run:create", context, context.organization_id, context.project_id)
         except PermissionDeniedError as exc:
@@ -70,10 +76,39 @@ class RunCoordinator:
             )
             raise
 
-        # 2. Model Routing & Policy Validation (ADR-005: No silent fallback)
+        # 2. Idempotency Check
+        idempotency_key = request.idempotency_key or request.metadata.get("idempotency_key")
+        if self.db_manager and idempotency_key:
+            from database.repositories.run_state_repo import RunStateRepository
+            with self.db_manager.session() as session:
+                run_repo = RunStateRepository(session)
+                existing = run_repo.get_run_by_idempotency_key(context, idempotency_key)
+                if existing and existing.status == "completed":
+                    self.audit_logger.record(
+                        event_type="core.run.idempotent_cached",
+                        context=context,
+                        resource_id=existing.id,
+                        status=AuditStatus.COMPLETED,
+                        payload={"idempotency_key": idempotency_key},
+                    )
+                    return RunResult(
+                        run_id=existing.id,
+                        status=RunStatus.COMPLETED,
+                        output=existing.output or "",
+                        usage=RunUsage(
+                            input_tokens=existing.input_tokens,
+                            output_tokens=existing.output_tokens,
+                            total_tokens=existing.total_tokens,
+                        ),
+                        model=existing.model,
+                        created_at=existing.created_at.timestamp(),
+                        completed_at=existing.completed_at.timestamp() if existing.completed_at else None,
+                    )
+
+        # 3. Model Routing & Policy Validation (ADR-005: No silent fallback)
         spec = self.model_router.resolve_model(request.model)
 
-        # 3. Budget & Quota Preflight Check
+        # 4. Budget & Quota Preflight Check
         try:
             self.budget_engine.check_preflight(context)
         except BudgetExceededError as exc:
@@ -86,11 +121,28 @@ class RunCoordinator:
             )
             raise
 
-        # 4. Pre-execution Audit
+        # 5. Persistent State - Initialize in 'queued' then 'started'
+        run_id = f"run_{context.project_id}_{int(time.time() * 1000)}"
+        if self.db_manager:
+            from database.repositories.run_state_repo import RunStateRepository
+            with self.db_manager.session() as session:
+                run_repo = RunStateRepository(session)
+                run_repo.create_run(
+                    context=context,
+                    run_id=run_id,
+                    prompt=request.prompt,
+                    model=spec.model_id,
+                    provider=spec.provider.value,
+                    session_id=request.session_id,
+                    idempotency_key=idempotency_key,
+                )
+                run_repo.transition_status(context, run_id, "started")
+
+        # 6. Pre-execution Audit
         self.audit_logger.record(
             event_type="core.run.initiated",
             context=context,
-            resource_id="run_request",
+            resource_id=run_id,
             status=AuditStatus.ALLOWED,
             payload={
                 "model": spec.model_id,
@@ -99,23 +151,38 @@ class RunCoordinator:
             },
         )
 
-        # 5. Dispatch to Runtime Adapter
+        # 7. Dispatch to Runtime Adapter
         try:
             if hasattr(self.runtime_adapter, "execute_direct_turn"):
                 result = await self.runtime_adapter.execute_direct_turn(request, context)
             else:
-                # Fallback to async run if adapter doesn't implement direct turn
-                run_id = await self.runtime_adapter.start_run(request, context)
-                result = await self.runtime_adapter.get_result(run_id, context)
+                adapter_run_id = await self.runtime_adapter.start_run(request, context)
+                result = await self.runtime_adapter.get_result(adapter_run_id, context)
 
-            # 6. Post-execution Budget Usage Recording
+            if self.db_manager:
+                result.run_id = run_id
+
+            # 8. Post-execution Persistent State Transition to 'completed'
+            if self.db_manager:
+                from database.repositories.run_state_repo import RunStateRepository
+                with self.db_manager.session() as session:
+                    run_repo = RunStateRepository(session)
+                    run_repo.transition_status(
+                        context=context,
+                        run_id=run_id,
+                        target_status="completed",
+                        output=result.output,
+                        usage=result.usage,
+                    )
+
+            # 9. Budget Usage Recording
             self.budget_engine.record_usage(context, result.usage)
 
-            # 7. Post-execution Audit
+            # 10. Post-execution Audit
             self.audit_logger.record(
                 event_type="core.run.completed",
                 context=context,
-                resource_id=result.run_id,
+                resource_id=result.run_id or run_id,
                 status=AuditStatus.COMPLETED,
                 payload={
                     "status": result.status.value,
@@ -128,10 +195,24 @@ class RunCoordinator:
             return result
 
         except Exception as exc:
+            if self.db_manager:
+                from database.repositories.run_state_repo import RunStateRepository
+                try:
+                    with self.db_manager.session() as session:
+                        run_repo = RunStateRepository(session)
+                        run_repo.transition_status(
+                            context=context,
+                            run_id=run_id,
+                            target_status="failed",
+                            error_message=str(exc),
+                        )
+                except Exception:
+                    pass
+
             self.audit_logger.record(
                 event_type="core.run.failed",
                 context=context,
-                resource_id="run_execution",
+                resource_id=run_id,
                 status=AuditStatus.FAILED,
                 payload={"error": str(exc)},
             )
@@ -146,23 +227,50 @@ class RunCoordinator:
         # 1. Authoritative Permissions Gate
         self.permission_engine.enforce("run:create", context, context.organization_id, context.project_id)
 
-        # 2. Model Routing Policy Validation
+        # 2. Idempotency Check
+        idempotency_key = request.idempotency_key or request.metadata.get("idempotency_key")
+        if self.db_manager and idempotency_key:
+            from database.repositories.run_state_repo import RunStateRepository
+            with self.db_manager.session() as session:
+                run_repo = RunStateRepository(session)
+                existing = run_repo.get_run_by_idempotency_key(context, idempotency_key)
+                if existing:
+                    return existing.id
+
+        # 3. Model Routing Policy Validation
         spec = self.model_router.resolve_model(request.model)
 
-        # 3. Budget Check
+        # 4. Budget Check
         self.budget_engine.check_preflight(context)
 
-        # 4. Audit
+        # 5. Dispatch to Runtime Adapter
+        run_id = await self.runtime_adapter.start_run(request, context)
+
+        # 6. Persistent State
+        if self.db_manager:
+            from database.repositories.run_state_repo import RunStateRepository
+            with self.db_manager.session() as session:
+                run_repo = RunStateRepository(session)
+                run_repo.create_run(
+                    context=context,
+                    run_id=run_id,
+                    prompt=request.prompt,
+                    model=spec.model_id,
+                    provider=spec.provider.value,
+                    session_id=request.session_id,
+                    idempotency_key=idempotency_key,
+                )
+                run_repo.transition_status(context, run_id, "started")
+
+        # 7. Audit
         self.audit_logger.record(
             event_type="core.run.queued",
             context=context,
-            resource_id="run_dispatch",
+            resource_id=run_id,
             status=AuditStatus.ALLOWED,
             payload={"model": spec.model_id, "prompt": request.prompt},
         )
 
-        # 5. Dispatch
-        run_id = await self.runtime_adapter.start_run(request, context)
         return run_id
 
     async def get_managed_result(
@@ -173,6 +281,29 @@ class RunCoordinator:
         """Retrieves run results with permission checks and audit."""
         self.permission_engine.enforce("run:read", context, context.organization_id, context.project_id)
         result = await self.runtime_adapter.get_result(run_id, context)
+
+        if self.db_manager:
+            from database.repositories.run_state_repo import RunStateRepository
+            try:
+                with self.db_manager.session() as session:
+                    run_repo = RunStateRepository(session)
+                    if result.status == RunStatus.COMPLETED:
+                        run_repo.transition_status(
+                            context=context,
+                            run_id=run_id,
+                            target_status="completed",
+                            output=result.output,
+                            usage=result.usage,
+                        )
+                    elif result.status == RunStatus.FAILED:
+                        run_repo.transition_status(
+                            context=context,
+                            run_id=run_id,
+                            target_status="failed",
+                            error_message=result.error_message,
+                        )
+            except Exception:
+                pass
 
         if result.status == RunStatus.COMPLETED:
             self.budget_engine.record_usage(context, result.usage)
@@ -194,6 +325,15 @@ class RunCoordinator:
         self.permission_engine.enforce("run:cancel", context, context.organization_id, context.project_id)
         cancelled = await self.runtime_adapter.cancel_run(run_id, context)
 
+        if self.db_manager:
+            from database.repositories.run_state_repo import RunStateRepository
+            try:
+                with self.db_manager.session() as session:
+                    run_repo = RunStateRepository(session)
+                    run_repo.transition_status(context=context, run_id=run_id, target_status="cancelled")
+            except Exception:
+                pass
+
         self.audit_logger.record(
             event_type="core.run.cancelled",
             context=context,
@@ -212,3 +352,52 @@ class RunCoordinator:
         self.permission_engine.enforce("run:trace", context, context.organization_id, context.project_id)
         trace = await self.runtime_adapter.get_trace(run_id, context)
         return trace
+
+    def recover_in_flight_runs(self, context: Optional[SecurityContext] = None) -> List[Dict[str, Any]]:
+        """Recovers runs left in non-terminal states after a system restart or crash.
+
+        Transitions abandoned runs to 'failed' with descriptive cause and records audit events.
+        """
+        if not self.db_manager:
+            return []
+
+        recovered: List[Dict[str, Any]] = []
+        from database.repositories.run_state_repo import RunStateRepository
+
+        with self.db_manager.session() as session:
+            repo = RunStateRepository(session)
+            org_id = context.organization_id if context else None
+            in_flight = repo.list_in_flight_runs(organization_id=org_id)
+
+            for run in in_flight:
+                ctx = context or SecurityContext(
+                    organization_id=run.organization_id,
+                    project_id=run.project_id,
+                    actor=Actor(
+                        actor_id="system_recovery",
+                        actor_type=ActorType.SYSTEM,
+                        organization_id=run.organization_id,
+                        roles=["admin"],
+                    ),
+                    correlation_id=f"recovery_{run.id}",
+                )
+                try:
+                    prev_status = run.status
+                    repo.transition_status(
+                        ctx,
+                        run.id,
+                        target_status="failed",
+                        error_message="Aborted due to system restart / crash recovery",
+                    )
+                    self.audit_logger.record(
+                        event_type="core.run.recovered",
+                        context=ctx,
+                        resource_id=run.id,
+                        status=AuditStatus.FAILED,
+                        payload={"reason": "system_restart_recovery", "previous_status": prev_status},
+                    )
+                    recovered.append({"run_id": run.id, "previous_status": prev_status, "status": "failed"})
+                except Exception as exc:
+                    recovered.append({"run_id": run.id, "error": str(exc)})
+
+        return recovered
