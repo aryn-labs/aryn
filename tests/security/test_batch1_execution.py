@@ -5,10 +5,13 @@ import asyncio
 import pytest
 from sqlalchemy import text
 
-from modules.core.workflows.coordinator import RunCoordinator, RunInProgressError, IdempotencyConflictError
 from database.repositories.run_state_repo import RunStateRepository
+from modules.core.workflows.coordinator import (
+    IdempotencyConflictError,
+    RunCoordinator,
+    RunInProgressError,
+)
 from packages.contracts.runtime import RunRequest, RunResult, RunStatus
-from tests.security.test_batch1_integrity import lifecycle
 
 
 @pytest.mark.asyncio
@@ -121,9 +124,10 @@ async def test_cancelled_caller_is_failed_and_retry_is_cached(lifecycle):
     assert calls == 1
 
 
+@pytest.mark.parametrize("lifecycle", ["metadata", "migrations"], indirect=True)
 def test_threaded_claim_across_connections_dispatches_once(lifecycle):
-    from concurrent.futures import ThreadPoolExecutor
     import threading
+    from concurrent.futures import ThreadPoolExecutor
     db, ctx, runtime, factory, bp, version = lifecycle
     barrier = threading.Barrier(8)
     lock = threading.Lock()
