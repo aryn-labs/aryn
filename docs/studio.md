@@ -37,7 +37,7 @@ API dapat dijalankan di terminal secara langsung setelah build:
 2. Pilih model yang terdaftar dan instruksi sistem. Studio saat ini hanya mendukung agent teks tanpa tool runtime. Temperature dan batas output diteruskan ke adapter.
 3. Jalankan **Bench**. Dialog mengungkap penggunaan penyedia model jarak jauh melalui Hermes dan memerlukan pilihan eksplisit pengguna. Suite berisi empat skenario tetap; request browser tidak dapat mengganti skenario atau menyuntikkan skor.
 4. Buka setiap hasil skenario untuk melihat respons aktual, model, token, durasi, dan alasan kegagalan. Skor harus 100%; kegagalan terakhir membatalkan kelayakan hasil lama.
-5. **Tinjau dan setujui** dengan catatan keputusan. Core mengikat approval ke SHA-256 konfigurasi. Hash dari tinjauan browser harus cocok dengan database. Persetujuan hanya diizinkan untuk admin manusia development yang aktif.
+5. **Tinjau dan setujui** dengan catatan keputusan. Core mengikat approval ke SHA-256 konfigurasi aktual, organisasi/proyek, serta evaluation ID Bench terverifikasi. Hash dari tinjauan browser harus cocok dengan database. Persetujuan hanya diizinkan untuk admin manusia development yang aktif.
 6. **Publikasikan versi**. Core memeriksa evaluasi dan approval. Versi yang dipublikasikan tidak dapat diubah.
 7. Buka **Penugasan**, beri peran dalam proyek aktif. Versi harus dipublikasikan dan blueprint harus cocok dengan induk versi. Penugasan tidak memindahkan blueprint antarproyek.
 8. Buka **Eksekusi**, isi instruksi riset dan konfirmasikan pengiriman ke model pilihan. Core memeriksa izin, penugasan, model, dan preflight budget sebelum Hermes.
@@ -53,7 +53,9 @@ Sesi lokal memakai cookie acak HttpOnly/SameSite Strict dengan expiry delapan ja
 
 Kredensial Hermes dibaca di server dari `API_SERVER_KEY` atau berkas `.env` Hermes lokal yang sudah ada. Nilai ini tidak masuk bundle frontend, respons API, Git, atau antarmuka. Tidak ada formulir browser untuk secret. Respons model diperlakukan sebagai teks tidak tepercaya, tanpa eksekusi HTML. Error runtime yang ditampilkan ke browser disanitasi.
 
-Database khusus Studio: `.local/studio.sqlite3`, diabaikan Git. Alembic menerapkan migrasi pada startup, termasuk `005_bench_provenance`. Blueprint, konfigurasi, evaluation provenance, approval, assignment, run, budget ledger, dan audit menggunakan schema/repository yang ada. Run yang tertinggal saat restart ditandai gagal; versi yang tertinggal dalam evaluasi ditandai ditolak dan dapat dievaluasi kembali.
+Database khusus Studio: `.local/studio.sqlite3`, diabaikan Git. Alembic menerapkan migrasi pada startup sampai `008_unique_run_claim`, termasuk binding bukti approval dan mapping/claim eksekusi. Blueprint, konfigurasi, evaluation provenance, approval, assignment, run, budget ledger, dan audit menggunakan schema/repository yang ada. Run yang tertinggal saat restart ditandai gagal dengan outcome runtime belum diketahui; recovery tidak menyatakan runtime telah berhasil dibatalkan. Versi yang tertinggal dalam evaluasi ditandai ditolak dan dapat dievaluasi kembali.
+
+Hash konfigurasi dihitung ulang dari data aktual; bukti Bench dan approval memakai attestation internal. Key SQLite persistent tersimpan pada `.local/studio.aryn-evidence.key` dan diabaikan Git. Backup key bersama database; kehilangan atau pergantian key membuat bukti lama tidak lagi terverifikasi. Versi dengan format hash lama dan bukti tanpa attestation tetap tersedia sebagai riwayat tetapi diblokir dari lifecycle baru; buat versi baru lalu jalankan Bench dan approval. Migrasi tidak menandatangani ulang bukti lama secara otomatis.
 
 Suite final `research-safety-1.2.0` menambahkan pengenalan penolakan dalam Bahasa Indonesia, kontraksi Inggris, dan abstensi tanggal tidak valid. Pola injection/host tetap ditolak; angka pendapatan fiktif berprefiks `$` dan `Rp` ditolak. Suite regex ini merupakan gate riset awal, bukan pembuktian keamanan lengkap atau penilaian mutu ilmiah. Hasil lama dipertahankan dengan versi evaluator masing-masing.
 
@@ -70,6 +72,7 @@ Jika Hermes tidak tersedia, kredensial salah, atau toolsets aktif, indikator men
 ```powershell
 Set-Location D:\ARYN\aryn-labs\aryn
 .\.venv\Scripts\python.exe -m pytest -q
+$env:PATH = "D:\ARYN\aryn-labs\aryn\.venv\Scripts;" + $env:PATH
 Set-Location apps\web
 npm.cmd run build
 npm.cmd test
@@ -91,4 +94,4 @@ Browser tests memakai API HTTP, Core, dan SQLite aktual pada **port 8711** denga
 
 Dokumen ARYN-PRD-001/ARCH/TECH/SEC privat belum tersimpan di checkout `aryn-docs`; indeksnya menyatakan NO. ID P0 privat tidak direka. Implementasi mengikuti AGENTS.md, SECURITY.md, contracts, dan perilaku Core aktual. Referensi desain yang ditinjau: [Linear refresh](https://linear.app/changelog/2026-03-12-ui-refresh), [Dify Workflow Studio](https://dify.ai/workflows), [Langfuse observability](https://langfuse.com/docs/observability/overview), [shadcn dashboard blocks](https://ui.shadcn.com/blocks?category=dashboard). Identitas, palette, layout, dan alur Studio dibuat untuk ARYN.
 
-Hasil tes dan bukti live akhir dicatat di `docs/studio-validation.md`.
+Hasil tes historis Studio dicatat di `docs/studio-validation.md`. Audit integritas, governance, concurrency, ownership, migrasi, hasil otomatis terbaru, serta satu sesi UAT Batch 1 terdapat pada [laporan Batch 1](batch1-validation.md). Tes model live sekarang memerlukan izin pemilik dan opt-in eksplisit; pengujian biasa tidak mengirim prompt model live.
