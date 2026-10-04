@@ -21,7 +21,7 @@ export function Governance({ data }: Shared) {
       <div className="governance-principles">
         <div>
           <Fingerprint size={21} />
-          <h3>Identitas server</h3>
+          <h2>Identitas server</h2>
           <p>
             Browser memakai sesi lokal. Identitas bertanda tangan hanya
             diterbitkan di server.
@@ -29,7 +29,7 @@ export function Governance({ data }: Shared) {
         </div>
         <div>
           <ShieldCheck size={21} />
-          <h3>Persetujuan yang tepat</h3>
+          <h2>Persetujuan yang tepat</h2>
           <p>
             Keputusan manusia terikat pada hash konfigurasi dan evaluasi Bench
             terakhir.
@@ -37,7 +37,7 @@ export function Governance({ data }: Shared) {
         </div>
         <div>
           <Folder size={21} />
-          <h3>Lingkup proyek</h3>
+          <h2>Lingkup proyek</h2>
           <p>
             Keanggotaan dan izin diperiksa Core untuk setiap aksi baca dan
             mutasi.

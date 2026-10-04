@@ -1,5 +1,5 @@
 import { type ReactNode } from "react";
-import { Activity, Check, ChevronRight } from "lucide-react";
+import { Activity, Check, ChevronRight, Minus, Plus } from "lucide-react";
 import type { Audit } from "../lib/types";
 import { date } from "../lib/utils";
 import { Empty, Status } from "./shared";
@@ -94,29 +94,44 @@ export function AuditList({
           <div className="event-content">
             <div className="event-top">
               <span>{eventNames[e.event_type] || "Aktivitas Core"}</span>
+              {!compact && <Status value={e.status} />}
+            </div>
+            <div className="event-meta">
+              <span className="mono">{e.resource_id}</span>
               <time>{date(e.occurred_at)}</time>
             </div>
-            <div className="event-meta mono">{e.resource_id}</div>
             {!compact && (
-              <details>
-                <summary>
-                  Detail audit <span className="mono">{e.event_type}</span>
+              <details className="audit-details">
+                <summary className="audit-toggle">
+                  <Plus size={13} className="audit-expand" aria-hidden="true" />
+                  <Minus
+                    size={13}
+                    className="audit-collapse"
+                    aria-hidden="true"
+                  />
+                  <span className="audit-show-label">Detail audit</span>
+                  <span className="audit-hide-label">Tutup detail</span>
                 </summary>
-                <dl className="definition-grid">
-                  <dt>Aktor</dt>
-                  <dd className="mono">{e.actor_id}</dd>
-                  <dt>Korelasi</dt>
-                  <dd className="mono">{e.correlation_id}</dd>
-                  <dt>Integritas</dt>
-                  <dd className="mono wrap">{e.integrity_reference}</dd>
-                </dl>
-                <pre className="code-output">
-                  {JSON.stringify(e.redacted_payload, null, 2)}
-                </pre>
+                <div className="audit-detail-body">
+                  <div className="audit-detail-heading">
+                    <span>Peristiwa Core</span>
+                    <code>{e.event_type}</code>
+                  </div>
+                  <dl className="definition-grid">
+                    <dt>Aktor</dt>
+                    <dd className="mono">{e.actor_id}</dd>
+                    <dt>Korelasi</dt>
+                    <dd className="mono">{e.correlation_id}</dd>
+                    <dt>Integritas</dt>
+                    <dd className="mono wrap">{e.integrity_reference}</dd>
+                  </dl>
+                  <pre className="code-output">
+                    {JSON.stringify(e.redacted_payload, null, 2)}
+                  </pre>
+                </div>
               </details>
             )}
           </div>
-          <Status value={e.status} />
         </div>
       ))}
     </div>

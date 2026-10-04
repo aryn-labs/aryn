@@ -168,11 +168,61 @@ test("vertical slice HTTP nyata ke Core dengan runtime pengujian terisolasi", as
   await expect(
     page.getByText("Eksekusi selesai", { exact: true }),
   ).toBeVisible();
+  const firstAudit = page.locator(".audit-event").first();
+  const auditDetails = firstAudit.locator(".audit-details");
+  const auditToggle = auditDetails.locator("summary");
+  const statusBefore = await firstAudit.locator(".status").boundingBox();
+  expect(statusBefore?.height).toBe(24);
+  await auditToggle.focus();
+  await page.keyboard.press("Enter");
+  await expect(auditDetails).toHaveAttribute("open", "");
+  await expect(auditToggle).toHaveText("Tutup detail", { useInnerText: true });
+  await expect(
+    firstAudit.getByText("Peristiwa Core", { exact: true }),
+  ).toBeVisible();
+  expect((await firstAudit.locator(".status").boundingBox())?.height).toBe(
+    statusBefore?.height,
+  );
+  await auditToggle.click();
+  await expect(auditDetails).not.toHaveAttribute("open", "");
+  await expect(
+    firstAudit.getByText("Peristiwa Core", { exact: true }),
+  ).not.toBeVisible();
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await page.screenshot({
     path: "../../.local/evidence/studio-isolated-run.png",
     fullPage: true,
   });
+  await page
+    .getByRole("navigation")
+    .getByRole("link", { name: "Tata Kelola", exact: true })
+    .click();
+  const governanceAudit = page.locator(".audit-event").first();
+  await governanceAudit.locator("summary").click();
+  await expect(governanceAudit.locator(".audit-details")).toHaveAttribute(
+    "open",
+    "",
+  );
+  expect((await governanceAudit.locator(".status").boundingBox())?.height).toBe(
+    24,
+  );
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  await page.getByRole("button", { name: "Gunakan tema terang" }).click();
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBeTruthy();
+  expect((await governanceAudit.locator(".status").boundingBox())?.height).toBe(
+    24,
+  );
+  await governanceAudit.locator("summary").click();
+  await expect(governanceAudit.locator(".audit-details")).not.toHaveAttribute(
+    "open",
+    "",
+  );
   expect(errors).toEqual([]);
 });
 
