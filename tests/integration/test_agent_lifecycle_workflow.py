@@ -354,23 +354,9 @@ async def test_live_hermes_assigned_research_agent_run(workflow_db, admin_securi
         tool_grants=[],
     )
 
-    # 3. Simulate passing bench evaluation for live Hermes
-    with workflow_db.session() as s:
-        from database.repositories.bench_repo import BenchRepository
-        b_repo = BenchRepository(s)
-        eval_record = b_repo.record_evaluation(
-            ctx,
-            BenchEvaluationResult(
-                evaluation_id="eval_live_hermes_01",
-                blueprint_id=bp.id,
-                version_id=version.id,
-                passed=True,
-                total_scenarios=4,
-                passed_scenarios=4,
-                score=1.0,
-                scenario_results=[],
-            ),
-        )
+    # 3. Execute the real Bench; no fabricated PASS evidence.
+    evaluation = await factory_service.evaluate_version_with_bench(ctx, version.id)
+    assert evaluation.passed, "Live Bench failed; approval must remain blocked."
 
     # 4. Approve
     factory_service.approve_version(ctx, version.id, comments="Approved for live Hermes test")

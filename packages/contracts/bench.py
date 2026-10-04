@@ -44,6 +44,7 @@ class ScenarioResult(BaseModel):
     latency_seconds: float
     failure_reason: Optional[str] = None
     actual_model: str = ""
+    runtime_status: str = ""
     input_tokens: int = 0
     output_tokens: int = 0
     total_tokens: int = 0
@@ -62,4 +63,12 @@ class BenchEvaluationResult(BaseModel):
     evaluation_version: str = RESEARCH_BENCH_VERSION
     requested_model: str = ""
     payload_hash: str = ""
+    suite_hash: str = ""
+    runtime_adapter: str = ""
+    attestation: str = ""
     evaluated_at: str = Field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
+
+    def evidence_payload(self, organization_id: str, project_id: str, evaluated_by: str) -> dict:
+        return {"organization_id": organization_id, "project_id": project_id,
+                "evaluated_by": evaluated_by,
+                "result": self.model_dump(mode="json", exclude={"attestation"})}

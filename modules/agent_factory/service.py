@@ -73,6 +73,7 @@ class AgentFactoryService:
         )
         self.model_router = model_router or ModelRouter()
         self.quality_gate = BenchQualityGate(min_score_threshold=1.0)
+        self.bench_runner.evidence_signer = db_manager.evidence_signer
 
     # -------------------------------------------------------------------------
     # 1. Blueprint Management
@@ -217,6 +218,11 @@ class AgentFactoryService:
         version_id: str,
         scenarios: Optional[List[BenchScenario]] = None,
     ) -> BenchEvaluationResult:
+        self.permission_engine.enforce("run:create", context, context.organization_id, context.project_id)
+        if scenarios is not None:
+            from modules.bench.scenarios import get_standard_research_bench_scenarios
+            if scenarios != get_standard_research_bench_scenarios():
+                raise QualityGateFailedError("The complete current research suite is mandatory.")
         # Retrieve version
         with self.db_manager.session() as session:
             repo = AgentRepository(session)
@@ -239,11 +245,17 @@ class AgentFactoryService:
             repo.update_version_status(context, version_id, "evaluating")
 
         # Execute isolated bench evaluation
-        result = await self.bench_runner.evaluate_agent_version(context, version_contract, scenarios)
+        self.bench_runner.evidence_signer = self.db_manager.evidence_signer
+        try:
+            result = await self.bench_runner.evaluate_agent_version(context, version_contract, scenarios)
+        except BaseException:
+            with self.db_manager.session() as session:
+                AgentRepository(session).update_version_status(context, version_id, "rejected")
+            raise
 
         # Store evaluation and update version status
         with self.db_manager.session() as session:
-            bench_repo = BenchRepository(session)
+            bench_repo = BenchRepository(session, self.db_manager.evidence_signer)
             agent_repo = AgentRepository(session)
             bench_repo.record_evaluation(context, result)
 
@@ -284,7 +296,7 @@ class AgentFactoryService:
 
         # 2. Check latest passing evaluation
         with self.db_manager.session() as session:
-            bench_repo = BenchRepository(session)
+            bench_repo = BenchRepository(session, self.db_manager.evidence_signer)
             agent_repo = AgentRepository(session)
             m = agent_repo.get_version(context, version_id)
 
@@ -337,7 +349,7 @@ class AgentFactoryService:
 
         with self.db_manager.session() as session:
             agent_repo = AgentRepository(session)
-            bench_repo = BenchRepository(session)
+            bench_repo = BenchRepository(session, self.db_manager.evidence_signer)
             m = agent_repo.get_version(context, version_id)
 
             # 2. Quality gate check

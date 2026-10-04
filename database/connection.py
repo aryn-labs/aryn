@@ -63,6 +63,14 @@ class DatabaseManager:
     def __init__(self, engine: Engine | None = None) -> None:
         self.engine = engine or create_db_engine()
         self.session_factory = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
+        self._evidence_signer = None
+
+    @property
+    def evidence_signer(self):
+        from modules.core.evidence import EvidenceSigner
+        if self._evidence_signer is None:
+            self._evidence_signer = EvidenceSigner.for_database(self.engine)
+        return self._evidence_signer
 
     @contextmanager
     def session(self) -> Generator[Session, None, None]:

@@ -13,7 +13,8 @@ from packages.contracts.core import SecurityContext
 from packages.contracts.agent import AgentVersion
 from packages.contracts.bench import BenchEvaluationResult, BenchScenario, ScenarioResult
 from packages.contracts.runtime import RunRequest, RunStatus, RuntimeAdapter
-from modules.bench.scenarios import get_standard_research_bench_scenarios
+from modules.bench.scenarios import get_standard_research_bench_scenarios, research_suite_hash
+from modules.bench.quality_gate import QualityGateFailedError
 
 
 class BenchRunner:
@@ -21,6 +22,7 @@ class BenchRunner:
 
     def __init__(self, runtime_adapter: RuntimeAdapter) -> None:
         self.runtime_adapter = runtime_adapter
+        self.evidence_signer = None
 
     async def evaluate_agent_version(
         self,
@@ -29,7 +31,12 @@ class BenchRunner:
         scenarios: Optional[List[BenchScenario]] = None,
     ) -> BenchEvaluationResult:
         version.verify_integrity()
-        suite = scenarios or get_standard_research_bench_scenarios()
+        suite = get_standard_research_bench_scenarios()
+        if scenarios is not None and scenarios != suite:
+            raise QualityGateFailedError("The complete current research suite is mandatory.")
+        caps = await self.runtime_adapter.capabilities()
+        if not caps.tools_confined or caps.enabled_toolsets or version.tool_grants:
+            raise QualityGateFailedError("Research Bench requires an isolated text runtime without tools.")
         scenario_results: List[ScenarioResult] = []
 
         for scen in suite:
@@ -61,6 +68,13 @@ class BenchRunner:
                 if res.status != RunStatus.COMPLETED:
                     passed = False
                     failure_reason = f"Runtime run status: {res.status.value}"
+                if passed and res.model != version.model:
+                    passed = False
+                    failure_reason = "Runtime model differs from requested model."
+                if passed and (min(res.usage.input_tokens, res.usage.output_tokens, res.usage.total_tokens) < 0
+                               or res.usage.total_tokens != res.usage.input_tokens + res.usage.output_tokens):
+                    passed = False
+                    failure_reason = "Runtime usage is inconsistent."
 
                 # 1. Check forbidden pattern
                 if passed and scen.forbidden_pattern:
@@ -96,6 +110,7 @@ class BenchRunner:
                     latency_seconds=latency,
                     failure_reason=failure_reason,
                     actual_model=res.model if res else "",
+                    runtime_status=res.status.value if res else "failed",
                     input_tokens=res.usage.input_tokens if res else 0,
                     output_tokens=res.usage.output_tokens if res else 0,
                     total_tokens=res.usage.total_tokens if res else 0,
@@ -107,7 +122,7 @@ class BenchRunner:
         score = round(passed_count / total_count, 4) if total_count > 0 else 0.0
         overall_passed = (passed_count == total_count and total_count > 0)
 
-        return BenchEvaluationResult(
+        result = BenchEvaluationResult(
             evaluation_id=f"eval_{uuid.uuid4().hex[:16]}",
             blueprint_id=version.blueprint_id,
             version_id=version.id,
@@ -118,4 +133,10 @@ class BenchRunner:
             scenario_results=scenario_results,
             requested_model=version.model,
             payload_hash=version.payload_hash,
+            suite_hash=research_suite_hash(),
+            runtime_adapter=f"{type(self.runtime_adapter).__module__}.{type(self.runtime_adapter).__qualname__}",
         )
+        if self.evidence_signer:
+            result.attestation = self.evidence_signer.sign(
+                "bench", result.evidence_payload(context.organization_id, context.project_id, context.actor.actor_id))
+        return result

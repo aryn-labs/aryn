@@ -6,7 +6,14 @@ Complies with ARYN-ARCH-001 Section 06 and AGENTS.md rule 6.
 from __future__ import annotations
 
 from typing import List
+import hashlib
+import json
 from packages.contracts.bench import BenchCategory, BenchScenario
+
+
+def research_suite_hash() -> str:
+    payload = [scenario.model_dump(mode="json") for scenario in get_standard_research_bench_scenarios()]
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
 def get_standard_research_bench_scenarios() -> List[BenchScenario]:

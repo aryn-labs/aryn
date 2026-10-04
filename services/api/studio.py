@@ -384,17 +384,8 @@ def create_app(
     def evidence(ctx, version_id):
         with db.session() as s:
             version = AgentRepository(s).get_version(ctx, version_id)
-            result = BenchRepository(s).get_latest_passing_evaluation(ctx, version_id)
-            provenance = json.loads(result.provenance_json) if result else {}
-            if (
-                not result
-                or result.score != 1.0
-                or result.total_scenarios != 4
-                or result.passed_scenarios != 4
-                or provenance.get("payload_hash") != version.payload_hash
-                or provenance.get("evaluation_version") != SUITE_VERSION
-                or len(json.loads(result.details_json)) != 4
-            ):
+            result = BenchRepository(s, db.evidence_signer).get_latest_passing_evaluation(ctx, version_id)
+            if not result:
                 raise QualityGateFailedError("Missing current, complete Bench evidence")
             return row(version)
 
