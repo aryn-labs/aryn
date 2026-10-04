@@ -1,0 +1,82 @@
+"""Integration tests against live Hermes Gateway on 127.0.0.1:8642."""
+
+import os
+import importlib
+import pytest
+from packages.contracts.core import Actor, SecurityContext
+from packages.contracts.runtime import RunRequest, RunStatus
+
+hermes_module = importlib.import_module("packages.runtime-adapters.hermes")
+HermesRuntimeAdapter = hermes_module.HermesRuntimeAdapter
+
+
+def get_live_api_key() -> str:
+    """Safely retrieves API_SERVER_KEY from Hermes .env without leaking."""
+    key = os.getenv("API_SERVER_KEY")
+    if key:
+        return key
+    env_file = r"C:\Users\User\AppData\Local\hermes\.env"
+    if os.path.exists(env_file):
+        with open(env_file, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("API_SERVER_KEY="):
+                    return line.split("=", 1)[1].strip()
+    return ""
+
+
+@pytest.mark.asyncio
+async def test_live_hermes_health():
+    api_key = get_live_api_key()
+    if not api_key:
+        pytest.skip("Hermes API_SERVER_KEY not found in local environment.")
+
+    adapter = HermesRuntimeAdapter(base_url="http://127.0.0.1:8642", api_key=api_key)
+    health = await adapter.health()
+
+    assert health.is_healthy is True
+    assert health.platform == "hermes-agent"
+    assert health.version == "0.21.5"
+
+
+@pytest.mark.asyncio
+async def test_live_hermes_capabilities_and_confinement():
+    api_key = get_live_api_key()
+    if not api_key:
+        pytest.skip("Hermes API_SERVER_KEY not found in local environment.")
+
+    adapter = HermesRuntimeAdapter(base_url="http://127.0.0.1:8642", api_key=api_key)
+    caps = await adapter.capabilities()
+
+    # Invariant: Risky host access tools must NOT be active
+    assert caps.tools_confined is True
+    assert len(caps.details.get("active_risky_tools", [])) == 0
+    assert len(caps.enabled_toolsets) == 0
+
+
+@pytest.mark.asyncio
+async def test_live_hermes_run_lifecycle_and_cancellation():
+    api_key = get_live_api_key()
+    if not api_key:
+        pytest.skip("Hermes API_SERVER_KEY not found in local environment.")
+
+    adapter = HermesRuntimeAdapter(base_url="http://127.0.0.1:8642", api_key=api_key)
+    actor = Actor(actor_id="test_runner", organization_id="org_aryn", project_id="proj_aryn")
+    context = SecurityContext(actor=actor, organization_id="org_aryn", project_id="proj_aryn")
+
+    # 1. Start a run
+    request = RunRequest(
+        prompt="respond with the word ok",
+        model="stealth/space-bunny-alpha",
+    )
+    run_id = await adapter.start_run(request, context)
+    assert run_id.startswith("run_")
+
+    # 2. Test cancel on the run
+    cancelled = await adapter.cancel_run(run_id, context)
+    assert cancelled is True
+
+    # 3. Test get_result
+    result = await adapter.get_result(run_id, context)
+    assert result.run_id == run_id
+    assert result.status in (RunStatus.STARTED, RunStatus.RUNNING, RunStatus.COMPLETED, RunStatus.CANCELLED, RunStatus.STOPPING)
