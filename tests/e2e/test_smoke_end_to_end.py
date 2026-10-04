@@ -80,13 +80,14 @@ async def test_live_end_to_end_smoke():
         actor=actor,
         organization_id="org_aryn_hq",
         project_id="proj_pilot",
-    )
+    ).sign()
 
     with db_manager.session() as s:
         org_repo = OrganizationRepository(s)
         org_repo.create_organization("org_aryn_hq", "ARYN HQ", "aryn-hq")
         org_repo.add_member("org_aryn_hq", "aryn_engineer_1", role="operator")
         org_repo.create_project(context, "proj_pilot", "Pilot", "pilot")
+        org_repo.add_project_member("proj_pilot", "aryn_engineer_1", role="operator")
 
     # 3. Initialize ARYN Core infrastructure
     adapter = HermesRuntimeAdapter(base_url="http://127.0.0.1:8642", api_key=api_key)
@@ -170,13 +171,14 @@ async def test_mocked_end_to_end_smoke_isolated():
     db_manager = DatabaseManager(engine=db_engine)
 
     actor = Actor(actor_id="test_actor", roles=["operator"], organization_id="org_mock", project_id="proj_mock")
-    context = SecurityContext(actor=actor, organization_id="org_mock", project_id="proj_mock")
+    context = SecurityContext(actor=actor, organization_id="org_mock", project_id="proj_mock").sign()
 
     with db_manager.session() as s:
         org_repo = OrganizationRepository(s)
         org_repo.create_organization("org_mock", "Mock Org", "mock-org")
         org_repo.add_member("org_mock", "test_actor", role="operator")
         org_repo.create_project(context, "proj_mock", "Mock Project", "mock-proj")
+        org_repo.add_project_member("proj_mock", "test_actor", role="operator")
 
     mock_adapter = MockIsolatedAdapter()
     coordinator = RunCoordinator(

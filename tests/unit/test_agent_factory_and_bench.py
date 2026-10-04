@@ -114,7 +114,7 @@ def admin_context():
         organization_id="org_test",
         project_id="proj_research",
         correlation_id="corr_unit_01",
-    )
+    ).sign()
 
 
 # -----------------------------------------------------------------------------
@@ -305,7 +305,7 @@ def test_approval_engine_role_and_hash_binding(test_db, admin_context):
         actor=Actor(actor_id="agent_self", actor_type=ActorType.AGENT, organization_id="org_test", roles=["admin"]),
         organization_id="org_test",
         project_id="proj_research",
-    )
+    ).sign()
     with pytest.raises(UnauthorizedApproverError, match="Agents cannot grant approvals"):
         engine.grant_approval(agent_ctx, "agent_version", "av_agent_attempt", "some_hash")
 
@@ -314,7 +314,7 @@ def test_approval_engine_role_and_hash_binding(test_db, admin_context):
         actor=Actor(actor_id="user_viewer", actor_type=ActorType.USER, organization_id="org_test", roles=["viewer"]),
         organization_id="org_test",
         project_id="proj_research",
-    )
+    ).sign()
     with pytest.raises(UnauthorizedApproverError, match="lacks 'admin' role"):
         engine.grant_approval(viewer_ctx, "agent_version", "av_viewer_attempt", "some_hash")
 

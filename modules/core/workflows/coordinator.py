@@ -451,7 +451,7 @@ class RunCoordinator:
                         roles=["admin"],
                     ),
                     correlation_id=f"recovery_{run.id}",
-                )
+                ).sign()
                 try:
                     prev_status = run.status
                     repo.transition_status(

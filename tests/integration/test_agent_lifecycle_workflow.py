@@ -149,7 +149,7 @@ def admin_security_context():
         organization_id="org_acme",
         project_id="proj_macro_intel",
         correlation_id="corr_workflow_e2e_01",
-    )
+    ).sign()
 
 
 @pytest.mark.asyncio

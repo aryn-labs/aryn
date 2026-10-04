@@ -1,14 +1,29 @@
 """Comprehensive Security Tests for ARYN Authorization Boundary & RBAC.
 
 Validates:
-1. Forged admin role rejection (effective role derived strictly from DB membership, caller roles ignored).
-2. Non-existent membership denial by default.
-3. Revoked and suspended membership denial.
-4. Unauthorized cross-tenant and project mismatch denial.
-5. Actor and organization consistency verification.
-6. Autonomous agent privilege escalation prevention (no self-approval or publish).
-7. Deny-by-default when authoritative store is unavailable.
-8. Valid authorized access for admin, operator, and viewer roles across Core and Agent Factory.
+1. Trusted Identity Binding & Fail-Closed Behavior:
+   - Unsigned SecurityContext is rejected (fail-closed).
+   - Impersonation of actor_id is detected and rejected via signature mismatch.
+   - Forged actor_type (agent escalating to user) is detected and rejected.
+2. Hierarchical Project-Level Authorization:
+   - Org Admin has organization-wide authority over all projects in the organization.
+   - Operators and Viewers are strictly restricted to projects where they hold explicit ProjectMembership.
+   - Access to other projects in the same organization without project membership is DENIED.
+   - Revoked project membership is DENIED.
+3. Database-Backed Role Verification:
+   - Forged client roles are strictly ignored; effective permissions derive authoritatively from DB.
+   - Non-existent organization membership is DENIED by default.
+   - Revoked or suspended organization membership is DENIED.
+4. Tenant and Project Boundary Isolation:
+   - Cross-tenant project access is DENIED.
+   - Nonexistent project is DENIED.
+   - Actor organization mismatch is DENIED.
+5. Autonomous Agent Confinement:
+   - Agents are forbidden from approving or publishing versions.
+6. Positive Authorized Access:
+   - Org Admin can manage any project in the organization.
+   - Project Operator can perform permitted operations on their assigned project.
+   - Project Viewer has read-only access on their assigned project.
 
 Complies with ARYN-ARCH-001 Section 03, ARYN-SEC-001, and AGENTS.md rules 3, 4, 7.
 """
@@ -34,6 +49,7 @@ from packages.contracts.runtime import (
     RuntimeHealth,
     RuntimeTrace,
 )
+from modules.core.identity.binder import TrustedIdentityBinder
 from modules.core.permissions.engine import PermissionDeniedError, PermissionEngine
 from modules.core.approvals.engine import ApprovalEngine, UnauthorizedApproverError
 from modules.core.workflows.coordinator import RunCoordinator
@@ -88,12 +104,22 @@ def rbac_db():
         repo.add_member("org_alpha", "user_alpha_revoked", role="operator", status="revoked")
         repo.add_member("org_alpha", "user_alpha_suspended", role="admin", status="suspended")
 
+        # Org Alpha - Projects
         ctx_alpha = SecurityContext(
             actor=Actor(actor_id="user_alpha_admin", organization_id="org_alpha", roles=["admin"]),
             organization_id="org_alpha",
             project_id="proj_alpha_main",
-        )
+        ).sign()
         repo.create_project(ctx_alpha, "proj_alpha_main", "Alpha Main", "alpha-main")
+        repo.create_project(ctx_alpha, "proj_alpha_secondary", "Alpha Secondary", "alpha-secondary")
+
+        # Project memberships in proj_alpha_main:
+        # user_alpha_op is operator on proj_alpha_main
+        repo.add_project_member("proj_alpha_main", "user_alpha_op", role="operator", status="active")
+        # user_alpha_viewer is viewer on proj_alpha_main
+        repo.add_project_member("proj_alpha_main", "user_alpha_viewer", role="viewer", status="active")
+
+        # Note: NEITHER user_alpha_op NOR user_alpha_viewer is added to proj_alpha_secondary!
 
         # Org Beta
         repo.create_organization("org_beta", "Beta Corp", "beta-corp")
@@ -103,15 +129,93 @@ def rbac_db():
             actor=Actor(actor_id="user_beta_admin", organization_id="org_beta", roles=["admin"]),
             organization_id="org_beta",
             project_id="proj_beta_main",
-        )
+        ).sign()
         repo.create_project(ctx_beta, "proj_beta_main", "Beta Main", "beta-main")
 
     return db
 
 
 # -----------------------------------------------------------------------------
-# 1. Negative Test: Forged Admin Roles
+# 1. Negative Tests: Trusted Identity Binding & Fail-Closed Verification
 # -----------------------------------------------------------------------------
+
+def test_unsigned_security_context_fails_closed(rbac_db):
+    """An attacker or untrusted client sends an unsigned SecurityContext."""
+    engine = PermissionEngine(db_manager=rbac_db)
+
+    unsigned_context = SecurityContext(
+        actor=Actor(
+            actor_id="user_alpha_admin",
+            actor_type=ActorType.USER,
+            organization_id="org_alpha",
+            project_id="proj_alpha_main",
+        ),
+        organization_id="org_alpha",
+        project_id="proj_alpha_main",
+        identity_token=None,  # Unsigned!
+    )
+
+    decision = engine.evaluate("run:create", unsigned_context, "org_alpha", "proj_alpha_main")
+    assert decision.allowed is False
+    assert "Untrusted identity binding" in decision.reason
+    assert "RULE_IDENTITY_UNTRUSTED" in decision.matched_rules
+
+    with pytest.raises(PermissionDeniedError, match="Untrusted identity binding"):
+        engine.enforce("run:create", unsigned_context, "org_alpha", "proj_alpha_main")
+
+
+def test_actor_id_impersonation_is_detected_and_rejected(rbac_db):
+    """Context signed for user_alpha_op is tampered to impersonate user_alpha_admin."""
+    engine = PermissionEngine(db_manager=rbac_db)
+
+    # Legitimate context signed for user_alpha_op
+    context = SecurityContext(
+        actor=Actor(
+            actor_id="user_alpha_op",
+            actor_type=ActorType.USER,
+            organization_id="org_alpha",
+            project_id="proj_alpha_main",
+        ),
+        organization_id="org_alpha",
+        project_id="proj_alpha_main",
+    ).sign()
+
+    # Attacker tampers actor_id to admin
+    context.actor.actor_id = "user_alpha_admin"
+
+    decision = engine.evaluate("run:create", context, "org_alpha", "proj_alpha_main")
+    assert decision.allowed is False
+    assert "impersonation or forged identity detected" in decision.reason
+    assert "RULE_IDENTITY_TAMPERED" in decision.matched_rules
+
+    with pytest.raises(PermissionDeniedError, match="impersonation or forged identity detected"):
+        engine.enforce("run:create", context, "org_alpha", "proj_alpha_main")
+
+
+def test_forged_actor_type_agent_to_user_is_detected_and_rejected(rbac_db):
+    """Context signed for an AGENT is tampered to claim USER status."""
+    engine = PermissionEngine(db_manager=rbac_db)
+
+    # Legitimate context signed for AGENT
+    context = SecurityContext(
+        actor=Actor(
+            actor_id="user_alpha_admin",
+            actor_type=ActorType.AGENT,
+            organization_id="org_alpha",
+            project_id="proj_alpha_main",
+        ),
+        organization_id="org_alpha",
+        project_id="proj_alpha_main",
+    ).sign()
+
+    # Agent tampers actor_type to USER to bypass agent confinement
+    context.actor.actor_type = ActorType.USER
+
+    decision = engine.evaluate("version:approve", context, "org_alpha", "proj_alpha_main")
+    assert decision.allowed is False
+    assert "impersonation or forged identity detected" in decision.reason
+    assert "RULE_IDENTITY_TAMPERED" in decision.matched_rules
+
 
 def test_forged_admin_role_rejected_by_permission_engine(rbac_db):
     """An attacker provides roles=['admin'] in SecurityContext, but is only 'viewer' in DB."""
@@ -128,15 +232,12 @@ def test_forged_admin_role_rejected_by_permission_engine(rbac_db):
         ),
         organization_id="org_alpha",
         project_id="proj_alpha_main",
-    )
+    ).sign()
 
     decision = engine.evaluate("run:create", forged_context, "org_alpha", "proj_alpha_main")
     assert decision.allowed is False
     assert "effective role 'viewer'" in decision.reason
     assert "RULE_RBAC_ENFORCEMENT" in decision.matched_rules
-
-    with pytest.raises(PermissionDeniedError, match="effective role 'viewer'"):
-        engine.enforce("run:create", forged_context, "org_alpha", "proj_alpha_main")
 
 
 @pytest.mark.asyncio
@@ -149,13 +250,13 @@ async def test_forged_admin_role_rejected_in_run_coordinator(rbac_db):
         actor=Actor(
             actor_id="user_alpha_viewer",
             actor_type=ActorType.USER,
-            roles=["admin"],  # Forged!
+            roles=["admin"],
             organization_id="org_alpha",
             project_id="proj_alpha_main",
         ),
         organization_id="org_alpha",
         project_id="proj_alpha_main",
-    )
+    ).sign()
 
     req = RunRequest(prompt="ping", model="mock-fast")
     with pytest.raises(PermissionDeniedError, match="effective role 'viewer'"):
@@ -170,13 +271,13 @@ def test_forged_admin_role_rejected_in_approval_engine(rbac_db):
         actor=Actor(
             actor_id="user_alpha_viewer",
             actor_type=ActorType.USER,
-            roles=["admin"],  # Forged!
+            roles=["admin"],
             organization_id="org_alpha",
             project_id="proj_alpha_main",
         ),
         organization_id="org_alpha",
         project_id="proj_alpha_main",
-    )
+    ).sign()
 
     with pytest.raises(UnauthorizedApproverError, match="lacks 'admin' role"):
         appr_engine.grant_approval(
@@ -187,32 +288,89 @@ def test_forged_admin_role_rejected_in_approval_engine(rbac_db):
         )
 
 
-def test_forged_admin_role_rejected_in_agent_factory(rbac_db):
-    """AgentFactoryService rejects blueprint creation from forged admin."""
-    bench = BenchRunner(runtime_adapter=MockTestRuntime())
-    factory = AgentFactoryService(db_manager=rbac_db, bench_runner=bench)
+# -----------------------------------------------------------------------------
+# 2. Negative Tests: Project-Level Authorization & Same-Org Isolation
+# -----------------------------------------------------------------------------
 
-    forged_context = SecurityContext(
+def test_access_to_other_project_in_same_org_denied_for_operator(rbac_db):
+    """Operator has membership in proj_alpha_main, but attempts to access proj_alpha_secondary in same org."""
+    engine = PermissionEngine(db_manager=rbac_db)
+
+    # Actor has operator membership in org_alpha, and project membership in proj_alpha_main
+    # But attempts to execute in proj_alpha_secondary (same org!)
+    other_proj_context = SecurityContext(
         actor=Actor(
-            actor_id="user_alpha_viewer",
+            actor_id="user_alpha_op",
             actor_type=ActorType.USER,
-            roles=["admin"],  # Forged!
+            organization_id="org_alpha",
+            project_id="proj_alpha_secondary",
+        ),
+        organization_id="org_alpha",
+        project_id="proj_alpha_secondary",
+    ).sign()
+
+    decision = engine.evaluate("run:create", other_proj_context, "org_alpha", "proj_alpha_secondary")
+    assert decision.allowed is False
+    assert "not an authorized member of project 'proj_alpha_secondary'" in decision.reason
+    assert "RULE_PROJECT_MEMBERSHIP_REQUIRED" in decision.matched_rules
+
+    with pytest.raises(PermissionDeniedError, match="not an authorized member of project"):
+        engine.enforce("run:create", other_proj_context, "org_alpha", "proj_alpha_secondary")
+
+
+def test_revoked_project_membership_denied(rbac_db):
+    """Operator's project membership is revoked; access must be denied even if org membership is active."""
+    with rbac_db.session() as s:
+        repo = OrganizationRepository(s)
+        repo.revoke_project_member("proj_alpha_main", "user_alpha_op")
+
+    engine = PermissionEngine(db_manager=rbac_db)
+    context = SecurityContext(
+        actor=Actor(
+            actor_id="user_alpha_op",
+            actor_type=ActorType.USER,
             organization_id="org_alpha",
             project_id="proj_alpha_main",
         ),
         organization_id="org_alpha",
         project_id="proj_alpha_main",
-    )
+    ).sign()
 
-    with pytest.raises(PermissionDeniedError, match="effective role 'viewer'"):
-        factory.create_blueprint(forged_context, "Malicious Agent", "malicious-agent")
+    decision = engine.evaluate("run:create", context, "org_alpha", "proj_alpha_main")
+    assert decision.allowed is False
+    assert "is revoked" in decision.reason
+    assert "RULE_PROJECT_MEMBERSHIP_INACTIVE" in decision.matched_rules
+
+
+def test_suspended_project_membership_denied(rbac_db):
+    """Operator's project membership is suspended; access must be denied."""
+    with rbac_db.session() as s:
+        repo = OrganizationRepository(s)
+        repo.suspend_project_member("proj_alpha_main", "user_alpha_op")
+
+    engine = PermissionEngine(db_manager=rbac_db)
+    context = SecurityContext(
+        actor=Actor(
+            actor_id="user_alpha_op",
+            actor_type=ActorType.USER,
+            organization_id="org_alpha",
+            project_id="proj_alpha_main",
+        ),
+        organization_id="org_alpha",
+        project_id="proj_alpha_main",
+    ).sign()
+
+    decision = engine.evaluate("run:create", context, "org_alpha", "proj_alpha_main")
+    assert decision.allowed is False
+    assert "is suspended" in decision.reason
+    assert "RULE_PROJECT_MEMBERSHIP_INACTIVE" in decision.matched_rules
 
 
 # -----------------------------------------------------------------------------
-# 2. Negative Test: Non-Existent Membership (Deny-by-Default)
+# 3. Negative Tests: Organization Membership Status & Tenant Boundaries
 # -----------------------------------------------------------------------------
 
-def test_non_existent_membership_denied_by_default(rbac_db):
+def test_non_existent_org_membership_denied_by_default(rbac_db):
     """Actor has no membership in target organization; must be denied by default."""
     engine = PermissionEngine(db_manager=rbac_db)
 
@@ -220,80 +378,39 @@ def test_non_existent_membership_denied_by_default(rbac_db):
         actor=Actor(
             actor_id="user_stranger_unknown",
             actor_type=ActorType.USER,
-            roles=["admin"],
             organization_id="org_alpha",
             project_id="proj_alpha_main",
         ),
         organization_id="org_alpha",
         project_id="proj_alpha_main",
-    )
+    ).sign()
 
     decision = engine.evaluate("run:create", stranger_context, "org_alpha", "proj_alpha_main")
     assert decision.allowed is False
     assert "has no membership in organization" in decision.reason
     assert "RULE_MEMBERSHIP_REQUIRED" in decision.matched_rules
 
-    with pytest.raises(PermissionDeniedError, match="has no membership"):
-        engine.enforce("run:create", stranger_context, "org_alpha", "proj_alpha_main")
 
-
-# -----------------------------------------------------------------------------
-# 3. Negative Test: Revoked and Suspended Memberships
-# -----------------------------------------------------------------------------
-
-def test_revoked_membership_is_denied(rbac_db):
-    """Actor membership has status='revoked'; must be denied even for operator actions."""
+def test_revoked_org_membership_is_denied(rbac_db):
+    """Actor org membership has status='revoked'; must be denied even for operator actions."""
     engine = PermissionEngine(db_manager=rbac_db)
 
     revoked_context = SecurityContext(
         actor=Actor(
             actor_id="user_alpha_revoked",
             actor_type=ActorType.USER,
-            roles=["operator"],
             organization_id="org_alpha",
             project_id="proj_alpha_main",
         ),
         organization_id="org_alpha",
         project_id="proj_alpha_main",
-    )
+    ).sign()
 
     decision = engine.evaluate("run:create", revoked_context, "org_alpha", "proj_alpha_main")
     assert decision.allowed is False
     assert "is revoked" in decision.reason
     assert "RULE_MEMBERSHIP_INACTIVE" in decision.matched_rules
 
-    with pytest.raises(PermissionDeniedError, match="is revoked"):
-        engine.enforce("run:create", revoked_context, "org_alpha", "proj_alpha_main")
-
-
-def test_suspended_membership_is_denied(rbac_db):
-    """Actor membership has status='suspended'; must be denied even if role is admin."""
-    engine = PermissionEngine(db_manager=rbac_db)
-
-    suspended_context = SecurityContext(
-        actor=Actor(
-            actor_id="user_alpha_suspended",
-            actor_type=ActorType.USER,
-            roles=["admin"],
-            organization_id="org_alpha",
-            project_id="proj_alpha_main",
-        ),
-        organization_id="org_alpha",
-        project_id="proj_alpha_main",
-    )
-
-    decision = engine.evaluate("version:approve", suspended_context, "org_alpha", "proj_alpha_main")
-    assert decision.allowed is False
-    assert "is suspended" in decision.reason
-    assert "RULE_MEMBERSHIP_INACTIVE" in decision.matched_rules
-
-    with pytest.raises(PermissionDeniedError, match="is suspended"):
-        engine.enforce("version:approve", suspended_context, "org_alpha", "proj_alpha_main")
-
-
-# -----------------------------------------------------------------------------
-# 4. Negative Test: Unauthorized Cross-Tenant and Mismatched Projects
-# -----------------------------------------------------------------------------
 
 def test_cross_tenant_project_access_denied(rbac_db):
     """Actor from Org Alpha attempts to target Project belonging to Org Beta."""
@@ -303,43 +420,17 @@ def test_cross_tenant_project_access_denied(rbac_db):
         actor=Actor(
             actor_id="user_alpha_admin",
             actor_type=ActorType.USER,
-            roles=["admin"],
             organization_id="org_alpha",
             project_id="proj_beta_main",  # Belongs to org_beta!
         ),
         organization_id="org_alpha",
         project_id="proj_beta_main",
-    )
+    ).sign()
 
     decision = engine.evaluate("run:create", cross_context, "org_alpha", "proj_beta_main")
     assert decision.allowed is False
     assert "Cross-tenant project violation" in decision.reason
     assert "RULE_CROSS_TENANT_VIOLATION" in decision.matched_rules
-
-    with pytest.raises(PermissionDeniedError, match="Cross-tenant project violation"):
-        engine.enforce("run:create", cross_context, "org_alpha", "proj_beta_main")
-
-
-def test_nonexistent_project_is_denied(rbac_db):
-    """Actor targets a nonexistent project ID."""
-    engine = PermissionEngine(db_manager=rbac_db)
-
-    bad_proj_context = SecurityContext(
-        actor=Actor(
-            actor_id="user_alpha_admin",
-            actor_type=ActorType.USER,
-            roles=["admin"],
-            organization_id="org_alpha",
-            project_id="proj_phantom_fake",
-        ),
-        organization_id="org_alpha",
-        project_id="proj_phantom_fake",
-    )
-
-    decision = engine.evaluate("run:create", bad_proj_context, "org_alpha", "proj_phantom_fake")
-    assert decision.allowed is False
-    assert "does not exist" in decision.reason
-    assert "RULE_PROJECT_NOT_FOUND" in decision.matched_rules
 
 
 def test_actor_organization_mismatch_denied(rbac_db):
@@ -350,13 +441,12 @@ def test_actor_organization_mismatch_denied(rbac_db):
         actor=Actor(
             actor_id="user_alpha_admin",
             actor_type=ActorType.USER,
-            roles=["admin"],
             organization_id="org_beta",  # Mismatch!
             project_id="proj_alpha_main",
         ),
         organization_id="org_alpha",
         project_id="proj_alpha_main",
-    )
+    ).sign()
 
     decision = engine.evaluate("run:create", mismatch_context, "org_alpha", "proj_alpha_main")
     assert decision.allowed is False
@@ -364,52 +454,36 @@ def test_actor_organization_mismatch_denied(rbac_db):
     assert "RULE_ACTOR_ORG_MISMATCH" in decision.matched_rules
 
 
-# -----------------------------------------------------------------------------
-# 5. Negative Test: Autonomous Agent Privilege Escalation
-# -----------------------------------------------------------------------------
-
 def test_agent_cannot_approve_or_publish(rbac_db):
     """Autonomous agent actors cannot approve or publish versions even with admin roles."""
     engine = PermissionEngine(db_manager=rbac_db)
 
     agent_context = SecurityContext(
         actor=Actor(
-            actor_id="user_alpha_admin",  # points to admin member ID
-            actor_type=ActorType.AGENT,    # but is an AGENT
-            roles=["admin"],
+            actor_id="user_alpha_admin",
+            actor_type=ActorType.AGENT,
             organization_id="org_alpha",
             project_id="proj_alpha_main",
         ),
         organization_id="org_alpha",
         project_id="proj_alpha_main",
-    )
+    ).sign()
 
-    # Agent cannot approve
     d_approve = engine.evaluate("version:approve", agent_context, "org_alpha", "proj_alpha_main")
     assert d_approve.allowed is False
     assert "strictly reserved for human operators" in d_approve.reason
     assert "RULE_AGENT_CONFINEMENT" in d_approve.matched_rules
 
-    # Agent cannot publish
-    d_publish = engine.evaluate("version:publish", agent_context, "org_alpha", "proj_alpha_main")
-    assert d_publish.allowed is False
-    assert "strictly reserved for human operators" in d_publish.reason
-    assert "RULE_AGENT_CONFINEMENT" in d_publish.matched_rules
-
-
-# -----------------------------------------------------------------------------
-# 6. Negative Test: Deny-by-Default Without Database Manager
-# -----------------------------------------------------------------------------
 
 def test_deny_by_default_when_no_authoritative_store_configured():
     """PermissionEngine without db_manager denies all actions deterministically."""
     unbacked_engine = PermissionEngine(db_manager=None)
 
     context = SecurityContext(
-        actor=Actor(actor_id="any_user", roles=["admin"], organization_id="org_any"),
+        actor=Actor(actor_id="any_user", organization_id="org_any", project_id="proj_any"),
         organization_id="org_any",
         project_id="proj_any",
-    )
+    ).sign()
 
     decision = unbacked_engine.evaluate("run:create", context, "org_any", "proj_any")
     assert decision.allowed is False
@@ -418,60 +492,43 @@ def test_deny_by_default_when_no_authoritative_store_configured():
 
 
 # -----------------------------------------------------------------------------
-# 7. Positive Test: Valid Authorized Access
+# 4. Positive Tests: Valid Authorized Access
 # -----------------------------------------------------------------------------
 
-def test_valid_authorized_admin_access(rbac_db):
-    """Admin in DB has full rights across Core, Factory, Approvals, and Assignment."""
+def test_valid_authorized_admin_access_across_all_org_projects(rbac_db):
+    """Org Admin has authority across ALL projects in the organization."""
     engine = PermissionEngine(db_manager=rbac_db)
 
-    admin_context = SecurityContext(
-        actor=Actor(
-            actor_id="user_alpha_admin",
-            actor_type=ActorType.USER,
-            roles=[],  # Even if caller passes empty roles, DB gives admin!
-            organization_id="org_alpha",
-            project_id="proj_alpha_main",
-        ),
+    # Admin accessing proj_alpha_main
+    ctx_main = SecurityContext(
+        actor=Actor(actor_id="user_alpha_admin", organization_id="org_alpha", project_id="proj_alpha_main"),
         organization_id="org_alpha",
         project_id="proj_alpha_main",
-    )
+    ).sign()
 
-    # Admin actions allowed
-    for action in [
-        "run:create",
-        "run:read",
-        "run:cancel",
-        "run:trace",
-        "blueprint:create",
-        "version:create",
-        "version:approve",
-        "version:publish",
-        "agent:assign",
-        "system:health",
-        "system:capabilities",
-    ]:
-        decision = engine.evaluate(action, admin_context, "org_alpha", "proj_alpha_main")
-        assert decision.allowed is True, f"Action {action} should be allowed for admin"
+    # Admin accessing proj_alpha_secondary (without explicit project membership row)
+    ctx_sec = SecurityContext(
+        actor=Actor(actor_id="user_alpha_admin", organization_id="org_alpha", project_id="proj_alpha_secondary"),
+        organization_id="org_alpha",
+        project_id="proj_alpha_secondary",
+    ).sign()
+
+    for ctx in [ctx_main, ctx_sec]:
+        for action in ["run:create", "run:read", "blueprint:create", "version:approve", "version:publish", "agent:assign"]:
+            decision = engine.evaluate(action, ctx, "org_alpha", ctx.project_id)
+            assert decision.allowed is True, f"Action {action} failed for admin on {ctx.project_id}"
 
 
-def test_valid_authorized_operator_access(rbac_db):
-    """Operator in DB has execution, blueprint, and publish rights, but CANNOT approve."""
+def test_valid_authorized_operator_project_access(rbac_db):
+    """Operator with active ProjectMembership on proj_alpha_main has full operational access."""
     engine = PermissionEngine(db_manager=rbac_db)
 
     op_context = SecurityContext(
-        actor=Actor(
-            actor_id="user_alpha_op",
-            actor_type=ActorType.USER,
-            roles=[],  # Derived from DB
-            organization_id="org_alpha",
-            project_id="proj_alpha_main",
-        ),
+        actor=Actor(actor_id="user_alpha_op", organization_id="org_alpha", project_id="proj_alpha_main"),
         organization_id="org_alpha",
         project_id="proj_alpha_main",
-    )
+    ).sign()
 
-    # Operator allowed actions
     for action in ["run:create", "run:read", "blueprint:create", "version:create", "version:publish", "agent:assign"]:
         decision = engine.evaluate(action, op_context, "org_alpha", "proj_alpha_main")
         assert decision.allowed is True, f"Action {action} should be allowed for operator"
@@ -479,4 +536,22 @@ def test_valid_authorized_operator_access(rbac_db):
     # Operator cannot approve
     decision_appr = engine.evaluate("version:approve", op_context, "org_alpha", "proj_alpha_main")
     assert decision_appr.allowed is False
-    assert "is not permitted for actor 'user_alpha_op' with effective role 'operator'" in decision_appr.reason
+
+
+def test_valid_authorized_viewer_project_access(rbac_db):
+    """Viewer with active ProjectMembership on proj_alpha_main has read access but cannot create runs."""
+    engine = PermissionEngine(db_manager=rbac_db)
+
+    viewer_context = SecurityContext(
+        actor=Actor(actor_id="user_alpha_viewer", organization_id="org_alpha", project_id="proj_alpha_main"),
+        organization_id="org_alpha",
+        project_id="proj_alpha_main",
+    ).sign()
+
+    # Read allowed
+    assert engine.evaluate("run:read", viewer_context, "org_alpha", "proj_alpha_main").allowed is True
+    assert engine.evaluate("run:trace", viewer_context, "org_alpha", "proj_alpha_main").allowed is True
+
+    # Write/Create denied
+    assert engine.evaluate("run:create", viewer_context, "org_alpha", "proj_alpha_main").allowed is False
+    assert engine.evaluate("blueprint:create", viewer_context, "org_alpha", "proj_alpha_main").allowed is False

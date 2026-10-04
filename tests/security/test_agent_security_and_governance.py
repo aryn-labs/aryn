@@ -120,7 +120,7 @@ def alpha_admin_context():
         organization_id="org_alpha",
         project_id="proj_alpha_research",
         correlation_id="corr_sec_alpha_01",
-    )
+    ).sign()
 
 
 # -----------------------------------------------------------------------------
@@ -148,7 +148,7 @@ def test_unauthorized_publish_is_denied(multi_tenant_db, alpha_admin_context):
         actor=Actor(actor_id="agent_worker", actor_type=ActorType.AGENT, organization_id="org_alpha", roles=["admin"]),
         organization_id="org_alpha",
         project_id="proj_alpha_research",
-    )
+    ).sign()
     with pytest.raises(PermissionDeniedError, match="Agents cannot publish"):
         service.publish_version(agent_ctx, v.id)
 
@@ -171,7 +171,7 @@ def test_cross_tenant_blueprint_and_assignment_denial(multi_tenant_db, alpha_adm
         actor=Actor(actor_id="user_beta_admin", organization_id="org_beta", roles=["admin"]),
         organization_id="org_beta",
         project_id="proj_beta_intel",
-    )
+    ).sign()
 
     with multi_tenant_db.session() as s:
         agent_repo = AgentRepository(s)

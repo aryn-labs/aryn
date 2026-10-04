@@ -55,6 +55,7 @@ class ProjectModel(Base):
     organization = relationship("OrganizationModel", back_populates="projects")
     runs = relationship("RunStateModel", back_populates="project", cascade="all, delete-orphan")
     blueprints = relationship("AgentBlueprintModel", back_populates="project", cascade="all, delete-orphan")
+    project_memberships = relationship("ProjectMembershipModel", back_populates="project", cascade="all, delete-orphan")
 
     __table_args__ = (
         UniqueConstraint("organization_id", "slug", name="uq_project_org_slug"),
@@ -75,6 +76,26 @@ class MembershipModel(Base):
 
     __table_args__ = (
         UniqueConstraint("organization_id", "user_id", name="uq_membership_org_user"),
+    )
+
+
+class ProjectMembershipModel(Base):
+    __tablename__ = "project_memberships"
+
+    id = Column(String(64), primary_key=True)
+    organization_id = Column(String(64), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    project_id = Column(String(64), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(String(64), nullable=False, index=True)
+    role = Column(String(32), nullable=False, default="operator")  # operator, viewer
+    status = Column(String(32), nullable=False, default="active")  # active, revoked, suspended
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    organization = relationship("OrganizationModel")
+    project = relationship("ProjectModel", back_populates="project_memberships")
+
+    __table_args__ = (
+        UniqueConstraint("project_id", "user_id", name="uq_project_membership_user"),
+        Index("ix_project_membership_org_proj_user", "organization_id", "project_id", "user_id"),
     )
 
 

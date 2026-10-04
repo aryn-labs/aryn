@@ -6,7 +6,7 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
-from database.schema import OrganizationModel, ProjectModel, MembershipModel
+from database.schema import OrganizationModel, ProjectModel, MembershipModel, ProjectMembershipModel
 from packages.contracts.core import SecurityContext
 from database.repositories.exceptions import (
     DuplicateEntityError,
@@ -121,3 +121,68 @@ class OrganizationRepository:
 
     def list_projects(self, context: SecurityContext) -> List[ProjectModel]:
         return self.session.query(ProjectModel).filter_by(organization_id=context.organization_id).all()
+
+    def add_project_member(
+        self,
+        project_id: str,
+        user_id: str,
+        role: str = "operator",
+        status: str = "active",
+    ) -> ProjectMembershipModel:
+        """Explicitly authorizes an organization member on a specific project."""
+        project = self.session.query(ProjectModel).filter_by(id=project_id).first()
+        if not project:
+            raise EntityNotFoundError(f"Project '{project_id}' not found.")
+
+        # User must already be an active member of the parent organization
+        org_member = self.get_member(project.organization_id, user_id)
+        if not org_member:
+            raise EntityNotFoundError(f"User '{user_id}' is not a member of organization '{project.organization_id}'.")
+        if org_member.status != "active":
+            raise DuplicateEntityError(f"User '{user_id}' organization membership is {org_member.status}.")
+
+        existing = self.get_project_member(project_id, user_id)
+        if existing:
+            raise DuplicateEntityError(f"User '{user_id}' is already a member of project '{project_id}'.")
+
+        member = ProjectMembershipModel(
+            id=f"pmem_{project_id}_{user_id}",
+            organization_id=project.organization_id,
+            project_id=project_id,
+            user_id=user_id,
+            role=role,
+            status=status,
+        )
+        self.session.add(member)
+        try:
+            self.session.flush()
+        except IntegrityError as exc:
+            self.session.rollback()
+            raise DuplicateEntityError(f"User '{user_id}' is already a member of project '{project_id}'.") from exc
+        return member
+
+    def get_project_member(self, project_id: str, user_id: str) -> Optional[ProjectMembershipModel]:
+        return (
+            self.session.query(ProjectMembershipModel)
+            .filter_by(project_id=project_id, user_id=user_id)
+            .first()
+        )
+
+    def revoke_project_member(self, project_id: str, user_id: str) -> ProjectMembershipModel:
+        member = self.get_project_member(project_id, user_id)
+        if not member:
+            raise EntityNotFoundError(f"Project membership for user '{user_id}' in project '{project_id}' not found.")
+        member.status = "revoked"
+        self.session.flush()
+        return member
+
+    def suspend_project_member(self, project_id: str, user_id: str) -> ProjectMembershipModel:
+        member = self.get_project_member(project_id, user_id)
+        if not member:
+            raise EntityNotFoundError(f"Project membership for user '{user_id}' in project '{project_id}' not found.")
+        member.status = "suspended"
+        self.session.flush()
+        return member
+
+    def list_project_members(self, project_id: str) -> List[ProjectMembershipModel]:
+        return self.session.query(ProjectMembershipModel).filter_by(project_id=project_id).all()

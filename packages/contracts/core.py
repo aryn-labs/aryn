@@ -35,6 +35,7 @@ class SecurityContext(BaseModel):
     project_id: str
     correlation_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     causation_id: Optional[str] = None
+    identity_token: Optional[str] = None
 
     def validate_ownership(self, target_org_id: str, target_project_id: Optional[str] = None) -> bool:
         """Enforces tenant and project boundary isolation."""
@@ -43,6 +44,11 @@ class SecurityContext(BaseModel):
         if target_project_id and self.project_id != target_project_id:
             return False
         return True
+
+    def sign(self, secret_key: Optional[str] = None) -> SecurityContext:
+        """Binds an authoritative cryptographic identity token to this context."""
+        from modules.core.identity.binder import TrustedIdentityBinder
+        return TrustedIdentityBinder(secret_key=secret_key).sign_context(self)
 
 
 class PolicyDecision(BaseModel):
