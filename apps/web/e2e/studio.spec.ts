@@ -13,6 +13,45 @@ test("navigasi, tema, empty state, aksesibilitas dan responsivitas", async ({
   await expect(
     page.getByText("Agent pertama Anda dimulai di sini"),
   ).toBeVisible();
+  const flowName = "Alur agent dari blueprint hingga eksekusi";
+  const mutations: string[] = [];
+  page.on("request", (request) => {
+    if (
+      request.method() === "POST" &&
+      !request.url().endsWith("/api/session")
+    ) {
+      mutations.push(request.url());
+    }
+  });
+  const flow = page.getByRole("list", { name: flowName });
+  await expect(flow.getByRole("link")).toHaveCount(7);
+  const stageDestinations = [
+    ["Blueprint", "/factory", "Agent Factory"],
+    ["Versi", "/factory", "Agent Factory"],
+    ["Bench", "/bench", "Bench"],
+    ["Persetujuan", "/approvals", "Persetujuan"],
+    ["Publikasi", "/factory", "Agent Factory"],
+    ["Penugasan", "/factory", "Agent Factory"],
+    ["Eksekusi", "/runs", "Eksekusi"],
+  ];
+  for (const [index, [stage, path, heading]] of stageDestinations.entries()) {
+    const link = page.getByRole("list", { name: flowName }).getByRole("link", {
+      name: `Tahap ${index + 1}: ${stage} — buka ${heading}`,
+    });
+    await expect(link).toHaveAttribute("href", path);
+    await link.click();
+    await expect(
+      page.getByRole("heading", { name: heading, exact: true, level: 1 }),
+    ).toBeVisible();
+    await page.goto("/");
+  }
+  await flow.getByRole("link").first().focus();
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByRole("heading", { name: "Agent Factory", exact: true, level: 1 }),
+  ).toBeVisible();
+  await page.goto("/");
+  expect(mutations).toEqual([]); // Opening a stage must never create or promote an agent.
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await page.screenshot({
     path: "../../.local/evidence/studio-dark.png",
@@ -48,6 +87,9 @@ test("navigasi, tema, empty state, aksesibilitas dan responsivitas", async ({
   }
   await page.setViewportSize({ width: 768, height: 1024 });
   await page.goto("/");
+  await expect(
+    page.getByRole("list", { name: flowName }).getByRole("link"),
+  ).toHaveCount(7);
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,
@@ -59,6 +101,19 @@ test("navigasi, tema, empty state, aksesibilitas dan responsivitas", async ({
   });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
+  await expect(
+    page.getByRole("list", { name: flowName }).getByRole("link"),
+  ).toHaveCount(7);
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBeTruthy();
+  await page.screenshot({
+    path: "../../.local/evidence/studio-flow-mobile.png",
+    fullPage: true,
+  });
   await page.getByRole("button", { name: "Buka navigasi" }).click();
   await page
     .getByRole("navigation")

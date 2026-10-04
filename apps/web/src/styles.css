@@ -623,6 +623,7 @@ pre {
 }
 .overview-strip {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 36px;
   padding: 15px 0 24px;
@@ -649,37 +650,213 @@ pre {
   margin-left: auto;
   font-size: 10px;
 }
-.overview-layout {
+.overview-content {
   display: grid;
-  grid-template-columns: minmax(0, 1.75fr) minmax(290px, 1fr);
   gap: 24px;
 }
-.workflow-intro {
-  display: flex;
-  gap: 16px;
-  align-items: center;
-  padding: 28px 24px 24px;
-}
-.workflow-glyph {
+.overview-layout {
   display: grid;
-  place-items: center;
-  width: 50px;
-  height: 50px;
-  border: 1px solid var(--border);
-  background: var(--accent-muted);
-  color: var(--primary);
-  border-radius: 12px;
-  flex-shrink: 0;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
 }
-.workflow-intro p {
-  font-size: 12px;
+.overview-primary,
+.overview-secondary {
+  display: grid;
+  gap: 24px;
+  min-width: 0;
+}
+.agent-flow {
+  container: agent-flow / inline-size;
+  padding: 24px;
+  background: var(--background);
+}
+.flow-phases {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 24px;
+  margin-bottom: 16px;
+}
+.flow-phases span {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
   color: var(--secondary);
-  margin-top: 6px;
-  line-height: 1.7;
-  max-width: 470px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-size: 10px;
 }
-.workflow-intro h3 {
-  font-size: 15px;
+.flow-phases span:nth-child(1) {
+  grid-column: 1 / 3;
+}
+.flow-phases span:nth-child(2) {
+  grid-column: 3 / 5;
+}
+.flow-phases span:nth-child(3) {
+  grid-column: 5 / 8;
+}
+.flow-chart {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 24px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.flow-step {
+  position: relative;
+  min-width: 0;
+}
+.flow-node {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 132px;
+  height: 100%;
+  padding: 16px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.flow-node:hover {
+  border-color: var(--primary);
+  background: var(--elevated);
+}
+.flow-node-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--primary);
+}
+.flow-node-top span {
+  color: var(--secondary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+.flow-node-label {
+  display: grid;
+  gap: 5px;
+}
+.flow-node-label strong {
+  font-size: 12px;
+  color: var(--text);
+}
+.flow-node-label > span {
+  font-size: 11px;
+  color: var(--secondary);
+  line-height: 1.5;
+}
+.flow-connector {
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  width: 24px;
+  height: 14px;
+  transform: translateY(-50%);
+  color: var(--secondary);
+  pointer-events: none;
+}
+.flow-connector::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 100%;
+  height: 1px;
+  background: var(--border);
+}
+.flow-connector svg {
+  position: absolute;
+  right: -1px;
+}
+@container agent-flow (max-width: 960px) {
+  .flow-phases {
+    display: none;
+  }
+  .flow-chart {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .flow-step-5 {
+    grid-column: 4;
+    grid-row: 2;
+  }
+  .flow-step-6 {
+    grid-column: 3;
+    grid-row: 2;
+  }
+  .flow-step-7 {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  .flow-step-4 .flow-connector {
+    top: 100%;
+    left: calc(50% - 7px);
+    width: 14px;
+    height: 24px;
+    transform: none;
+  }
+  .flow-step-4 .flow-connector::before {
+    top: 0;
+    left: 50%;
+    height: 100%;
+    width: 1px;
+  }
+  .flow-step-4 .flow-connector svg {
+    left: 0;
+    right: auto;
+    bottom: -1px;
+    transform: rotate(90deg);
+  }
+  .flow-step-5 .flow-connector,
+  .flow-step-6 .flow-connector {
+    left: -24px;
+  }
+  .flow-step-5 .flow-connector svg,
+  .flow-step-6 .flow-connector svg {
+    left: -1px;
+    right: auto;
+    transform: rotate(180deg);
+  }
+}
+@container agent-flow (max-width: 580px) {
+  .flow-chart {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .flow-step {
+    grid-column: auto;
+    grid-row: auto;
+  }
+  .flow-node {
+    flex-direction: row;
+    align-items: center;
+    gap: 16px;
+    min-height: 80px;
+    padding: 14px 16px;
+  }
+  .flow-node-top {
+    flex-direction: column;
+    flex-shrink: 0;
+    gap: 6px;
+    width: 28px;
+  }
+  .flow-step .flow-connector {
+    top: 100%;
+    left: calc(50% - 7px);
+    width: 14px;
+    height: 24px;
+    transform: none;
+  }
+  .flow-step .flow-connector::before {
+    top: 0;
+    left: 50%;
+    width: 1px;
+    height: 100%;
+  }
+  .flow-step .flow-connector svg {
+    left: 0;
+    right: auto;
+    bottom: -1px;
+    transform: rotate(90deg);
+  }
 }
 .lifecycle {
   display: flex;
@@ -1990,9 +2167,6 @@ tbody tr:hover {
   .main-content {
     padding: 44px 48px 56px;
   }
-  .overview-layout {
-    grid-template-columns: 2fr 1fr;
-  }
   .lifecycle {
     gap: 16px;
   }
@@ -2005,7 +2179,7 @@ tbody tr:hover {
     padding: 0 24px;
   }
   .overview-layout {
-    grid-template-columns: minmax(0, 1.5fr) minmax(260px, 1fr);
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
     gap: 20px;
   }
   .overview-strip {
@@ -2013,10 +2187,6 @@ tbody tr:hover {
   }
   .overview-strip .data-source {
     display: none;
-  }
-  .workflow-footer {
-    align-items: flex-start;
-    flex-direction: column;
   }
   .detail-layout {
     grid-template-columns: minmax(0, 1.5fr) minmax(260px, 1fr);
@@ -2037,15 +2207,6 @@ tbody tr:hover {
   .detail-layout,
   .run-layout {
     grid-template-columns: 1fr;
-  }
-  .overview-layout > div:last-child {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 20px;
-    align-items: start;
-  }
-  .overview-layout > div:last-child > .mt-6 {
-    margin-top: 0;
   }
   .overview-strip {
     gap: 16px;
@@ -2108,18 +2269,9 @@ tbody tr:hover {
   .main-content {
     padding: 24px 20px 32px;
   }
-  .overview-layout > div:last-child {
-    grid-template-columns: 1fr;
-  }
-  .overview-layout > div:last-child > .mt-6 {
-    margin-top: 0;
-  }
   .overview-strip {
     flex-wrap: wrap;
     gap: 16px 26px;
-  }
-  .overview-strip > div:nth-child(3) {
-    display: none;
   }
   .heading-actions .btn {
     font-size: 11px;
@@ -2229,17 +2381,8 @@ tbody tr:hover {
   .overview-strip span {
     font-size: 11px;
   }
-  .workflow-intro {
-    padding: 24px 18px;
-    align-items: flex-start;
-    gap: 12px;
-  }
-  .workflow-glyph {
-    width: 42px;
-    height: 42px;
-  }
-  .workflow-intro h3 {
-    font-size: 13px;
+  .agent-flow {
+    padding: 20px 18px;
   }
   .workflow-footer {
     flex-direction: column;

@@ -12,7 +12,8 @@ import { number } from "../lib/utils";
 import { Button } from "../components/ui/button";
 import { Empty, PageHeading, Status } from "../components/shared";
 import type { Shared } from "../lib/types";
-import { Panel, Lifecycle, AuditList } from "../components/workspace";
+import { Panel, AuditList } from "../components/workspace";
+import { AgentFlow } from "../components/agent-flow";
 export function Overview({ data, workspace, openBlueprint }: Shared) {
   const navigate = useNavigate();
   const published = data.versions.filter(
@@ -51,142 +52,134 @@ export function Overview({ data, workspace, openBlueprint }: Shared) {
         </div>
         <span className="data-source">Data proyek aktual</span>
       </div>
-      <div className="overview-layout">
-        <div>
-          <Panel
-            title="Dari ide ke eksekusi"
-            subtitle="Satu alur, dengan evaluasi dan persetujuan di setiap batas."
-            action={<span className="subtle-label">ALUR AGENT</span>}
-          >
-            <div className="workflow-intro">
-              <div className="workflow-glyph">
-                <Bot size={26} />
+      <div className="overview-content">
+        <Panel
+          className="overview-flow-panel"
+          title="Dari ide ke eksekusi"
+          subtitle="Tujuh tahap untuk merancang, memvalidasi, dan mengoperasikan agent."
+          action={<span className="subtle-label">7 TAHAP</span>}
+        >
+          <AgentFlow />
+          <div className="workflow-footer">
+            <span>
+              <ShieldCheck size={15} />
+              Bench lulus dan persetujuan Core sebelum publikasi
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate("/factory")}
+            >
+              Buka Agent Factory
+              <ArrowRight size={15} />
+            </Button>
+          </div>
+        </Panel>
+        <div className="overview-layout">
+          <div className="overview-primary">
+            <Panel
+              title="Agent di proyek ini"
+              subtitle="Blueprint dan konfigurasi yang benar-benar tersimpan."
+              action={
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => navigate("/factory")}
+                >
+                  Lihat semua
+                  <ArrowRight size={14} />
+                </Button>
+              }
+            >
+              {data.blueprints.length ? (
+                <div className="agent-overview-list">
+                  {data.blueprints.slice(0, 5).map((bp) => {
+                    const v = data.versions.find(
+                      (v) => v.blueprint_id === bp.id,
+                    );
+                    return (
+                      <button
+                        className="agent-overview-item"
+                        key={bp.id}
+                        onClick={() => navigate(`/factory/${bp.id}`)}
+                      >
+                        <div className="agent-icon">
+                          <Bot size={19} />
+                        </div>
+                        <div>
+                          <strong>{bp.name}</strong>
+                          <small>
+                            {bp.description || "Blueprint riset teks"}
+                          </small>
+                        </div>
+                        {v ? (
+                          <Status value={v.status} />
+                        ) : (
+                          <span className="subtle">Belum ada versi</span>
+                        )}
+                        <ChevronRight size={16} />
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <Empty
+                  title="Agent pertama Anda dimulai di sini"
+                  description="Buat blueprint untuk mendefinisikan agent riset. Tidak ada agent atau aktivitas contoh yang ditambahkan otomatis."
+                  action="Buat blueprint"
+                  onAction={openBlueprint}
+                />
+              )}
+            </Panel>
+            <Panel
+              title="Kesiapan lingkungan"
+              subtitle="Status koneksi saat ini."
+            >
+              <div className="readiness">
+                <div>
+                  <span className="connection-dot" />
+                  <span>ARYN API</span>
+                  <Status value="active" />
+                </div>
+                <div>
+                  <span
+                    className={`connection-dot ${!workspace.runtime.ready ? "warning" : ""}`}
+                  />
+                  <span>Hermes {workspace.runtime.version || ""}</span>
+                  <span
+                    className={`subtle ${workspace.runtime.ready ? "text-success" : ""}`}
+                  >
+                    {workspace.runtime.ready ? "Siap" : "Belum siap"}
+                  </span>
+                </div>
+                <p>{workspace.runtime.message}</p>
               </div>
-              <div>
-                <h3>Agent yang siap bekerja, dapat ditelusuri.</h3>
+              <div className="security-note">
+                <ShieldCheck size={16} />
                 <p>
-                  Mulai dari blueprint. Simpan versi, jalankan Bench, lalu
-                  publikasikan setelah mendapat persetujuan Core.
+                  Identitas development diterbitkan server. Seluruh operasi
+                  diproses melalui ARYN Core.
                 </p>
               </div>
-            </div>
-            <Lifecycle />
-            <div className="workflow-footer">
-              <span>
-                <ShieldCheck size={15} />
-                Versi tetap · lingkup proyek · audit
-              </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => navigate("/factory")}
-              >
-                Buka Agent Factory
-                <ArrowRight size={15} />
-              </Button>
-            </div>
-          </Panel>
-          <Panel
-            className="mt-6"
-            title="Agent di proyek ini"
-            subtitle="Blueprint dan konfigurasi yang benar-benar tersimpan."
-            action={
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => navigate("/factory")}
-              >
-                Lihat semua
-                <ArrowRight size={14} />
-              </Button>
-            }
-          >
-            {data.blueprints.length ? (
-              <div className="agent-overview-list">
-                {data.blueprints.slice(0, 5).map((bp) => {
-                  const v = data.versions.find((v) => v.blueprint_id === bp.id);
-                  return (
-                    <button
-                      className="agent-overview-item"
-                      key={bp.id}
-                      onClick={() => navigate(`/factory/${bp.id}`)}
-                    >
-                      <div className="agent-icon">
-                        <Bot size={19} />
-                      </div>
-                      <div>
-                        <strong>{bp.name}</strong>
-                        <small>
-                          {bp.description || "Blueprint riset teks"}
-                        </small>
-                      </div>
-                      {v ? (
-                        <Status value={v.status} />
-                      ) : (
-                        <span className="subtle">Belum ada versi</span>
-                      )}
-                      <ChevronRight size={16} />
-                    </button>
-                  );
-                })}
-              </div>
-            ) : (
-              <Empty
-                title="Agent pertama Anda dimulai di sini"
-                description="Buat blueprint untuk mendefinisikan agent riset. Tidak ada agent atau aktivitas contoh yang ditambahkan otomatis."
-                action="Buat blueprint"
-                onAction={openBlueprint}
-              />
-            )}
-          </Panel>
-        </div>
-        <div>
-          <Panel
-            title="Kesiapan lingkungan"
-            subtitle="Status koneksi saat ini."
-          >
-            <div className="readiness">
-              <div>
-                <span className="connection-dot" />
-                <span>ARYN API</span>
-                <Status value="active" />
-              </div>
-              <div>
-                <span
-                  className={`connection-dot ${!workspace.runtime.ready ? "warning" : ""}`}
-                />
-                <span>Hermes {workspace.runtime.version || ""}</span>
-                <span
-                  className={`subtle ${workspace.runtime.ready ? "text-success" : ""}`}
+            </Panel>
+          </div>
+          <div className="overview-secondary">
+            <Panel
+              title="Aktivitas terbaru"
+              subtitle="Peristiwa Core terbaru di proyek ini."
+              action={
+                <Link
+                  to="/governance"
+                  className="icon-link"
+                  aria-label="Lihat seluruh audit"
                 >
-                  {workspace.runtime.ready ? "Siap" : "Belum siap"}
-                </span>
-              </div>
-              <p>{workspace.runtime.message}</p>
-            </div>
-            <div className="security-note">
-              <ShieldCheck size={16} />
-              <p>
-                Identitas development diterbitkan server. Seluruh operasi
-                diproses melalui ARYN Core.
-              </p>
-            </div>
-          </Panel>
-          <Panel
-            className="mt-6"
-            title="Aktivitas terbaru"
-            action={
-              <Link
-                to="/governance"
-                className="icon-link"
-                aria-label="Lihat seluruh audit"
-              >
-                <ArrowRight size={16} />
-              </Link>
-            }
-          >
-            <AuditList events={data.audit} compact />
-          </Panel>
+                  <ArrowRight size={16} />
+                </Link>
+              }
+            >
+              <AuditList events={data.audit.slice(0, 4)} compact />
+            </Panel>
+          </div>
         </div>
       </div>
     </>
