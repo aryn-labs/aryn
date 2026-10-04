@@ -1,0 +1,44 @@
+# Credentials and sensitive material
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.pfx
+*.key
+**/secrets/
+**/.secrets/
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+# Node / frontend
+node_modules/
+dist/
+build/
+.next/
+coverage/
+*.tsbuildinfo
+# Rust / Tauri
+target/
+src-tauri/target/
+# Local data
+*.sqlite
+*.sqlite3
+*.db
+*.db-wal
+*.db-shm
+# OS / tooling
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+# Temp
+*.log
+*.tmp
