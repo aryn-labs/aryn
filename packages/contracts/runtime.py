@@ -47,7 +47,7 @@ class RunRequest(BaseModel):
     system_instructions: Optional[str] = None
     model: str
     session_id: Optional[str] = None
-    idempotency_key: Optional[str] = None
+    idempotency_key: Optional[str] = Field(default=None, min_length=1, max_length=255)
     timeout_seconds: float = 30.0
     temperature: float = Field(default=0.7, ge=0, le=2)
     max_tokens: int = Field(default=2048, ge=1, le=32768)
@@ -76,6 +76,8 @@ class RuntimeTrace(BaseModel):
     run_id: str
     events: List[Dict[str, Any]] = Field(default_factory=list)
     raw_trace: Optional[Dict[str, Any]] = None
+    available: bool = False
+    unavailability_reason: Optional[str] = None
 
 
 class RuntimeAdapter(ABC):
@@ -103,7 +105,7 @@ class RuntimeAdapter(ABC):
 
     @abstractmethod
     async def cancel_run(self, run_id: str, context: SecurityContext) -> bool:
-        """Request immediate cancellation/interruption of a running agent."""
+        """Request interruption; acknowledgment is not proof of terminal cancellation."""
         pass
 
     @abstractmethod

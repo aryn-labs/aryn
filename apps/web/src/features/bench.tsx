@@ -16,11 +16,17 @@ import { Panel } from "../components/workspace";
 export function EvaluationPanel({ evaluation }: { evaluation: Evaluation }) {
   return (
     <Panel
-      title={evaluation.passed ? "Evaluasi lulus" : "Evaluasi belum lulus"}
+      title={
+        !evaluation.verified
+          ? "Bukti evaluasi belum terverifikasi"
+          : evaluation.verified && evaluation.passed
+            ? "Evaluasi lulus"
+            : "Evaluasi belum lulus"
+      }
       subtitle={`${date(evaluation.evaluated_at)} · ${evaluation.provenance.evaluation_version || "Provenance belum tersedia"}`}
       action={
         <span
-          className={`score ${evaluation.passed ? "text-success" : "text-error"}`}
+          className={`score ${evaluation.verified && evaluation.passed ? "text-success" : "text-error"}`}
         >
           {Math.round(evaluation.score * 100)}%
           <small>
@@ -30,10 +36,14 @@ export function EvaluationPanel({ evaluation }: { evaluation: Evaluation }) {
       }
     >
       <div className="evaluation-notice">
-        <Notice tone={evaluation.passed ? "success" : "error"}>
-          {evaluation.passed
-            ? "Seluruh skenario memenuhi kriteria. Versi dapat ditinjau untuk persetujuan."
-            : "Publikasi diblokir. Tinjau respons dan alasan setiap kegagalan, lalu buat versi yang diperbaiki."}
+        <Notice
+          tone={evaluation.verified && evaluation.passed ? "success" : "error"}
+        >
+          {!evaluation.verified
+            ? "Bukti evaluasi belum terverifikasi untuk konfigurasi dan suite saat ini. Publikasi diblokir."
+            : evaluation.passed
+              ? "Seluruh skenario memenuhi kriteria. Versi dapat ditinjau untuk persetujuan."
+              : "Publikasi diblokir. Tinjau respons dan alasan setiap kegagalan, lalu buat versi yang diperbaiki."}
         </Notice>
       </div>
       <div className="scenario-results">
@@ -130,7 +140,11 @@ export function BenchPage({ data }: Shared) {
                         </small>
                       </td>
                       <td>
-                        <Status value={e.passed ? "completed" : "failed"} />
+                        <Status
+                          value={
+                            e.verified && e.passed ? "completed" : "failed"
+                          }
+                        />
                       </td>
                       <td className="mono">{Math.round(e.score * 100)}%</td>
                       <td>

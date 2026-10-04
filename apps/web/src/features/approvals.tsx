@@ -10,9 +10,7 @@ export function Approvals({ data }: Shared) {
   const [view, setView] = useState("pending");
   const navigate = useNavigate();
   const candidates = data.versions.filter(
-    (v) =>
-      ["draft", "approved"].includes(v.status) &&
-      data.evaluations.find((e) => e.version_id === v.id)?.passed,
+    (v) => ["draft", "approved"].includes(v.status) && v.bench_eligible,
   );
   return (
     <>
@@ -106,7 +104,14 @@ export function Approvals({ data }: Shared) {
                         </small>
                       </td>
                       <td className="mono">{a.approved_by}</td>
-                      <td>{a.comments}</td>
+                      <td>
+                        {a.comments}
+                        {!a.verified && (
+                          <small className="table-sub">
+                            Persetujuan belum berlaku untuk bukti saat ini.
+                          </small>
+                        )}
+                      </td>
                       <td className="subtle">{date(a.created_at)}</td>
                     </tr>
                   );

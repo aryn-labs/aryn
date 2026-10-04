@@ -1,8 +1,8 @@
 """Core human approval authority with scoped, durable evidence attestations."""
 
-from contextlib import nullcontext
 import datetime
 import uuid
+from contextlib import nullcontext
 from typing import Optional
 
 from database.connection import DatabaseManager
@@ -10,7 +10,7 @@ from database.repositories.agent_repo import AgentRepository
 from database.repositories.approval_repo import ApprovalRepository
 from database.repositories.bench_repo import BenchRepository
 from database.repositories.exceptions import InvalidStateTransitionError
-from database.schema import ApprovalModel
+from database.schema import ApprovalModel, MembershipModel
 from modules.core.audit.logger import AuditLogger
 from modules.core.permissions.engine import PermissionDeniedError, PermissionEngine
 from packages.contracts.approval import ApprovalRecord
@@ -85,7 +85,13 @@ class ApprovalEngine:
         except PermissionDeniedError as exc:
             raise UnauthorizedApproverError(f"Actor lacks 'admin' role required to grant approvals: {exc}") from exc
         with (nullcontext(session) if session is not None else self.db_manager.session(write=True)) as active:
+            # All governance writers lock version before membership to avoid lock inversion.
             evaluation_id = self.current_evidence(context, target_type, target_id, payload_hash, active)
+            member = active.query(MembershipModel).filter_by(
+                organization_id=context.organization_id, user_id=context.actor.actor_id,
+            ).with_for_update().first()
+            if not member or member.role != "admin" or member.status != "active":
+                raise UnauthorizedApproverError("Human approver requires active admin authority at commit time.")
             if target_type == "agent_version":
                 version = AgentRepository(active).get_version(context, target_id)
                 if version.status == "published":
@@ -93,7 +99,11 @@ class ApprovalEngine:
             repo = ApprovalRepository(active)
             existing = repo.get_approval(context, target_type, target_id, payload_hash, evaluation_id)
             if existing:
-                return self.verify_signature(existing)
+                try:
+                    return self.verify_signature(existing)
+                except ApprovalRequiredError:
+                    # A fresh, authorized human decision does not rewrite stale evidence.
+                    pass
             row = repo.record_approval(context, f"appr_{uuid.uuid4().hex}", target_type,
                                        target_id, payload_hash, context.actor.actor_id,
                                        comments=comments, evaluation_id=evaluation_id)

@@ -4,13 +4,14 @@ import pytest
 from sqlalchemy import text
 
 from database.repositories.approval_repo import ApprovalRepository
-from modules.core.approvals.engine import ApprovalRequiredError
-from database.repositories.exceptions import InvalidStateTransitionError, EntityNotFoundError
+from database.repositories.exceptions import (
+    EntityNotFoundError,
+    InvalidStateTransitionError,
+)
 from modules.bench.quality_gate import QualityGateFailedError
-from packages.contracts.core import Actor, SecurityContext
-from tests.conftest import bind_test_context
+from modules.core.approvals.engine import ApprovalRequiredError
 from packages.contracts.core import ActorType
-from tests.security.test_batch1_integrity import lifecycle
+from tests.conftest import bind_test_context
 
 
 @pytest.mark.asyncio
@@ -82,7 +83,6 @@ async def test_edited_approval_is_rejected(lifecycle, field, value):
 async def test_system_actor_cannot_grant_human_approval(lifecycle):
     db, ctx, runtime, factory, bp, version = lifecycle
     await factory.evaluate_version_with_bench(ctx, version.id)
-    from tests.conftest import bind_test_context
     system_ctx = ctx.model_copy(deep=True)
     system_ctx.actor.actor_type = ActorType.SYSTEM
     bind_test_context(system_ctx)

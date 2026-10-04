@@ -159,7 +159,13 @@ class HermesRuntimeAdapter(RuntimeAdapter):
                 raise HermesAdapterError(f"Failed to query /v1/toolsets: HTTP {resp.status_code} - {resp.text}")
 
             body = resp.json()
-            toolsets = body.get("data", [])
+            toolsets = body.get("data") if isinstance(body, dict) else None
+            if not isinstance(toolsets, list) or any(
+                not isinstance(ts, dict) or not isinstance(ts.get("name"), str)
+                or not ts["name"] or not isinstance(ts.get("enabled"), bool)
+                for ts in toolsets
+            ):
+                raise HermesAdapterError("Tool confinement cannot be verified from malformed capabilities.")
             available = [ts.get("name") for ts in toolsets if ts.get("name")]
             enabled = [ts.get("name") for ts in toolsets if ts.get("enabled", False)]
 
@@ -314,8 +320,8 @@ class HermesRuntimeAdapter(RuntimeAdapter):
                 raise RuntimeAuthenticationError("Unauthorized when cancelling run.")
             if resp.status_code == 404:
                 raise RunNotFoundError(f"Run '{run_id}' not found for cancellation.")
-            if resp.status_code in (200, 202, 409):
-                # 409 in Hermes means run is already terminal or not active
+            if resp.status_code in (200, 202):
+                # This acknowledges a stop request; Core verifies the resulting state.
                 return True
 
             return False
@@ -324,20 +330,11 @@ class HermesRuntimeAdapter(RuntimeAdapter):
                 await client.aclose()
 
     async def get_trace(self, run_id: str, context: SecurityContext) -> RuntimeTrace:
-        """Retrieves execution trace and event snapshots."""
-        # Query run state to obtain canonical trace metadata
-        result = await self.get_result(run_id, context)
-        events = []
-        if "last_event" in result.raw_response:
-            events.append({
-                "name": result.raw_response.get("last_event"),
-                "status": result.status.value,
-                "timestamp": result.completed_at or result.created_at,
-            })
+        """The current gateway exposes no supported structured trace contract."""
         return RuntimeTrace(
             run_id=run_id,
-            events=events,
-            raw_trace=result.raw_response,
+            available=False,
+            unavailability_reason="Trace Hermes terstruktur belum tersedia. Audit Core tetap tersedia.",
         )
 
     async def execute_direct_turn(self, request: RunRequest, context: SecurityContext) -> RunResult:
@@ -382,9 +379,20 @@ class HermesRuntimeAdapter(RuntimeAdapter):
                 raise HermesAdapterError(f"Direct turn failed: HTTP {resp.status_code} - {resp.text}")
 
             data = resp.json()
+            if not isinstance(data, dict) or any(
+                not isinstance(data.get(field), str) or not data[field] for field in ("id", "model")
+            ):
+                raise HermesAdapterError("Direct response is missing actual run/model provenance.")
             choices = data.get("choices", [])
-            content = choices[0].get("message", {}).get("content", "") if choices else ""
+            if (not isinstance(choices, list) or not choices or not isinstance(choices[0], dict)
+                    or not isinstance(choices[0].get("message"), dict)
+                    or not isinstance(choices[0]["message"].get("content"), str)):
+                raise HermesAdapterError("Direct response is missing actual completion content.")
+            content = choices[0]["message"]["content"]
             usage_dict = data.get("usage") or {}
+            if not isinstance(usage_dict, dict) or any(type(usage_dict.get(field)) is not int or usage_dict[field] < 0
+                   for field in ("prompt_tokens", "completion_tokens", "total_tokens")):
+                raise HermesAdapterError("Direct response is missing actual token usage.")
             usage = RunUsage(
                 input_tokens=usage_dict.get("prompt_tokens", 0),
                 output_tokens=usage_dict.get("completion_tokens", 0),
@@ -392,11 +400,11 @@ class HermesRuntimeAdapter(RuntimeAdapter):
             )
 
             return RunResult(
-                run_id=data.get("id", f"turn_{int(start_time)}"),
+                run_id=data["id"],
                 status=RunStatus.COMPLETED,
                 output=content,
                 usage=usage,
-                model=data.get("model", request.model),
+                model=data["model"],
                 created_at=start_time,
                 completed_at=time.time(),
                 raw_response=data,

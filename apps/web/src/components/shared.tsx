@@ -20,6 +20,8 @@ const labels: Record<string, string> = {
   started: "Dimulai",
   running: "Berjalan",
   cancelled: "Dibatalkan",
+  stopping: "Pembatalan diminta",
+  attempted: "Dicoba",
   active: "Aktif",
   allowed: "Diizinkan",
   denied: "Ditolak",

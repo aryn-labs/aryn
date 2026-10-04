@@ -316,7 +316,9 @@ async def test_complete_agent_lifecycle_workflow(workflow_db, admin_security_con
     # Verify runtime trace
     trace = await coordinator.get_managed_trace(result.run_id, ctx)
     assert trace.run_id == result.run_id
-    assert len(trace.events) >= 2
+    assert not trace.available
+    assert trace.events == []
+    assert trace.unavailability_reason
 
 
 @pytest.mark.asyncio

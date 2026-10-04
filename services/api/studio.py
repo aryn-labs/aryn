@@ -53,9 +53,13 @@ from modules.core.audit.logger import AuditLogger
 from modules.core.identity.binder import TrustedIdentityBinder
 from modules.core.permissions.engine import PermissionDeniedError, PermissionEngine
 from modules.core.usage.engine import BudgetExceededError
-from modules.core.workflows.coordinator import RunCoordinator, RunInProgressError, IdempotencyConflictError
+from modules.core.workflows.coordinator import (
+    IdempotencyConflictError,
+    RunCoordinator,
+    RunInProgressError,
+)
+from packages.contracts.agent import AgentVersion, VersionIntegrityError
 from packages.contracts.bench import RESEARCH_BENCH_VERSION
-from packages.contracts.agent import VersionIntegrityError
 from packages.contracts.core import AuditStatus
 from packages.model_adapters import ModelRouter, ModelRoutingError
 from packages.runtime_adapters import HermesAdapterError, HermesRuntimeAdapter
@@ -147,7 +151,11 @@ def row(model):
         if hasattr(value, "isoformat"):
             data[name] = value.isoformat() + ("Z" if value.tzinfo is None else "")
         if name.endswith("_json"):
-            data[name.removesuffix("_json")] = json.loads(data.pop(name) or "{}")
+            try:
+                data[name.removesuffix("_json")] = json.loads(data.pop(name) or "{}")
+            except (ValueError, TypeError):
+                data[name.removesuffix("_json")] = None
+                data["storage_valid"] = False
     return data
 
 
@@ -207,9 +215,8 @@ def create_app(
             )
             BudgetRepository(s).get_or_create_budget(ctx)
 
-    recovery_ctx = binder.create_trusted_context(DEV_ACTOR, DEV_ORG, DEV_PROJECT)
-    coordinator.recover_in_flight_runs(recovery_ctx)
-    with db.session() as s:
+    coordinator.recover_in_flight_runs()
+    with db.session(write=True) as s:
         interrupted = (
             s.query(AgentVersionModel)
             .join(AgentBlueprintModel)
@@ -221,14 +228,17 @@ def create_app(
         )
         for version in interrupted:
             version.status = "rejected"
+            interrupted_ctx = binder.create_trusted_context(
+                DEV_ACTOR, DEV_ORG, version.blueprint.project_id)
             audit.record(
                 "bench.evaluation.interrupted",
-                recovery_ctx,
+                interrupted_ctx,
                 version.id,
                 AuditStatus.FAILED,
                 {
                     "reason": "Evaluasi terhenti saat layanan dimulai ulang. Jalankan Bench kembali."
                 },
+                session=s,
             )
 
     app = FastAPI(
@@ -300,7 +310,7 @@ def create_app(
         )
 
     exception_map = {
-        RunInProgressError: (409, "Permintaan masih berjalan. Periksa riwayat; model tidak dijalankan ulang."),
+        RunInProgressError: (409, "Permintaan sudah tercatat. Periksa status dan riwayat; model tidak dijalankan ulang."),
         IdempotencyConflictError: (409, "Kunci permintaan sudah terikat pada input atau konfigurasi berbeda."),
         VersionIntegrityError: (
             409,
@@ -526,6 +536,48 @@ def create_app(
                     else model.created_at
                 )
                 data[key] = [row(x) for x in query.order_by(order.desc()).all()]
+            # Stored labels are history, not governance authority. Expose verified
+            # eligibility so Studio cannot present a fabricated PASS as actionable.
+            for version in data["versions"]:
+                stored = s.get(AgentVersionModel, version["id"])
+                version["integrity_valid"] = True
+                version["bench_eligible"] = False
+                version["governance_valid"] = False
+                try:
+                    contract = AgentVersion.from_stored(stored)
+                    bench_repo = BenchRepository(s, db.evidence_signer)
+                    for evaluation in data["evaluations"]:
+                        if evaluation["version_id"] == version["id"]:
+                            evaluation["verified"] = False
+                            try:
+                                bench_repo.validate_stored(ctx, s.get(BenchEvaluationModel, evaluation["id"]), contract)
+                                evaluation["verified"] = True
+                            except QualityGateFailedError:
+                                pass
+                    if stored.status in {"draft", "approved", "published"}:
+                        version["bench_eligible"] = bool(bench_repo.get_latest_passing_evaluation(ctx, stored.id))
+                    if stored.status in {"approved", "published"} and version["bench_eligible"]:
+                        factory.approval_engine.verify_approval(ctx, "agent_version", stored.id, stored.payload_hash, session=s)
+                        version["governance_valid"] = True
+                except VersionIntegrityError:
+                    version["integrity_valid"] = False
+                except (QualityGateFailedError, ApprovalRequiredError, PayloadHashMismatchError):
+                    pass
+            for evaluation in data["evaluations"]:
+                evaluation.setdefault("verified", False)
+                if not isinstance(evaluation["provenance"], dict):
+                    evaluation["provenance"] = {}
+                if not isinstance(evaluation["details"], list):
+                    evaluation["details"] = []
+            for approval in data["approvals"]:
+                version = next((v for v in data["versions"] if v["id"] == approval["target_id"]), None)
+                approval["verified"] = bool(version and version["governance_valid"] and
+                                            version["evaluation_id"] == approval["evaluation_id"])
+                if approval["verified"]:
+                    try:
+                        factory.approval_engine.verify_signature(s.get(ApprovalModel, approval["id"]))
+                    except ApprovalRequiredError:
+                        approval["verified"] = False
             budget = BudgetRepository(s).get_budget(ctx)
             data["budget"] = row(budget) if budget else None
             data["permissions"] = {
@@ -618,28 +670,21 @@ def create_app(
                 422,
                 "Pilih dan konfirmasikan pengiriman instruksi riset ke model jarak jauh melalui Hermes.",
             )
-        # Replays return saved results even when Hermes is subsequently disconnected.
+        # Core validates the full fingerprint even for cached results, without runtime dispatch.
+        cached = None
         with db.session() as s:
             from database.repositories.run_state_repo import RunStateRepository
-
-            existing = RunStateRepository(s).get_run_by_idempotency_key(
-                ctx, body.idempotency_key
-            )
+            existing = RunStateRepository(s).get_run_by_idempotency_key(ctx, body.idempotency_key)
             if existing:
-                if (
-                    existing.prompt != body.prompt
-                    or existing.session_id != body.assignment_id
-                ):
-                    raise HTTPException(
-                        409,
-                        "Kunci permintaan telah dipakai untuk input atau penugasan berbeda.",
-                    )
-                if existing.status == "completed":
-                    return row(existing)
-                raise HTTPException(
-                    409,
-                    "Permintaan ini sudah diproses. Periksa riwayat sebelum mencoba kembali.",
-                )
+                if existing.prompt != body.prompt or existing.session_id != body.assignment_id:
+                    raise IdempotencyConflictError("Key belongs to different input or assignment.")
+                if existing.status != "completed":
+                    raise RunInProgressError(existing.id, existing.status)
+                cached = row(existing)
+        if cached is not None:
+            await coordinator.execute_assigned_agent_turn(body.assignment_id, body.prompt, ctx, body.idempotency_key)
+            return cached
+        with db.session() as s:
             asgn = AgentRepository(s).get_assignment(ctx, body.assignment_id)
             v = AgentRepository(s).get_version(ctx, asgn.version_id)
             if (

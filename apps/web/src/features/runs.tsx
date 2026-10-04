@@ -18,7 +18,17 @@ export function Runs({ data, workspace, pending, act }: Shared) {
   const [validation, setValidation] = useState("");
   const selected =
     data.runs.find((r) => r.id === params.get("hasil")) || data.runs[0];
-  const active = data.assignments.filter((a) => a.status === "active");
+  const active = data.assignments.filter(
+    (a) =>
+      a.status === "active" &&
+      data.versions.some(
+        (v) =>
+          v.id === a.version_id &&
+          v.blueprint_id === a.blueprint_id &&
+          v.status === "published" &&
+          v.governance_valid,
+      ),
+  );
   const assigned = active.find((a) => a.id === assignment);
   const version = data.versions.find((v) => v.id === assigned?.version_id);
   const submit = async (e: React.FormEvent) => {
@@ -278,7 +288,9 @@ function RunResultPanel({ run, audit }: { run: Run; audit: Audit[] }) {
             </div>
           </div>
           <dl className="result-info">
-            <dt>Model aktual</dt>
+            <dt>
+              {run.status === "completed" ? "Model aktual" : "Model diminta"}
+            </dt>
             <dd className="mono">{run.model}</dd>
             <dt>Provider</dt>
             <dd>{run.provider}</dd>

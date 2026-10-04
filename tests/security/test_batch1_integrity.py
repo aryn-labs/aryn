@@ -5,41 +5,8 @@ import json
 import pytest
 from sqlalchemy import text
 
-from database.connection import DatabaseManager, create_db_engine
 from database.repositories.agent_repo import AgentRepository
-from database.repositories.organization_repo import OrganizationRepository
-from database.schema import Base
-from modules.agent_factory.service import AgentFactoryService
-from modules.bench.runner import BenchRunner
 from modules.core.workflows.coordinator import RunCoordinator
-from packages.contracts.core import Actor, SecurityContext
-from tests.conftest import bind_test_context
-from tests.studio_runtime import IsolatedTestRuntime
-
-
-@pytest.fixture
-def lifecycle(tmp_path):
-    engine = create_db_engine(f"sqlite:///{(tmp_path / 'batch.sqlite3').as_posix()}")
-    Base.metadata.create_all(engine)
-    db = DatabaseManager(engine)
-    ctx = bind_test_context(SecurityContext(
-        actor=Actor(actor_id="owner", organization_id="org", roles=["admin"]),
-        organization_id="org", project_id="project",
-    ))
-    with db.session() as s:
-        repo = OrganizationRepository(s)
-        repo.create_organization("org", "Test", "test")
-        repo.add_member("org", "owner", "admin")
-        repo.create_project(ctx, "project", "Test", "test")
-    runtime = IsolatedTestRuntime()
-    factory = AgentFactoryService(db, BenchRunner(runtime))
-    bp = factory.create_blueprint(ctx, "Integrity", "integrity")
-    version = factory.create_version(
-        ctx, bp.id, "1.0.0", "Follow research safety guidelines.", "mock-fast",
-        metadata={"security": {"tools": "denied"}},
-    )
-    yield db, ctx, runtime, factory, bp, version
-    engine.dispose()
 
 
 def test_hash_covers_security_metadata_and_exact_parameters(lifecycle):

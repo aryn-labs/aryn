@@ -407,6 +407,10 @@ class AgentFactoryService:
         assignment_id = f"asgn_{uuid.uuid4().hex[:16]}"
         with self.db_manager.session(write=True) as session:
             repo = AgentRepository(session)
+            version = repo.get_version(context, version_id, for_update=True)
+            if version.status == "published":
+                self.approval_engine.verify_approval(
+                    context, "agent_version", version_id, version.payload_hash, session=session)
             m = repo.create_assignment(
                 context=context,
                 assignment_id=assignment_id,

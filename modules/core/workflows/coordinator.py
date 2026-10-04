@@ -8,26 +8,25 @@ Complies with ARYN-ARCH-001 Section 03 and AGENTS.md rules 3, 4, 5, 8.
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
-import json
 import importlib
+import json
 import time
 import uuid
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from packages.contracts.core import Actor, ActorType, AuditStatus, SecurityContext
 from packages.contracts.runtime import (
     RunRequest,
     RunResult,
     RunStatus,
-    RunUsage,
     RuntimeAdapter,
     RuntimeTrace,
+    RunUsage,
 )
 
 if TYPE_CHECKING:
-    from packages.model_adapters.router import ModelRouter
+    pass
 
 from modules.core.audit.logger import AuditLogger
 from modules.core.permissions.engine import PermissionDeniedError, PermissionEngine
@@ -90,9 +89,11 @@ class RunCoordinator:
 
     def _claim(self, request, context, mode):
         """Unique insert commits before runtime dispatch. Only its owner may execute."""
-        from database.repositories.run_state_repo import RunStateRepository
         from database.repositories.exceptions import DuplicateEntityError
-        key = request.idempotency_key or request.metadata.get("idempotency_key")
+        from database.repositories.run_state_repo import RunStateRepository
+        key = request.idempotency_key if request.idempotency_key is not None else request.metadata.get("idempotency_key")
+        if key is not None and (not isinstance(key, str) or not key.strip() or len(key) > 255):
+            raise IdempotencyConflictError("Idempotency key must be a nonempty bounded string.")
         fingerprint = self.request_fingerprint(request, context, mode)
         if not self.db_manager:
             raise RuntimeError("Persistent Core state is required for managed execution.")
@@ -145,8 +146,8 @@ class RunCoordinator:
                                      {"error_type": type(exc).__name__, "runtime_outcome": "unknown"}, session=session)
 
     def _complete_dispatch(self, run_id, result, context):
-        from database.repositories.run_state_repo import RunStateRepository
         from database.repositories.budget_repo import BudgetRepository
+        from database.repositories.run_state_repo import RunStateRepository
         with self.db_manager.session(write=True) as session:
             repo = RunStateRepository(session)
             row = repo.get_run(context, run_id)
@@ -154,6 +155,8 @@ class RunCoordinator:
                 return self.stored_result(row)
             if result.model != row.model:
                 raise RuntimeError("Runtime reported a different model; silent fallback is forbidden.")
+            if row.runtime_run_id and row.runtime_run_id != result.run_id:
+                raise RuntimeError("Runtime returned a different run identifier.")
             if (min(result.usage.input_tokens, result.usage.output_tokens, result.usage.total_tokens) < 0
                     or result.usage.total_tokens != result.usage.input_tokens + result.usage.output_tokens):
                 raise RuntimeError("Runtime usage is inconsistent.")
@@ -183,14 +186,26 @@ class RunCoordinator:
                                      {"status": claimed.status.value})
             return claimed
         try:
+            caps = await self.runtime_adapter.capabilities()
+            if not caps.tools_confined or caps.enabled_toolsets:
+                raise PermissionDeniedError("Managed text execution requires all runtime toolsets disabled.")
             if hasattr(self.runtime_adapter, "execute_direct_turn"):
                 result = await self.runtime_adapter.execute_direct_turn(request, context)
             else:
                 runtime_id = await self.runtime_adapter.start_run(request, context)
+                from database.repositories.run_state_repo import RunStateRepository
+                with self.db_manager.session(write=True) as session:
+                    row = RunStateRepository(session).get_run(context, claimed.run_id)
+                    row.runtime_run_id = runtime_id
+                    row.execution_mode = "async"
+                    session.flush()
                 result = await self.runtime_adapter.get_result(runtime_id, context)
             if result.status != RunStatus.COMPLETED:
                 raise RuntimeError("Runtime did not complete the requested direct turn.")
-            return self._complete_dispatch(claimed.run_id, result, context)
+            completed = self._complete_dispatch(claimed.run_id, result, context)
+            if completed.status != RunStatus.COMPLETED:
+                raise RuntimeError("Core execution state was superseded; completion cannot be claimed.")
+            return completed
         except BaseException as exc:
             self._fail_dispatch(claimed.run_id, context, exc)
             raise
@@ -203,6 +218,7 @@ class RunCoordinator:
         idempotency_key: Optional[str] = None,
     ) -> RunResult:
         """Executes a direct turn dispatched to an active AgentAssignment under Core governance."""
+        self.permission_engine.enforce("run:create", context, context.organization_id, context.project_id)
         if not self.db_manager:
             raise RuntimeError("DatabaseManager is required for assigned agent execution.")
 
@@ -214,16 +230,25 @@ class RunCoordinator:
             if assignment.status != "active":
                 raise PermissionDeniedError("Agent assignment is not active.")
             version = repo.get_version(context, assignment.version_id)
+            if version.blueprint_id != assignment.blueprint_id:
+                raise PermissionDeniedError("Assignment blueprint differs from the version blueprint.")
 
             if version.status != "published":
                 raise RuntimeError(
                     f"Agent assignment '{assignment_id}' points to unpublished version '{version.id}' (status: {version.status})."
                 )
+            from modules.core.approvals.engine import ApprovalEngine
+            ApprovalEngine(self.db_manager, permission_engine=self.permission_engine).verify_approval(
+                context, "agent_version", version.id, version.payload_hash, session=session)
+            import json
+            if json.loads(version.tool_grants_json):
+                raise PermissionDeniedError("Assigned text execution does not support tool grants.")
 
             system_prompt = version.system_prompt
             model = version.model
             blueprint_id = assignment.blueprint_id
             version_id = version.id
+            payload_hash = version.payload_hash
             role_name = assignment.role_name
             division_id = assignment.division_id
             temperature = version.temperature
@@ -241,6 +266,7 @@ class RunCoordinator:
                 "assignment_id": assignment_id,
                 "blueprint_id": blueprint_id,
                 "version_id": version_id,
+                "payload_hash": payload_hash,
                 "role_name": role_name,
                 "division_id": division_id,
             },
@@ -254,6 +280,9 @@ class RunCoordinator:
         if not owner:
             return claimed.run_id
         try:
+            caps = await self.runtime_adapter.capabilities()
+            if not caps.tools_confined or caps.enabled_toolsets:
+                raise PermissionDeniedError("Managed asynchronous execution requires all runtime toolsets disabled.")
             runtime_id = await self.runtime_adapter.start_run(request, context)
             from database.repositories.run_state_repo import RunStateRepository
             with self.db_manager.session(write=True) as session:
@@ -265,133 +294,124 @@ class RunCoordinator:
             self._fail_dispatch(claimed.run_id, context, exc)
             raise
 
-    async def get_managed_result(
-        self,
-        run_id: str,
-        context: SecurityContext,
-    ) -> RunResult:
-        """Retrieves run results with permission checks and audit."""
-        self.permission_engine.enforce("run:read", context, context.organization_id, context.project_id)
-        result = await self.runtime_adapter.get_result(run_id, context)
+    def _owned_run(self, run_id, context, action):
+        self.permission_engine.enforce(action, context, context.organization_id, context.project_id)
+        if not self.db_manager:
+            raise RuntimeError("Persistent run ownership is required.")
+        from database.repositories.run_state_repo import RunStateRepository
+        with self.db_manager.session() as session:
+            row = RunStateRepository(session).get_run(context, run_id)
+            return self.stored_result(row), row.runtime_run_id, row.execution_mode
 
-        if self.db_manager:
-            from database.repositories.run_state_repo import RunStateRepository
-            try:
-                with self.db_manager.session() as session:
-                    run_repo = RunStateRepository(session)
-                    if result.status == RunStatus.COMPLETED:
-                        run_repo.transition_status(
-                            context=context,
-                            run_id=run_id,
-                            target_status="completed",
-                            output=result.output,
-                            usage=result.usage,
-                        )
-                    elif result.status == RunStatus.FAILED:
-                        run_repo.transition_status(
-                            context=context,
-                            run_id=run_id,
-                            target_status="failed",
-                            error_message=result.error_message,
-                        )
-            except Exception:
-                pass
-
+    async def get_managed_result(self, run_id: str, context: SecurityContext) -> RunResult:
+        """Authorize the stored Core run before translating its ID to a runtime ID."""
+        stored, runtime_id, mode = self._owned_run(run_id, context, "run:read")
+        if stored.status in {RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELLED}:
+            return stored
+        if mode != "async" or not runtime_id:
+            return stored
+        result = await self.runtime_adapter.get_result(runtime_id, context)
+        if result.run_id != runtime_id:
+            raise RuntimeError("Runtime returned a mismatched run identifier.")
         if result.status == RunStatus.COMPLETED:
-            self.budget_engine.record_usage(context, result.usage)
-            self.audit_logger.record(
-                event_type="core.run.polled_completed",
-                context=context,
-                resource_id=run_id,
-                status=AuditStatus.COMPLETED,
-                payload={"tokens": result.usage.total_tokens},
-            )
-        return result
+            return self._complete_dispatch(run_id, result, context)
+        from database.repositories.run_state_repo import RunStateRepository
+        with self.db_manager.session(write=True) as session:
+            repo = RunStateRepository(session)
+            row = repo.get_run(context, run_id)
+            if row.status in repo.TERMINAL_STATES:
+                return self.stored_result(row)
+            if result.model and result.model != row.model:
+                raise RuntimeError("Runtime reported a different model.")
+            target = result.status.value
+            if target in {"cancelled", "failed"}:
+                if (min(result.usage.input_tokens, result.usage.output_tokens, result.usage.total_tokens) < 0
+                        or result.usage.total_tokens != result.usage.input_tokens + result.usage.output_tokens):
+                    raise RuntimeError("Runtime usage is inconsistent.")
+                repo.transition_status(context, run_id, target, usage=result.usage,
+                                       error_message="Runtime melaporkan kegagalan eksekusi." if target == "failed" else None)
+                from database.repositories.budget_repo import BudgetRepository
+                BudgetRepository(session).record_usage(context, result.usage.total_tokens)
+                self.audit_logger.record("core.run.cancelled" if target == "cancelled" else "core.run.failed",
+                                         context, run_id, AuditStatus.CANCELLED if target == "cancelled" else AuditStatus.FAILED,
+                                         {"runtime_confirmed": True, "runtime_run_id": runtime_id}, session=session)
+            elif target in repo.VALID_TRANSITIONS.get(row.status, set()):
+                repo.transition_status(context, run_id, target)
+            return self.stored_result(row)
 
-    async def cancel_managed_run(
-        self,
-        run_id: str,
-        context: SecurityContext,
-    ) -> bool:
-        """Cancels a run with permission check and audit."""
-        self.permission_engine.enforce("run:cancel", context, context.organization_id, context.project_id)
-        cancelled = await self.runtime_adapter.cancel_run(run_id, context)
+    async def cancel_managed_run(self, run_id: str, context: SecurityContext) -> bool:
+        """Return True only for cancellation proven by stored/runtime terminal state."""
+        stored, runtime_id, mode = self._owned_run(run_id, context, "run:cancel")
+        if stored.status in {RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELLED}:
+            return stored.status == RunStatus.CANCELLED
+        if mode != "async" or not runtime_id:
+            self.audit_logger.record("core.run.cancellation.unavailable", context, run_id, AuditStatus.ATTEMPTED,
+                                     {"reason": "No cancellable runtime run mapping", "cancellation_confirmed": False})
+            return False
+        accepted = await self.runtime_adapter.cancel_run(runtime_id, context)
+        from database.repositories.run_state_repo import RunStateRepository
+        with self.db_manager.session(write=True) as session:
+            repo = RunStateRepository(session)
+            row = repo.get_run(context, run_id)
+            if row.status in repo.TERMINAL_STATES:
+                return row.status == "cancelled"
+            if accepted and row.status != "stopping":
+                repo.transition_status(context, run_id, "stopping")
+            self.audit_logger.record("core.run.cancellation.requested", context, run_id,
+                                     AuditStatus.ATTEMPTED if accepted else AuditStatus.FAILED,
+                                     {"accepted": accepted, "cancellation_confirmed": False}, session=session)
+        if not accepted:
+            return False
+        try:
+            confirmed = await self.get_managed_result(run_id, context)
+        except Exception:
+            # The stop acknowledgment is not proof; leave stopping for later polling/recovery.
+            return False
+        return confirmed.status == RunStatus.CANCELLED
 
-        if self.db_manager:
-            from database.repositories.run_state_repo import RunStateRepository
-            try:
-                with self.db_manager.session() as session:
-                    run_repo = RunStateRepository(session)
-                    run_repo.transition_status(context=context, run_id=run_id, target_status="cancelled")
-            except Exception:
-                pass
-
-        self.audit_logger.record(
-            event_type="core.run.cancelled",
-            context=context,
-            resource_id=run_id,
-            status=AuditStatus.CANCELLED,
-            payload={"success": cancelled},
-        )
-        return cancelled
-
-    async def get_managed_trace(
-        self,
-        run_id: str,
-        context: SecurityContext,
-    ) -> RuntimeTrace:
-        """Retrieves execution trace with permission check."""
-        self.permission_engine.enforce("run:trace", context, context.organization_id, context.project_id)
-        trace = await self.runtime_adapter.get_trace(run_id, context)
+    async def get_managed_trace(self, run_id: str, context: SecurityContext) -> RuntimeTrace:
+        stored, runtime_id, mode = self._owned_run(run_id, context, "run:trace")
+        if mode != "async" or not runtime_id:
+            return RuntimeTrace(run_id=run_id, available=False,
+                                unavailability_reason="Trace runtime untuk eksekusi langsung belum tersedia. Audit Core tetap tersedia.")
+        trace = await self.runtime_adapter.get_trace(runtime_id, context)
+        if trace.run_id != runtime_id:
+            raise RuntimeError("Runtime returned a mismatched trace identifier.")
+        trace.run_id = run_id
+        if not trace.available:
+            trace.events = []
+            trace.raw_trace = None
         return trace
 
     def recover_in_flight_runs(self, context: Optional[SecurityContext] = None) -> List[Dict[str, Any]]:
-        """Recovers runs left in non-terminal states after a system restart or crash.
+        """Startup reconciliation marks local outcome unknown, never cancellation success.
 
-        Transitions abandoned runs to 'failed' with descriptive cause and records audit events.
+        The unscoped form is an internal startup operation; it is not exposed by the API.
+        A caller supplying a context is authorized and restricted to that exact project.
         """
         if not self.db_manager:
             return []
-
-        recovered: List[Dict[str, Any]] = []
+        if context is not None:
+            self.permission_engine.enforce("run:cancel", context, context.organization_id, context.project_id)
         from database.repositories.run_state_repo import RunStateRepository
-
-        with self.db_manager.session() as session:
+        recovered = []
+        with self.db_manager.session(write=True) as session:
             repo = RunStateRepository(session)
-            org_id = context.organization_id if context else None
-            in_flight = repo.list_in_flight_runs(organization_id=org_id)
-
-            for run in in_flight:
+            runs = repo.list_in_flight_runs(context.organization_id if context else None,
+                                           context.project_id if context else None)
+            for row in runs:
                 ctx = context or SecurityContext(
-                    organization_id=run.organization_id,
-                    project_id=run.project_id,
-                    actor=Actor(
-                        actor_id="system_recovery",
-                        actor_type=ActorType.SYSTEM,
-                        organization_id=run.organization_id,
-                        roles=["admin"],
-                    ),
-                    correlation_id=f"recovery_{run.id}",
+                    organization_id=row.organization_id, project_id=row.project_id,
+                    actor=Actor(actor_id="system_recovery", actor_type=ActorType.SYSTEM,
+                                organization_id=row.organization_id, roles=[]),
+                    correlation_id=f"recovery_{row.id}",
                 )
-                if self.permission_engine and getattr(self.permission_engine, "identity_binder", None):
-                    self.permission_engine.identity_binder.bind_context(ctx)
-                try:
-                    prev_status = run.status
-                    repo.transition_status(
-                        ctx,
-                        run.id,
-                        target_status="failed",
-                        error_message="Aborted due to system restart / crash recovery",
-                    )
-                    self.audit_logger.record(
-                        event_type="core.run.recovered",
-                        context=ctx,
-                        resource_id=run.id,
-                        status=AuditStatus.FAILED,
-                        payload={"reason": "system_restart_recovery", "previous_status": prev_status},
-                    )
-                    recovered.append({"run_id": run.id, "previous_status": prev_status, "status": "failed"})
-                except Exception as exc:
-                    recovered.append({"run_id": run.id, "error": str(exc)})
-
+                previous = row.status
+                repo.transition_status(ctx, row.id, "failed",
+                                       error_message="Aborted due to system restart / crash recovery; runtime outcome unknown; cancellation not confirmed.")
+                self.audit_logger.record("core.run.recovered", ctx, row.id, AuditStatus.FAILED,
+                                         {"reason": "system_restart_recovery", "previous_status": previous,
+                                          "runtime_outcome": "unknown", "cancellation_confirmed": False}, session=session)
+                recovered.append({"run_id": row.id, "previous_status": previous, "status": "failed",
+                                  "runtime_outcome": "unknown", "cancellation_confirmed": False})
         return recovered

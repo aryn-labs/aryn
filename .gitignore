@@ -6,6 +6,7 @@
 *.p12
 *.pfx
 *.key
+.aryn-key-*
 **/secrets/
 **/.secrets/
 # Python

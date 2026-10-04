@@ -80,6 +80,8 @@ class BenchRepository:
 
     def validate_stored(self, context, row, version):
         try:
+            if row.passed not in {0, 1}:
+                raise ValueError("Invalid stored pass indicator.")
             provenance = json.loads(row.provenance_json)
             result = BenchEvaluationResult(
                 evaluation_id=row.id, blueprint_id=row.blueprint_id, version_id=row.version_id,
@@ -93,7 +95,6 @@ class BenchRepository:
             if stored_time != datetime.datetime.fromisoformat(result.evaluated_at):
                 raise ValueError("Evaluation timestamp differs.")
             self.verify_result(context, result, version, row.evaluated_by)
-            BenchQualityGate().enforce(result)
             return result
         except (ValueError, TypeError) as exc:
             raise QualityGateFailedError("Stored Bench evidence is malformed or unverified.") from exc
@@ -131,5 +132,5 @@ class BenchRepository:
         version = AgentVersion.from_stored(AgentRepository(self.session).get_version(context, version_id))
         if version.evaluation_id != latest.id:
             raise QualityGateFailedError("Latest evaluation differs from the version evidence reference.")
-        self.validate_stored(context, latest, version)
+        BenchQualityGate().enforce(self.validate_stored(context, latest, version))
         return latest

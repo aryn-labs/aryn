@@ -223,17 +223,12 @@ export function App() {
               {n.path === "/approvals" &&
                 data &&
                 data.versions.filter(
-                  (v) =>
-                    v.status === "draft" &&
-                    data.evaluations.find((e) => e.version_id === v.id)?.passed,
+                  (v) => v.status === "draft" && v.bench_eligible,
                 ).length > 0 && (
                   <small className="nav-count">
                     {
                       data.versions.filter(
-                        (v) =>
-                          v.status === "draft" &&
-                          data.evaluations.find((e) => e.version_id === v.id)
-                            ?.passed,
+                        (v) => v.status === "draft" && v.bench_eligible,
                       ).length
                     }
                   </small>

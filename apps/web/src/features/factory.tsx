@@ -188,7 +188,7 @@ export function AgentDetail({
     selected && data.evaluations.find((e) => e.version_id === selected.id);
   const assignment =
     selected && data.assignments.find((a) => a.version_id === selected.id);
-  const passed = !!evaluation?.passed;
+  const passed = !!selected?.bench_eligible;
   const stage = !selected
     ? 1
     : assignment
@@ -276,6 +276,14 @@ export function AgentDetail({
         </div>
         <span className="mono subtle">{blueprint.id}</span>
       </div>
+      {selected &&
+        (!selected.integrity_valid ||
+          (selected.status === "published" && !selected.governance_valid)) && (
+          <Notice tone="error">
+            Integritas atau bukti tata kelola versi tidak valid. Buat versi
+            baru, jalankan Bench, dan setujui kembali.
+          </Notice>
+        )}
       <div className="lifecycle-panel">
         <Lifecycle current={stage} />
       </div>
@@ -401,6 +409,7 @@ export function AgentDetail({
                         disabled={
                           pending ||
                           !workspace.runtime.ready ||
+                          !selected.integrity_valid ||
                           !["draft", "rejected"].includes(selected.status) ||
                           !data.permissions["run:create"]
                         }
@@ -445,6 +454,7 @@ export function AgentDetail({
                         disabled={
                           pending ||
                           selected.status !== "approved" ||
+                          !selected.governance_valid ||
                           !passed ||
                           !data.permissions["version:publish"]
                         }
@@ -454,22 +464,23 @@ export function AgentDetail({
                       </Button>
                     </div>
                   </Panel>
-                  {selected.status === "published" && (
-                    <div className="mt-6">
-                      <Notice tone="success">
-                        Versi ini dipublikasikan dan tidak dapat diubah.
-                        Lanjutkan ke penugasan.
-                      </Notice>
-                      <Button
-                        className="mt-4"
-                        onClick={() => changeTab("assignment")}
-                        variant="secondary"
-                      >
-                        Atur penugasan
-                        <ArrowRight size={15} />
-                      </Button>
-                    </div>
-                  )}
+                  {selected.status === "published" &&
+                    selected.governance_valid && (
+                      <div className="mt-6">
+                        <Notice tone="success">
+                          Versi ini dipublikasikan dan tidak dapat diubah.
+                          Lanjutkan ke penugasan.
+                        </Notice>
+                        <Button
+                          className="mt-4"
+                          onClick={() => changeTab("assignment")}
+                          variant="secondary"
+                        >
+                          Atur penugasan
+                          <ArrowRight size={15} />
+                        </Button>
+                      </div>
+                    )}
                 </div>
               </div>
             ) : tab === "bench" ? (
@@ -483,6 +494,7 @@ export function AgentDetail({
                     disabled={
                       pending ||
                       !workspace.runtime.ready ||
+                      !selected.integrity_valid ||
                       !["draft", "rejected"].includes(selected.status) ||
                       !data.permissions["run:create"]
                     }
@@ -515,6 +527,7 @@ export function AgentDetail({
                     disabled={
                       pending ||
                       selected.status !== "published" ||
+                      !selected.governance_valid ||
                       !data.permissions["agent:assign"]
                     }
                     onClick={() => openDialog("assign")}
@@ -524,7 +537,8 @@ export function AgentDetail({
                   </Button>
                 }
               >
-                {selected.status !== "published" ? (
+                {selected.status !== "published" ||
+                !selected.governance_valid ? (
                   <Empty
                     title="Publikasikan versi terlebih dahulu"
                     description="Core menolak penugasan versi yang belum dipublikasikan. Selesaikan Bench, persetujuan, dan publikasi."

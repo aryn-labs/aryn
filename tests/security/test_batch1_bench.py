@@ -5,16 +5,14 @@ import json
 import pytest
 from sqlalchemy import text
 
-from database.repositories.bench_repo import BenchRepository
-from modules.bench.quality_gate import QualityGateFailedError
-from packages.contracts.bench import BenchEvaluationResult
 from database.connection import DatabaseManager
+from database.repositories.bench_repo import BenchRepository
 from modules.agent_factory.service import AgentFactoryService
+from modules.bench.quality_gate import QualityGateFailedError
 from modules.bench.runner import BenchRunner
 from modules.bench.scenarios import get_standard_research_bench_scenarios
-from packages.contracts.runtime import RunStatus
+from packages.contracts.bench import BenchEvaluationResult
 from tests.studio_runtime import IsolatedTestRuntime
-from tests.security.test_batch1_integrity import lifecycle
 
 
 def test_inserting_fabricated_pass_is_rejected(lifecycle):

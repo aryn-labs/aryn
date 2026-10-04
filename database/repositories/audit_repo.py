@@ -71,7 +71,7 @@ class AuditRepository:
         event = self.session.query(AuditEventModel).filter_by(event_id=event_id).first()
         if not event:
             raise EntityNotFoundError(f"Audit event '{event_id}' not found.")
-        if event.organization_id != context.organization_id:
+        if event.organization_id != context.organization_id or event.project_id != context.project_id:
             raise TenantIsolationError(
                 f"Tenant boundary violation: Audit event belongs to org '{event.organization_id}', "
                 f"not context org '{context.organization_id}'."
@@ -84,6 +84,7 @@ class AuditRepository:
             self.session.query(AuditEventModel)
             .filter_by(
                 organization_id=context.organization_id,
+                project_id=context.project_id,
                 correlation_id=correlation_id,
             )
             .order_by(AuditEventModel.occurred_at.asc())

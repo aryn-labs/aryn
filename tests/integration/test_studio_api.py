@@ -3,6 +3,7 @@ import secrets
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 
 from database.connection import DatabaseManager, create_db_engine, init_db
 from database.repositories.organization_repo import OrganizationRepository
@@ -472,3 +473,39 @@ def test_schema_upgrade_004_retains_data(tmp_path):
             for r in connection.exec_driver_sql("PRAGMA table_info(bench_evaluations)")
         }
     engine.dispose()
+
+
+def test_snapshot_cannot_present_tampered_configuration_as_eligible(studio):
+    client, db, runtime, app = studio
+    bp, version = draft(client)
+    assignment = promoted(client, bp, version)
+    valid = client.get(PREFIX + "/snapshot").json()
+    assert valid["versions"][0]["governance_valid"]
+    assert valid["evaluations"][0]["verified"]
+    assert valid["approvals"][0]["verified"]
+    with db.session() as s:
+        s.execute(text("UPDATE agent_versions SET system_prompt='Changed without hash' WHERE id=:id"), {"id": version["id"]})
+    snapshot = client.get(PREFIX + "/snapshot").json()
+    assert not snapshot["versions"][0]["integrity_valid"]
+    assert not snapshot["versions"][0]["bench_eligible"]
+    assert not snapshot["versions"][0]["governance_valid"]
+    assert not snapshot["evaluations"][0]["verified"]
+    assert not snapshot["approvals"][0]["verified"]
+    before = len(runtime.requests)
+    response = client.post(PREFIX + "/runs", json={
+        "assignment_id": assignment["id"], "prompt": "Research safely",
+        "idempotency_key": secrets.token_hex(16), "allow_remote_model": True,
+    })
+    assert response.status_code == 409 and len(runtime.requests) == before
+
+
+def test_snapshot_marks_forged_bench_and_malformed_details_unverified(studio):
+    client, db, runtime, app = studio
+    bp, version = draft(client)
+    client.post(PREFIX + f"/versions/{version['id']}/bench", json={"allow_remote_model": True})
+    with db.session() as s:
+        s.execute(text("UPDATE bench_evaluations SET details_json='malformed'"))
+    response = client.get(PREFIX + "/snapshot")
+    assert response.status_code == 200
+    assert not response.json()["evaluations"][0]["verified"]
+    assert not response.json()["versions"][0]["bench_eligible"]

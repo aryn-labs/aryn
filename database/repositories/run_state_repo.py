@@ -24,7 +24,7 @@ class RunStateRepository:
     # Deterministic State Machine Map
     VALID_TRANSITIONS: Dict[str, Set[str]] = {
         "queued": {"started", "cancelled", "failed"},
-        "started": {"running", "completed", "cancelled", "failed"},
+        "started": {"running", "stopping", "completed", "cancelled", "failed"},
         "running": {"completed", "stopping", "cancelled", "failed"},
         "stopping": {"cancelled", "completed", "failed"},
         # Terminal states have NO outgoing transitions
@@ -149,11 +149,13 @@ class RunStateRepository:
         self.session.refresh(run)
         return run
 
-    def list_in_flight_runs(self, organization_id: Optional[str] = None) -> List[RunStateModel]:
+    def list_in_flight_runs(self, organization_id: Optional[str] = None, project_id: Optional[str] = None) -> List[RunStateModel]:
         """Lists runs currently in non-terminal states (for restart recovery)."""
         query = self.session.query(RunStateModel).filter(
             RunStateModel.status.in_(["queued", "started", "running", "stopping"])
         )
         if organization_id:
             query = query.filter_by(organization_id=organization_id)
+        if project_id:
+            query = query.filter_by(project_id=project_id)
         return query.all()

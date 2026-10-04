@@ -16,6 +16,9 @@ export type Version = {
   max_tokens: number;
   payload_hash: string;
   evaluation_id?: string;
+  integrity_valid: boolean;
+  bench_eligible: boolean;
+  governance_valid: boolean;
   created_at: string;
 };
 export type Scenario = {
@@ -35,6 +38,7 @@ export type Evaluation = {
   blueprint_id: string;
   version_id: string;
   passed: number;
+  verified: boolean;
   total_scenarios: number;
   passed_scenarios: number;
   score: number;
@@ -60,6 +64,8 @@ export type Approval = {
   target_id: string;
   payload_hash: string;
   approved_by: string;
+  verified: boolean;
+  evaluation_id?: string;
   comments: string;
   created_at: string;
   status: string;
