@@ -53,7 +53,7 @@ from modules.core.audit.logger import AuditLogger
 from modules.core.identity.binder import TrustedIdentityBinder
 from modules.core.permissions.engine import PermissionDeniedError, PermissionEngine
 from modules.core.usage.engine import BudgetExceededError
-from modules.core.workflows.coordinator import RunCoordinator
+from modules.core.workflows.coordinator import RunCoordinator, RunInProgressError, IdempotencyConflictError
 from packages.contracts.bench import RESEARCH_BENCH_VERSION
 from packages.contracts.agent import VersionIntegrityError
 from packages.contracts.core import AuditStatus
@@ -300,6 +300,8 @@ def create_app(
         )
 
     exception_map = {
+        RunInProgressError: (409, "Permintaan masih berjalan. Periksa riwayat; model tidak dijalankan ulang."),
+        IdempotencyConflictError: (409, "Kunci permintaan sudah terikat pada input atau konfigurasi berbeda."),
         VersionIntegrityError: (
             409,
             "Integritas konfigurasi versi tidak valid atau memakai hash lama. Buat versi baru, jalankan Bench, dan setujui kembali.",

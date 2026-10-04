@@ -9,6 +9,8 @@ Complies with ARYN-ARCH-001 Section 03 and AGENTS.md rules 3, 4, 5, 8.
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import importlib
 import time
 import uuid
@@ -30,6 +32,16 @@ if TYPE_CHECKING:
 from modules.core.audit.logger import AuditLogger
 from modules.core.permissions.engine import PermissionDeniedError, PermissionEngine
 from modules.core.usage.engine import BudgetEngine, BudgetExceededError
+
+
+class IdempotencyConflictError(RuntimeError):
+    pass
+
+
+class RunInProgressError(RuntimeError):
+    def __init__(self, run_id, status):
+        self.run_id, self.status = run_id, status
+        super().__init__(f"Run '{run_id}' is in progress ({status}); duplicate dispatch is forbidden.")
 
 
 class RunCoordinator:
@@ -58,194 +70,129 @@ class RunCoordinator:
         else:
             self.model_router = model_router
 
-    async def execute_managed_direct_turn(
-        self,
-        request: RunRequest,
-        context: SecurityContext,
-    ) -> RunResult:
-        """Executes a direct turn under complete Core governance and state machine validation."""
-        # 1. Authoritative Permissions Gate (Deterministic tenant, project, role, permission check)
+    @staticmethod
+    def stored_result(row):
+        return RunResult(
+            run_id=row.id, status=RunStatus(row.status), output=row.output or "",
+            usage=RunUsage(input_tokens=row.input_tokens, output_tokens=row.output_tokens, total_tokens=row.total_tokens),
+            model=row.model, created_at=row.created_at.timestamp(),
+            completed_at=row.completed_at.timestamp() if row.completed_at else None,
+            error_message=row.error_message,
+        )
+
+    @staticmethod
+    def request_fingerprint(request, context, mode):
+        data = request.model_dump(mode="json", exclude={"idempotency_key"})
+        data["metadata"].pop("idempotency_key", None)
+        payload = {"request": data, "mode": mode, "actor_id": context.actor.actor_id,
+                   "organization_id": context.organization_id, "project_id": context.project_id}
+        return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest()
+
+    def _claim(self, request, context, mode):
+        """Unique insert commits before runtime dispatch. Only its owner may execute."""
+        from database.repositories.run_state_repo import RunStateRepository
+        from database.repositories.exceptions import DuplicateEntityError
+        key = request.idempotency_key or request.metadata.get("idempotency_key")
+        fingerprint = self.request_fingerprint(request, context, mode)
+        if not self.db_manager:
+            raise RuntimeError("Persistent Core state is required for managed execution.")
+        if key:
+            with self.db_manager.session() as session:
+                existing = RunStateRepository(session).get_run_by_idempotency_key(context, key)
+                if existing:
+                    if existing.request_hash != fingerprint:
+                        raise IdempotencyConflictError("Idempotency conflict: key belongs to a different request or configuration.")
+                    return False, self.stored_result(existing)
+        spec = self.model_router.resolve_model(request.model)
+        try:
+            self.budget_engine.check_preflight(
+                context, max(1000, request.max_tokens + (len(request.prompt) + len(request.system_instructions or "")) // 3))
+        except BudgetExceededError as exc:
+            self.audit_logger.record("core.run.budget_exceeded", context, "run_request", AuditStatus.DENIED, {"reason": str(exc)})
+            raise
+        run_id = f"run_{uuid.uuid4().hex}"
+        try:
+            with self.db_manager.session(write=True) as session:
+                repo = RunStateRepository(session)
+                repo.create_run(context, run_id, request.prompt, spec.model_id, spec.provider.value,
+                                request.session_id, key, request_hash=fingerprint, execution_mode=mode)
+                repo.transition_status(context, run_id, "started")
+                self.audit_logger.record("core.run.initiated" if mode == "direct" else "core.run.queued",
+                                         context, run_id, AuditStatus.ALLOWED,
+                                         {"model": spec.model_id, "provider": spec.provider.value, "prompt": request.prompt}, session=session)
+        except DuplicateEntityError:
+            if not key:
+                raise
+            with self.db_manager.session() as session:
+                existing = RunStateRepository(session).get_run_by_idempotency_key(context, key)
+                if existing is None:
+                    raise
+                if existing.request_hash != fingerprint:
+                    raise IdempotencyConflictError("Idempotency conflict: key belongs to a different request or configuration.")
+                return False, self.stored_result(existing)
+        return True, RunResult(run_id=run_id, status=RunStatus.STARTED, output="", model=spec.model_id, created_at=time.time())
+
+    def _fail_dispatch(self, run_id, context, exc):
+        from database.repositories.run_state_repo import RunStateRepository
+        with self.db_manager.session(write=True) as session:
+            repo = RunStateRepository(session)
+            row = repo.get_run(context, run_id)
+            if row.status in repo.TERMINAL_STATES:
+                return
+            message = f"Execution interrupted ({type(exc).__name__}); runtime outcome may be unknown."
+            repo.transition_status(context, run_id, "failed", error_message=message)
+            self.audit_logger.record("core.run.failed", context, run_id, AuditStatus.FAILED,
+                                     {"error_type": type(exc).__name__, "runtime_outcome": "unknown"}, session=session)
+
+    def _complete_dispatch(self, run_id, result, context):
+        from database.repositories.run_state_repo import RunStateRepository
+        from database.repositories.budget_repo import BudgetRepository
+        with self.db_manager.session(write=True) as session:
+            repo = RunStateRepository(session)
+            row = repo.get_run(context, run_id)
+            if row.status in repo.TERMINAL_STATES:
+                return self.stored_result(row)
+            if result.model != row.model:
+                raise RuntimeError("Runtime reported a different model; silent fallback is forbidden.")
+            if (min(result.usage.input_tokens, result.usage.output_tokens, result.usage.total_tokens) < 0
+                    or result.usage.total_tokens != result.usage.input_tokens + result.usage.output_tokens):
+                raise RuntimeError("Runtime usage is inconsistent.")
+            row.runtime_run_id = result.run_id
+            session.flush()
+            repo.transition_status(context, run_id, "completed", output=result.output, usage=result.usage)
+            BudgetRepository(session).record_usage(context, result.usage.total_tokens)
+            self.audit_logger.record("core.run.completed", context, run_id, AuditStatus.COMPLETED,
+                                     {"model": result.model, "input_tokens": result.usage.input_tokens,
+                                      "output_tokens": result.usage.output_tokens, "total_tokens": result.usage.total_tokens}, session=session)
+            result.run_id = run_id
+            return result
+
+    async def execute_managed_direct_turn(self, request: RunRequest, context: SecurityContext) -> RunResult:
         try:
             self.permission_engine.enforce("run:create", context, context.organization_id, context.project_id)
         except PermissionDeniedError as exc:
-            self.audit_logger.record(
-                event_type="core.run.denied",
-                context=context,
-                resource_id="run_request",
-                status=AuditStatus.DENIED,
-                payload={"reason": str(exc), "prompt": request.prompt},
-            )
+            self.audit_logger.record("core.run.denied", context, "run_request", AuditStatus.DENIED,
+                                     {"reason": str(exc), "prompt": request.prompt})
             raise
-
-        # 2. Idempotency Check
-        idempotency_key = request.idempotency_key or request.metadata.get("idempotency_key")
-        if self.db_manager and idempotency_key:
-            from database.repositories.run_state_repo import RunStateRepository
-            with self.db_manager.session() as session:
-                run_repo = RunStateRepository(session)
-                existing = run_repo.get_run_by_idempotency_key(context, idempotency_key)
-                if existing and existing.status == "completed":
-                    self.audit_logger.record(
-                        event_type="core.run.idempotent_cached",
-                        context=context,
-                        resource_id=existing.id,
-                        status=AuditStatus.COMPLETED,
-                        payload={"idempotency_key": idempotency_key},
-                    )
-                    return RunResult(
-                        run_id=existing.id,
-                        status=RunStatus.COMPLETED,
-                        output=existing.output or "",
-                        usage=RunUsage(
-                            input_tokens=existing.input_tokens,
-                            output_tokens=existing.output_tokens,
-                            total_tokens=existing.total_tokens,
-                        ),
-                        model=existing.model,
-                        created_at=existing.created_at.timestamp(),
-                        completed_at=existing.completed_at.timestamp() if existing.completed_at else None,
-                    )
-
-        # 3. Model Routing & Policy Validation (ADR-005: No silent fallback)
-        spec = self.model_router.resolve_model(request.model)
-
-        # 4. Budget & Quota Preflight Check
-        try:
-            self.budget_engine.check_preflight(context)
-        except BudgetExceededError as exc:
-            self.audit_logger.record(
-                event_type="core.run.budget_exceeded",
-                context=context,
-                resource_id="run_request",
-                status=AuditStatus.DENIED,
-                payload={"reason": str(exc)},
-            )
-            raise
-
-        # 5. Persistent State - Initialize in 'queued' then 'started'
-        run_id = f"run_{uuid.uuid4().hex}"
-        if self.db_manager:
-            from database.repositories.run_state_repo import RunStateRepository
-            from database.repositories.exceptions import DuplicateEntityError
-            from sqlalchemy.exc import IntegrityError
-            try:
-                with self.db_manager.session() as session:
-                    run_repo = RunStateRepository(session)
-                    run_repo.create_run(
-                        context=context,
-                        run_id=run_id,
-                        prompt=request.prompt,
-                        model=spec.model_id,
-                        provider=spec.provider.value,
-                        session_id=request.session_id,
-                        idempotency_key=idempotency_key,
-                    )
-                    run_repo.transition_status(context, run_id, "started")
-            except (IntegrityError, DuplicateEntityError):
-                if idempotency_key:
-                    with self.db_manager.session() as session:
-                        run_repo = RunStateRepository(session)
-                        existing = run_repo.get_run_by_idempotency_key(context, idempotency_key)
-                        if existing and existing.status == "completed":
-                            return RunResult(
-                                run_id=existing.id,
-                                status=RunStatus.COMPLETED,
-                                output=existing.output or "",
-                                usage=RunUsage(
-                                    input_tokens=existing.input_tokens,
-                                    output_tokens=existing.output_tokens,
-                                    total_tokens=existing.total_tokens,
-                                ),
-                                model=existing.model,
-                                created_at=existing.created_at.timestamp(),
-                                completed_at=existing.completed_at.timestamp() if existing.completed_at else None,
-                            )
-                        elif existing:
-                            run_id = existing.id
-                else:
-                    raise
-
-        # 6. Pre-execution Audit
-        self.audit_logger.record(
-            event_type="core.run.initiated",
-            context=context,
-            resource_id=run_id,
-            status=AuditStatus.ALLOWED,
-            payload={
-                "model": spec.model_id,
-                "provider": spec.provider.value,
-                "prompt": request.prompt,
-            },
-        )
-
-        # 7. Dispatch to Runtime Adapter
+        owner, claimed = self._claim(request, context, "direct")
+        if not owner:
+            if claimed.status not in {RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELLED}:
+                raise RunInProgressError(claimed.run_id, claimed.status.value)
+            self.audit_logger.record("core.run.idempotent_cached", context, claimed.run_id,
+                                     AuditStatus.COMPLETED if claimed.status == RunStatus.COMPLETED else AuditStatus.FAILED,
+                                     {"status": claimed.status.value})
+            return claimed
         try:
             if hasattr(self.runtime_adapter, "execute_direct_turn"):
                 result = await self.runtime_adapter.execute_direct_turn(request, context)
             else:
-                adapter_run_id = await self.runtime_adapter.start_run(request, context)
-                result = await self.runtime_adapter.get_result(adapter_run_id, context)
-
-            if self.db_manager:
-                result.run_id = run_id
-
+                runtime_id = await self.runtime_adapter.start_run(request, context)
+                result = await self.runtime_adapter.get_result(runtime_id, context)
             if result.status != RunStatus.COMPLETED:
                 raise RuntimeError("Runtime did not complete the requested direct turn.")
-
-            # 8. Post-execution Persistent State Transition to 'completed'
-            if self.db_manager:
-                from database.repositories.run_state_repo import RunStateRepository
-                with self.db_manager.session() as session:
-                    run_repo = RunStateRepository(session)
-                    run_repo.transition_status(
-                        context=context,
-                        run_id=run_id,
-                        target_status="completed",
-                        output=result.output,
-                        usage=result.usage,
-                    )
-
-            # 9. Budget Usage Recording
-            self.budget_engine.record_usage(context, result.usage)
-
-            # 10. Post-execution Audit
-            self.audit_logger.record(
-                event_type="core.run.completed",
-                context=context,
-                resource_id=result.run_id or run_id,
-                status=AuditStatus.COMPLETED,
-                payload={
-                    "status": result.status.value,
-                    "input_tokens": result.usage.input_tokens,
-                    "output_tokens": result.usage.output_tokens,
-                    "total_tokens": result.usage.total_tokens,
-                    "model": result.model,
-                },
-            )
-            return result
-
-        except Exception as exc:
-            if self.db_manager:
-                from database.repositories.run_state_repo import RunStateRepository
-                try:
-                    with self.db_manager.session() as session:
-                        run_repo = RunStateRepository(session)
-                        run_repo.transition_status(
-                            context=context,
-                            run_id=run_id,
-                            target_status="failed",
-                            error_message=str(exc),
-                        )
-                except Exception:
-                    pass
-
-            self.audit_logger.record(
-                event_type="core.run.failed",
-                context=context,
-                resource_id=run_id,
-                status=AuditStatus.FAILED,
-                payload={"error": str(exc)},
-            )
+            return self._complete_dispatch(claimed.run_id, result, context)
+        except BaseException as exc:
+            self._fail_dispatch(claimed.run_id, context, exc)
             raise
 
     async def execute_assigned_agent_turn(
@@ -300,60 +247,23 @@ class RunCoordinator:
         )
         return await self.execute_managed_direct_turn(req, context)
 
-    async def start_managed_run(
-        self,
-        request: RunRequest,
-        context: SecurityContext,
-    ) -> str:
-        """Starts an async run through Core governance."""
-        # 1. Authoritative Permissions Gate
+    async def start_managed_run(self, request: RunRequest, context: SecurityContext) -> str:
+        """Claim the Core ID before any asynchronous runtime start."""
         self.permission_engine.enforce("run:create", context, context.organization_id, context.project_id)
-
-        # 2. Idempotency Check
-        idempotency_key = request.idempotency_key or request.metadata.get("idempotency_key")
-        if self.db_manager and idempotency_key:
+        owner, claimed = self._claim(request, context, "async")
+        if not owner:
+            return claimed.run_id
+        try:
+            runtime_id = await self.runtime_adapter.start_run(request, context)
             from database.repositories.run_state_repo import RunStateRepository
-            with self.db_manager.session() as session:
-                run_repo = RunStateRepository(session)
-                existing = run_repo.get_run_by_idempotency_key(context, idempotency_key)
-                if existing:
-                    return existing.id
-
-        # 3. Model Routing Policy Validation
-        spec = self.model_router.resolve_model(request.model)
-
-        # 4. Budget Check
-        self.budget_engine.check_preflight(context)
-
-        # 5. Dispatch to Runtime Adapter
-        run_id = await self.runtime_adapter.start_run(request, context)
-
-        # 6. Persistent State
-        if self.db_manager:
-            from database.repositories.run_state_repo import RunStateRepository
-            with self.db_manager.session() as session:
-                run_repo = RunStateRepository(session)
-                run_repo.create_run(
-                    context=context,
-                    run_id=run_id,
-                    prompt=request.prompt,
-                    model=spec.model_id,
-                    provider=spec.provider.value,
-                    session_id=request.session_id,
-                    idempotency_key=idempotency_key,
-                )
-                run_repo.transition_status(context, run_id, "started")
-
-        # 7. Audit
-        self.audit_logger.record(
-            event_type="core.run.queued",
-            context=context,
-            resource_id=run_id,
-            status=AuditStatus.ALLOWED,
-            payload={"model": spec.model_id, "prompt": request.prompt},
-        )
-
-        return run_id
+            with self.db_manager.session(write=True) as session:
+                row = RunStateRepository(session).get_run(context, claimed.run_id)
+                row.runtime_run_id = runtime_id
+                session.flush()
+            return claimed.run_id
+        except BaseException as exc:
+            self._fail_dispatch(claimed.run_id, context, exc)
+            raise
 
     async def get_managed_result(
         self,

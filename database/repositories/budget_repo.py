@@ -49,11 +49,11 @@ class BudgetRepository:
                 cumulative_tokens=0,
                 cumulative_cost_usd=0.0,
             )
-            self.session.add(budget)
             try:
-                self.session.flush()
+                with self.session.begin_nested():
+                    self.session.add(budget)
+                    self.session.flush()
             except IntegrityError:
-                self.session.rollback()
                 budget = (
                     self.session.query(UsageBudgetModel)
                     .filter_by(
@@ -106,8 +106,11 @@ class BudgetRepository:
     def record_usage(self, context: SecurityContext, tokens: int, cost_usd: float = 0.0) -> UsageBudgetModel:
         """Records token and cost consumption into the persistent ledger."""
         budget = self.get_or_create_budget(context)
-        budget.cumulative_tokens += tokens
-        budget.cumulative_cost_usd += cost_usd
-        budget.updated_at = utc_now()
-        self.session.flush()
+        self.session.query(UsageBudgetModel).filter_by(id=budget.id).update({
+            "cumulative_tokens": UsageBudgetModel.cumulative_tokens + tokens,
+            "cumulative_cost_usd": UsageBudgetModel.cumulative_cost_usd + cost_usd,
+            "updated_at": utc_now(),
+        }, synchronize_session=False)
+        self.session.expire(budget)
+        self.session.refresh(budget)
         return budget

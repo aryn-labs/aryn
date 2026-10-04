@@ -47,6 +47,8 @@ class RunStateRepository:
         provider: str,
         session_id: Optional[str] = None,
         idempotency_key: Optional[str] = None,
+        request_hash: str = "",
+        execution_mode: str = "legacy",
     ) -> RunStateModel:
         """Creates a new RunState in 'queued' status."""
         run = RunStateModel(
@@ -59,6 +61,8 @@ class RunStateRepository:
             model=model,
             provider=provider,
             idempotency_key=idempotency_key,
+            request_hash=request_hash,
+            execution_mode=execution_mode,
         )
         self.session.add(run)
         try:
@@ -124,22 +128,25 @@ class RunStateRepository:
                 f"Allowed transitions from '{current_status}': {sorted(allowed_targets)}."
             )
 
-        run.status = target
-        run.updated_at = utc_now()
-
+        values = {"status": target, "updated_at": utc_now()}
         if output is not None:
-            run.output = output
+            values["output"] = output
         if error_message is not None:
-            run.error_message = error_message
+            values["error_message"] = error_message
         if usage is not None:
-            run.input_tokens = usage.input_tokens
-            run.output_tokens = usage.output_tokens
-            run.total_tokens = usage.total_tokens
+            values.update(input_tokens=usage.input_tokens, output_tokens=usage.output_tokens,
+                          total_tokens=usage.total_tokens)
 
         if target in self.TERMINAL_STATES:
-            run.completed_at = utc_now()
-
-        self.session.flush()
+            values["completed_at"] = utc_now()
+        updated = self.session.query(RunStateModel).filter_by(
+            id=run_id, organization_id=context.organization_id,
+            project_id=context.project_id, status=current_status,
+        ).update(values, synchronize_session=False)
+        if updated != 1:
+            raise InvalidStateTransitionError("Run state changed concurrently; reload before retrying.")
+        self.session.expire(run)
+        self.session.refresh(run)
         return run
 
     def list_in_flight_runs(self, organization_id: Optional[str] = None) -> List[RunStateModel]:
