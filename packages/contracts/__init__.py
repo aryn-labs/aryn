@@ -24,6 +24,22 @@ from packages.contracts.model import (
     ModelRoutingConfig,
     ModelSpec,
 )
+from packages.contracts.agent import (
+    AgentAssignment,
+    AgentBlueprint,
+    AgentVersion,
+    AgentVersionStatus,
+)
+from packages.contracts.bench import (
+    BenchCategory,
+    BenchEvaluationResult,
+    BenchScenario,
+    ScenarioResult,
+)
+from packages.contracts.approval import (
+    ApprovalRecord,
+    ApprovalStatus,
+)
 
 __all__ = [
     "Actor",
@@ -44,4 +60,14 @@ __all__ = [
     "ModelProviderType",
     "ModelRoutingConfig",
     "ModelSpec",
+    "AgentAssignment",
+    "AgentBlueprint",
+    "AgentVersion",
+    "AgentVersionStatus",
+    "BenchCategory",
+    "BenchEvaluationResult",
+    "BenchScenario",
+    "ScenarioResult",
+    "ApprovalRecord",
+    "ApprovalStatus",
 ]

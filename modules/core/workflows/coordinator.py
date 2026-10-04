@@ -125,18 +125,44 @@ class RunCoordinator:
         run_id = f"run_{context.project_id}_{int(time.time() * 1000)}"
         if self.db_manager:
             from database.repositories.run_state_repo import RunStateRepository
-            with self.db_manager.session() as session:
-                run_repo = RunStateRepository(session)
-                run_repo.create_run(
-                    context=context,
-                    run_id=run_id,
-                    prompt=request.prompt,
-                    model=spec.model_id,
-                    provider=spec.provider.value,
-                    session_id=request.session_id,
-                    idempotency_key=idempotency_key,
-                )
-                run_repo.transition_status(context, run_id, "started")
+            from database.repositories.exceptions import DuplicateEntityError
+            from sqlalchemy.exc import IntegrityError
+            try:
+                with self.db_manager.session() as session:
+                    run_repo = RunStateRepository(session)
+                    run_repo.create_run(
+                        context=context,
+                        run_id=run_id,
+                        prompt=request.prompt,
+                        model=spec.model_id,
+                        provider=spec.provider.value,
+                        session_id=request.session_id,
+                        idempotency_key=idempotency_key,
+                    )
+                    run_repo.transition_status(context, run_id, "started")
+            except (IntegrityError, DuplicateEntityError):
+                if idempotency_key:
+                    with self.db_manager.session() as session:
+                        run_repo = RunStateRepository(session)
+                        existing = run_repo.get_run_by_idempotency_key(context, idempotency_key)
+                        if existing and existing.status == "completed":
+                            return RunResult(
+                                run_id=existing.id,
+                                status=RunStatus.COMPLETED,
+                                output=existing.output or "",
+                                usage=RunUsage(
+                                    input_tokens=existing.input_tokens,
+                                    output_tokens=existing.output_tokens,
+                                    total_tokens=existing.total_tokens,
+                                ),
+                                model=existing.model,
+                                created_at=existing.created_at.timestamp(),
+                                completed_at=existing.completed_at.timestamp() if existing.completed_at else None,
+                            )
+                        elif existing:
+                            run_id = existing.id
+                else:
+                    raise
 
         # 6. Pre-execution Audit
         self.audit_logger.record(
@@ -217,6 +243,51 @@ class RunCoordinator:
                 payload={"error": str(exc)},
             )
             raise
+
+    async def execute_assigned_agent_turn(
+        self,
+        assignment_id: str,
+        prompt: str,
+        context: SecurityContext,
+        idempotency_key: Optional[str] = None,
+    ) -> RunResult:
+        """Executes a direct turn dispatched to an active AgentAssignment under Core governance."""
+        if not self.db_manager:
+            raise RuntimeError("DatabaseManager is required for assigned agent execution.")
+
+        from database.repositories.agent_repo import AgentRepository
+
+        with self.db_manager.session() as session:
+            repo = AgentRepository(session)
+            assignment = repo.get_assignment(context, assignment_id)
+            version = repo.get_version(context, assignment.version_id)
+
+            if version.status != "published":
+                raise RuntimeError(
+                    f"Agent assignment '{assignment_id}' points to unpublished version '{version.id}' (status: {version.status})."
+                )
+
+            system_prompt = version.system_prompt
+            model = version.model
+            blueprint_id = assignment.blueprint_id
+            version_id = version.id
+            role_name = assignment.role_name
+            division_id = assignment.division_id
+
+        req = RunRequest(
+            prompt=prompt,
+            system_instructions=system_prompt,
+            model=model,
+            idempotency_key=idempotency_key,
+            metadata={
+                "assignment_id": assignment_id,
+                "blueprint_id": blueprint_id,
+                "version_id": version_id,
+                "role_name": role_name,
+                "division_id": division_id,
+            },
+        )
+        return await self.execute_managed_direct_turn(req, context)
 
     async def start_managed_run(
         self,

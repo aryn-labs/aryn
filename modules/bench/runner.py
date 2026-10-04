@@ -1,0 +1,110 @@
+"""Bench Runner executing isolated safety and quality evaluation suites.
+
+Complies with ARYN-ARCH-001 Section 06 and AGENTS.md rule 6.
+"""
+
+from __future__ import annotations
+
+import re
+import time
+import uuid
+from typing import List, Optional
+from packages.contracts.core import SecurityContext
+from packages.contracts.agent import AgentVersion
+from packages.contracts.bench import BenchEvaluationResult, BenchScenario, ScenarioResult
+from packages.contracts.runtime import RunRequest, RunStatus, RuntimeAdapter
+from modules.bench.scenarios import get_standard_research_bench_scenarios
+
+
+class BenchRunner:
+    """Executes evaluation scenarios against an agent version under isolated conditions."""
+
+    def __init__(self, runtime_adapter: RuntimeAdapter) -> None:
+        self.runtime_adapter = runtime_adapter
+
+    async def evaluate_agent_version(
+        self,
+        context: SecurityContext,
+        version: AgentVersion,
+        scenarios: Optional[List[BenchScenario]] = None,
+    ) -> BenchEvaluationResult:
+        suite = scenarios or get_standard_research_bench_scenarios()
+        scenario_results: List[ScenarioResult] = []
+
+        for scen in suite:
+            req = RunRequest(
+                prompt=scen.prompt,
+                system_instructions=version.system_prompt,
+                model=version.model,
+                metadata={"bench_evaluation": True, "scenario_id": scen.scenario_id},
+            )
+
+            start_t = time.perf_counter()
+            passed = True
+            failure_reason = None
+            output = ""
+
+            try:
+                if hasattr(self.runtime_adapter, "execute_direct_turn"):
+                    res = await self.runtime_adapter.execute_direct_turn(req, context)
+                else:
+                    run_id = await self.runtime_adapter.start_run(req, context)
+                    res = await self.runtime_adapter.get_result(run_id, context)
+
+                latency = round(time.perf_counter() - start_t, 3)
+                output = res.output or ""
+
+                if res.status != RunStatus.COMPLETED:
+                    passed = False
+                    failure_reason = f"Runtime run status: {res.status.value}"
+
+                # 1. Check forbidden pattern
+                if passed and scen.forbidden_pattern:
+                    if re.search(scen.forbidden_pattern, output):
+                        passed = False
+                        failure_reason = f"Triggered forbidden pattern: {scen.forbidden_pattern}"
+
+                # 2. Check expected pattern
+                if passed and scen.expected_pattern:
+                    if not re.search(scen.expected_pattern, output):
+                        passed = False
+                        failure_reason = f"Did not match expected pattern: {scen.expected_pattern}"
+
+                # 3. Check latency threshold
+                if passed and latency > scen.max_latency_seconds:
+                    passed = False
+                    failure_reason = f"Latency {latency}s exceeded max allowed {scen.max_latency_seconds}s"
+
+            except Exception as exc:
+                latency = round(time.perf_counter() - start_t, 3)
+                passed = False
+                failure_reason = f"Execution exception: {str(exc)}"
+
+            scenario_results.append(
+                ScenarioResult(
+                    scenario_id=scen.scenario_id,
+                    name=scen.name,
+                    category=scen.category,
+                    passed=passed,
+                    score=1.0 if passed else 0.0,
+                    actual_output=output,
+                    latency_seconds=latency,
+                    failure_reason=failure_reason,
+                )
+            )
+
+        passed_count = sum(1 for r in scenario_results if r.passed)
+        total_count = len(scenario_results)
+        score = round(passed_count / total_count, 4) if total_count > 0 else 0.0
+        overall_passed = (passed_count == total_count and total_count > 0)
+
+        return BenchEvaluationResult(
+            evaluation_id=f"eval_{uuid.uuid4().hex[:16]}",
+            blueprint_id=version.blueprint_id,
+            version_id=version.id,
+            passed=overall_passed,
+            total_scenarios=total_count,
+            passed_scenarios=passed_count,
+            score=score,
+            scenario_results=scenario_results,
+        )

@@ -1,0 +1,56 @@
+"""Domain contracts for Bench evaluation and quality gates.
+
+Defines schemas for BenchScenario, ScenarioResult, and BenchEvaluationResult.
+Complies with ARYN-ARCH-001 Section 06 and AGENTS.md rule 6.
+"""
+
+from __future__ import annotations
+
+import datetime
+from enum import Enum
+from typing import Any, Dict, List, Optional
+from pydantic import BaseModel, Field
+
+
+class BenchCategory(str, Enum):
+    SAFETY = "safety"
+    ACCURACY = "accuracy"
+    TOOL_CONFINEMENT = "tool_confinement"
+    ABSTENTION = "abstention"
+
+
+class BenchScenario(BaseModel):
+    """Specification of an evaluation scenario."""
+    scenario_id: str
+    name: str
+    category: BenchCategory
+    prompt: str
+    expected_pattern: Optional[str] = None
+    forbidden_pattern: Optional[str] = None
+    min_score: float = 1.0
+    max_latency_seconds: float = 30.0
+
+
+class ScenarioResult(BaseModel):
+    """Individual result from executing a scenario against an agent."""
+    scenario_id: str
+    name: str
+    category: BenchCategory
+    passed: bool
+    score: float
+    actual_output: str
+    latency_seconds: float
+    failure_reason: Optional[str] = None
+
+
+class BenchEvaluationResult(BaseModel):
+    """Aggregated evaluation result for an agent version against a benchmark suite."""
+    evaluation_id: str
+    blueprint_id: str
+    version_id: str
+    passed: bool
+    total_scenarios: int
+    passed_scenarios: int
+    score: float
+    scenario_results: List[ScenarioResult] = Field(default_factory=list)
+    evaluated_at: str = Field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())

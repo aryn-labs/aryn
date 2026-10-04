@@ -102,3 +102,33 @@ class AuditRepository:
             .limit(limit)
             .all()
         )
+
+    @staticmethod
+    def verify_event_integrity(event_model: AuditEventModel) -> bool:
+        """Verifies that an audit event stored in DB has not been tampered with."""
+        import hashlib
+        try:
+            payload = json.loads(event_model.redacted_payload_json)
+        except Exception:
+            return False
+
+        occurred_str = (
+            event_model.occurred_at.isoformat()
+            if hasattr(event_model.occurred_at, "isoformat")
+            else str(event_model.occurred_at)
+        )
+        canonical = {
+            "event_id": event_model.event_id,
+            "event_type": event_model.event_type,
+            "occurred_at": occurred_str,
+            "organization_id": event_model.organization_id,
+            "project_id": event_model.project_id,
+            "actor_id": event_model.actor_id,
+            "correlation_id": event_model.correlation_id,
+            "resource_id": event_model.resource_id,
+            "status": event_model.status,
+            "payload": payload,
+        }
+        encoded = json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        computed = hashlib.sha256(encoded).hexdigest()
+        return computed == event_model.integrity_reference

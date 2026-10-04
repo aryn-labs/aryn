@@ -9,6 +9,11 @@ from database.schema import (
     RunStateModel,
     AuditEventModel,
     UsageBudgetModel,
+    AgentBlueprintModel,
+    AgentVersionModel,
+    AgentAssignmentModel,
+    BenchEvaluationModel,
+    ApprovalModel,
 )
 
 __all__ = [
@@ -24,4 +29,9 @@ __all__ = [
     "RunStateModel",
     "AuditEventModel",
     "UsageBudgetModel",
+    "AgentBlueprintModel",
+    "AgentVersionModel",
+    "AgentAssignmentModel",
+    "BenchEvaluationModel",
+    "ApprovalModel",
 ]
