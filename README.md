@@ -27,6 +27,13 @@ This is the private primary monorepo for ARYN Cloud and ARYN Local.
 All private resources are organization-scoped and project-scoped where applicable. Sensitive writes require service-side policy enforcement. Agent output is untrusted. Approval binds to exact action payload. Replays never invoke live write tools. Local has no silent cloud sync/fallback. Never commit secrets.
 
 ## Current status
-**Initial repository scaffold only.** No implementation, runtime integration, API, tests, security guarantee, or deployment is implied by the existence of directories.
+Core governance/persistence, Agent Factory, Bench, and the Hermes adapter are implemented. **ARYN Studio** provides a loopback-only development web application for blueprint → version → Bench → approval → publish → assignment → Research Agent execution → result/audit. This is not a production authentication or public deployment claim.
+
+```powershell
+Set-Location D:\ARYN\aryn-labs\aryn
+.\scripts\start-studio.ps1
+```
+
+Open `http://127.0.0.1:8710`. See [Studio setup, security, and capabilities](docs/studio.md) and [validation evidence](docs/studio-validation.md). Brief and Relay are not implemented in Studio.
 
 References: ARYN-PRD-001, ARYN-ARCH-001, ARYN-TECH-001, ARYN-SEC-001 and ARYN-PLAN-001 in private `aryn-docs`.

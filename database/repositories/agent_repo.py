@@ -215,6 +215,9 @@ class AgentRepository:
         blueprint = self.get_blueprint(context, blueprint_id)
         version = self.get_version(context, version_id)
 
+        if version.blueprint_id != blueprint.id:
+            raise InvalidStateTransitionError("Assignment blueprint must match the version's parent blueprint.")
+
         # Invariant: Version MUST be published before it can be assigned
         if version.status != "published":
             raise InvalidStateTransitionError(

@@ -252,6 +252,7 @@ class BenchEvaluationModel(Base):
     details_json = Column(Text, nullable=False)
     evaluated_by = Column(String(64), nullable=False)
     evaluated_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    provenance_json = Column(Text, nullable=False, default="{}")
 
 
 class ApprovalModel(Base):

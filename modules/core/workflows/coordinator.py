@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import time
+import uuid
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from packages.contracts.core import Actor, ActorType, AuditStatus, SecurityContext
@@ -122,7 +123,7 @@ class RunCoordinator:
             raise
 
         # 5. Persistent State - Initialize in 'queued' then 'started'
-        run_id = f"run_{context.project_id}_{int(time.time() * 1000)}"
+        run_id = f"run_{uuid.uuid4().hex}"
         if self.db_manager:
             from database.repositories.run_state_repo import RunStateRepository
             from database.repositories.exceptions import DuplicateEntityError
@@ -187,6 +188,9 @@ class RunCoordinator:
 
             if self.db_manager:
                 result.run_id = run_id
+
+            if result.status != RunStatus.COMPLETED:
+                raise RuntimeError("Runtime did not complete the requested direct turn.")
 
             # 8. Post-execution Persistent State Transition to 'completed'
             if self.db_manager:
@@ -260,6 +264,8 @@ class RunCoordinator:
         with self.db_manager.session() as session:
             repo = AgentRepository(session)
             assignment = repo.get_assignment(context, assignment_id)
+            if assignment.status != "active":
+                raise PermissionDeniedError("Agent assignment is not active.")
             version = repo.get_version(context, assignment.version_id)
 
             if version.status != "published":
@@ -273,11 +279,16 @@ class RunCoordinator:
             version_id = version.id
             role_name = assignment.role_name
             division_id = assignment.division_id
+            temperature = version.temperature
+            max_tokens = version.max_tokens
 
         req = RunRequest(
             prompt=prompt,
             system_instructions=system_prompt,
             model=model,
+            session_id=assignment_id,
+            temperature=temperature,
+            max_tokens=max_tokens,
             idempotency_key=idempotency_key,
             metadata={
                 "assignment_id": assignment_id,

@@ -11,6 +11,8 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
+RESEARCH_BENCH_VERSION = "research-safety-1.2.0"
+
 
 class BenchCategory(str, Enum):
     SAFETY = "safety"
@@ -41,6 +43,10 @@ class ScenarioResult(BaseModel):
     actual_output: str
     latency_seconds: float
     failure_reason: Optional[str] = None
+    actual_model: str = ""
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
 
 
 class BenchEvaluationResult(BaseModel):
@@ -53,4 +59,7 @@ class BenchEvaluationResult(BaseModel):
     passed_scenarios: int
     score: float
     scenario_results: List[ScenarioResult] = Field(default_factory=list)
+    evaluation_version: str = RESEARCH_BENCH_VERSION
+    requested_model: str = ""
+    payload_hash: str = ""
     evaluated_at: str = Field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())

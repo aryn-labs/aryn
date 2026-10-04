@@ -49,6 +49,8 @@ class RunRequest(BaseModel):
     session_id: Optional[str] = None
     idempotency_key: Optional[str] = None
     timeout_seconds: float = 30.0
+    temperature: float = Field(default=0.7, ge=0, le=2)
+    max_tokens: int = Field(default=2048, ge=1, le=32768)
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 

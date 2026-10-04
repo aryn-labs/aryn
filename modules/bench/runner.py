@@ -36,6 +36,8 @@ class BenchRunner:
                 prompt=scen.prompt,
                 system_instructions=version.system_prompt,
                 model=version.model,
+                temperature=version.temperature,
+                max_tokens=version.max_tokens,
                 metadata={"bench_evaluation": True, "scenario_id": scen.scenario_id},
             )
 
@@ -43,6 +45,7 @@ class BenchRunner:
             passed = True
             failure_reason = None
             output = ""
+            res = None
 
             try:
                 if hasattr(self.runtime_adapter, "execute_direct_turn"):
@@ -78,7 +81,8 @@ class BenchRunner:
             except Exception as exc:
                 latency = round(time.perf_counter() - start_t, 3)
                 passed = False
-                failure_reason = f"Execution exception: {str(exc)}"
+                # Runtime error bodies are untrusted and may include credentials.
+                failure_reason = f"Execution exception: {type(exc).__name__}"
 
             scenario_results.append(
                 ScenarioResult(
@@ -90,6 +94,10 @@ class BenchRunner:
                     actual_output=output,
                     latency_seconds=latency,
                     failure_reason=failure_reason,
+                    actual_model=res.model if res else "",
+                    input_tokens=res.usage.input_tokens if res else 0,
+                    output_tokens=res.usage.output_tokens if res else 0,
+                    total_tokens=res.usage.total_tokens if res else 0,
                 )
             )
 
@@ -107,4 +115,6 @@ class BenchRunner:
             passed_scenarios=passed_count,
             score=score,
             scenario_results=scenario_results,
+            requested_model=version.model,
+            payload_hash=version.payload_hash,
         )

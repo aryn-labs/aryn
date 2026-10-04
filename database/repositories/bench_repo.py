@@ -42,6 +42,11 @@ class BenchRepository:
             details_json=details_str,
             evaluated_by=context.actor.actor_id,
             evaluated_at=utc_now(),
+            provenance_json=json.dumps({
+                "evaluation_version": eval_result.evaluation_version,
+                "requested_model": eval_result.requested_model,
+                "payload_hash": eval_result.payload_hash,
+            }, sort_keys=True),
         )
         self.session.add(model)
         try:
@@ -70,14 +75,15 @@ class BenchRepository:
         version_id: str,
     ) -> Optional[BenchEvaluationModel]:
         """Finds the most recent successful evaluation for a given agent version."""
-        return (
+        latest = (
             self.session.query(BenchEvaluationModel)
             .filter_by(
                 organization_id=context.organization_id,
                 project_id=context.project_id,
                 version_id=version_id,
-                passed=1,
             )
             .order_by(BenchEvaluationModel.evaluated_at.desc())
             .first()
         )
+        # A later failure invalidates an earlier pass. Never promote stale evidence.
+        return latest if latest and latest.passed else None

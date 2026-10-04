@@ -1,0 +1,63 @@
+# File berubah — ARYN Studio
+
+Daftar file repository yang ditambah atau diubah dari baseline `033ce68` pada `development`. Database lokal, secret, dependensi, build output, dan bukti screenshot diabaikan Git.
+
+Total: 57 file.
+
+- `.gitignore`
+- `apps/web/components.json`
+- `apps/web/e2e/studio.spec.ts`
+- `apps/web/index.html`
+- `apps/web/package-lock.json`
+- `apps/web/package.json`
+- `apps/web/playwright.config.ts`
+- `apps/web/src/components/blueprint-form.tsx`
+- `apps/web/src/components/shared.tsx`
+- `apps/web/src/components/ui/button.tsx`
+- `apps/web/src/components/ui/dialog.tsx`
+- `apps/web/src/components/workspace.tsx`
+- `apps/web/src/features/approvals.tsx`
+- `apps/web/src/features/bench.tsx`
+- `apps/web/src/features/factory.tsx`
+- `apps/web/src/features/governance.tsx`
+- `apps/web/src/features/overview.tsx`
+- `apps/web/src/features/runs.tsx`
+- `apps/web/src/features/settings.tsx`
+- `apps/web/src/lib/api.ts`
+- `apps/web/src/lib/types.ts`
+- `apps/web/src/lib/utils.ts`
+- `apps/web/src/main.tsx`
+- `apps/web/src/studio.tsx`
+- `apps/web/src/styles.css`
+- `apps/web/src/test/blueprint-form.test.tsx`
+- `apps/web/src/test/setup.ts`
+- `apps/web/tsconfig.json`
+- `apps/web/vite.config.ts`
+- `database/migrations/env.py`
+- `database/migrations/versions/005_bench_provenance.py`
+- `database/repositories/agent_repo.py`
+- `database/repositories/bench_repo.py`
+- `database/schema.py`
+- `docs/studio-files.md`
+- `docs/studio-validation.md`
+- `docs/studio.md`
+- `modules/bench/runner.py`
+- `modules/bench/scenarios.py`
+- `modules/core/workflows/coordinator.py`
+- `packages/contracts/bench.py`
+- `packages/contracts/runtime.py`
+- `packages/runtime-adapters/hermes/adapter.py`
+- `pyproject.toml`
+- `README.md`
+- `scripts/start-studio.ps1`
+- `scripts/stop-studio.ps1`
+- `services/__init__.py`
+- `services/api/__init__.py`
+- `services/api/__main__.py`
+- `services/api/studio.py`
+- `STATUS.md`
+- `tests/__init__.py`
+- `tests/integration/test_studio_api.py`
+- `tests/studio_runtime.py`
+- `tests/studio_server.py`
+- `tests/unit/test_bench_localization.py`

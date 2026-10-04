@@ -43,3 +43,6 @@ Thumbs.db
 # Temp
 *.log
 *.tmp
+.local/
+playwright-report/
+test-results/

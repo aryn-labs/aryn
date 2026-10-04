@@ -13,12 +13,16 @@ dependencies = [
     "httpx>=0.24",
     "fastapi>=0.100",
     "sqlalchemy>=2.0",
-    "alembic>=1.10"
+    "alembic>=1.10",
+    "uvicorn>=0.30"
 ]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.24"]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["modules*", "packages*", "database*"]
+include = ["modules*", "packages*", "database*", "services*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

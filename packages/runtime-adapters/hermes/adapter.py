@@ -360,6 +360,8 @@ class HermesRuntimeAdapter(RuntimeAdapter):
             payload = {
                 "model": request.model,
                 "messages": messages,
+                "temperature": request.temperature,
+                "max_tokens": request.max_tokens,
             }
 
             try:
