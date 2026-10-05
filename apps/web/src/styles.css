@@ -2468,9 +2468,89 @@ tbody tr:hover {
 }
 .run-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 24px;
-  align-items: start;
+  align-items: stretch;
+}
+.run-layout > .panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.run-layout .panel-heading {
+  min-height: 72px;
+  box-sizing: border-box;
+}
+.run-layout > .panel > .empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 48px 28px;
+}
+.run-layout .run-form {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  height: 100%;
+}
+.run-layout .run-form .form-fields {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px;
+}
+.run-layout .run-form textarea {
+  flex: 1;
+  min-height: 140px;
+}
+.run-layout .run-submit {
+  margin-top: auto;
+  border-top: 1px solid var(--border-soft);
+  background: var(--surface-solid);
+}
+.run-result-container {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  height: 100%;
+}
+.result-output-wrapper {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+.result-output-wrapper .result-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 24px;
+}
+.result-output-wrapper .prompt-output {
+  flex: 1;
+  min-height: 120px;
+  max-height: 320px;
+  overflow-y: auto;
+  margin: 0;
+}
+.result-output-wrapper .usage-row {
+  margin: 0 24px 20px;
+}
+.result-output-wrapper .result-info {
+  margin-top: auto;
+  border-top: 1px solid var(--border-soft);
+  padding: 18px 24px;
+  background: rgba(139, 124, 246, 0.02);
+}
+.result-audit-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.result-audit-wrapper .audit-list {
+  flex: 1;
 }
 .run-submit {
   display: flex;
@@ -2973,7 +3053,7 @@ tbody tr:hover {
     padding: 0 24px;
   }
   .overview-layout {
-    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 20px;
   }
   .overview-strip {

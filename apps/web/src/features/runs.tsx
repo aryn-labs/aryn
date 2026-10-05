@@ -241,7 +241,7 @@ export function Runs({ data, workspace, pending, act }: Shared) {
 function RunResultPanel({ run, audit }: { run: Run; audit: Audit[] }) {
   const [tab, setTab] = useState("output");
   return (
-    <div>
+    <div className="run-result-container">
       <div className="result-meta">
         <Status value={run.status} />
         <span className="mono">{run.id}</span>
@@ -261,7 +261,7 @@ function RunResultPanel({ run, audit }: { run: Run; audit: Audit[] }) {
         </button>
       </div>
       {tab === "output" ? (
-        <>
+        <div className="result-output-wrapper">
           <div className="result-body">
             {run.error_message ? (
               <Notice tone="error">
@@ -301,9 +301,11 @@ function RunResultPanel({ run, audit }: { run: Run; audit: Audit[] }) {
               Belum tersedia untuk eksekusi langsung; audit Core tersedia.
             </dd>
           </dl>
-        </>
+        </div>
       ) : (
-        <AuditList events={audit} />
+        <div className="result-audit-wrapper">
+          <AuditList events={audit} />
+        </div>
       )}
     </div>
   );
