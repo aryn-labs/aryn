@@ -1,5 +1,5 @@
 import { type ReactNode } from "react";
-import { Activity, Check, ChevronRight, Minus, Plus } from "lucide-react";
+import { Activity, Check, ChevronRight } from "lucide-react";
 import type { Audit } from "../lib/types";
 import { date } from "../lib/utils";
 import { Empty, Status } from "./shared";
@@ -36,12 +36,14 @@ export const eventNames: Record<string, string> = {
 };
 
 export function Panel({
+  id,
   title,
   subtitle,
   action,
   children,
   className = "",
 }: {
+  id?: string;
   title: string;
   subtitle?: string;
   action?: ReactNode;
@@ -49,7 +51,7 @@ export function Panel({
   className?: string;
 }) {
   return (
-    <section className={`panel ${className}`}>
+    <section id={id} className={`panel ${className}`}>
       <div className="panel-heading">
         <div>
           <h2>{title}</h2>
@@ -107,10 +109,9 @@ export function AuditList({
             {!compact && (
               <details className="audit-details">
                 <summary className="audit-toggle">
-                  <Plus size={13} className="audit-expand" aria-hidden="true" />
-                  <Minus
+                  <ChevronRight
                     size={13}
-                    className="audit-collapse"
+                    className="audit-chevron"
                     aria-hidden="true"
                   />
                   <span className="audit-show-label">Detail audit</span>

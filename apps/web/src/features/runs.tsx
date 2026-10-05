@@ -31,6 +31,20 @@ export function Runs({ data, workspace, pending, act }: Shared) {
   );
   const assigned = active.find((a) => a.id === assignment);
   const version = data.versions.find((v) => v.id === assigned?.version_id);
+  const viewResult = (runId: string) => {
+    setParams({ hasil: runId });
+    const target = document.getElementById("hasil-eksekusi");
+    if (target) {
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+      target.classList.remove("highlight-pulse");
+      void target.offsetWidth;
+      target.classList.add("highlight-pulse");
+      setTimeout(() => {
+        target.classList.remove("highlight-pulse");
+      }, 1600);
+    }
+  };
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (prompt.trim().length < 5 || !assigned || !consent) {
@@ -51,8 +65,9 @@ export function Runs({ data, workspace, pending, act }: Shared) {
         },
         "Eksekusi selesai. Hasil dan audit tersimpan.",
       );
-      setParams({ hasil: String(r.run_id || r.id) });
+      const newRunId = String(r.run_id || r.id);
       setRunKey(crypto.randomUUID());
+      viewResult(newRunId);
     } catch {
       /* Retry preserves idempotency key; edits create a new key. */
     }
@@ -66,6 +81,7 @@ export function Runs({ data, workspace, pending, act }: Shared) {
       />
       <div className="run-layout">
         <Panel
+          className="run-panel-execution"
           title="Eksekusi Research Agent"
           subtitle="Konfigurasi selalu diambil dari versi yang dipublikasikan."
         >
@@ -166,8 +182,17 @@ export function Runs({ data, workspace, pending, act }: Shared) {
           )}
         </Panel>
         <Panel
+          id="hasil-eksekusi"
+          className="run-panel-result"
           title="Hasil eksekusi"
           subtitle="Output asli, penggunaan token, dan jejak Core."
+          action={
+            selected ? (
+              <span className="subtle-label active-run-pill">
+                AKTIF DITAMPILKAN
+              </span>
+            ) : undefined
+          }
         >
           {selected ? (
             <RunResultPanel
@@ -203,27 +228,34 @@ export function Runs({ data, workspace, pending, act }: Shared) {
                 </tr>
               </thead>
               <tbody>
-                {data.runs.map((r) => (
-                  <tr key={r.id}>
-                    <td className="run-prompt-cell">{r.prompt}</td>
-                    <td>
-                      <Status value={r.status} />
-                    </td>
-                    <td className="mono">{r.model}</td>
-                    <td className="mono">{number(r.total_tokens)}</td>
-                    <td className="subtle">{date(r.created_at)}</td>
-                    <td>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setParams({ hasil: r.id })}
-                      >
-                        Lihat hasil
-                        <ChevronRight size={14} />
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
+                {data.runs.map((r) => {
+                  const isCurrent = selected?.id === r.id;
+                  return (
+                    <tr
+                      key={r.id}
+                      className={isCurrent ? "table-row-selected" : ""}
+                    >
+                      <td className="run-prompt-cell">{r.prompt}</td>
+                      <td>
+                        <Status value={r.status} />
+                      </td>
+                      <td className="mono">{r.model}</td>
+                      <td className="mono">{number(r.total_tokens)}</td>
+                      <td className="subtle">{date(r.created_at)}</td>
+                      <td>
+                        <Button
+                          size="sm"
+                          variant={isCurrent ? "secondary" : "ghost"}
+                          onClick={() => viewResult(r.id)}
+                          aria-label={`Lihat hasil eksekusi ${r.id}`}
+                        >
+                          Lihat hasil
+                          <ChevronRight size={14} />
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

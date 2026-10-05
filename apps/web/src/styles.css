@@ -1771,13 +1771,18 @@ pre {
   border-color: var(--primary);
   color: var(--text);
 }
-.audit-collapse,
+.audit-chevron {
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  color: var(--secondary);
+}
+.audit-details[open] .audit-chevron {
+  transform: rotate(90deg);
+  color: var(--primary);
+}
 .audit-hide-label,
-.audit-details[open] .audit-expand,
 .audit-details[open] .audit-show-label {
   display: none;
 }
-.audit-details[open] .audit-collapse,
 .audit-details[open] .audit-hide-label {
   display: inline;
 }
@@ -2551,6 +2556,40 @@ tbody tr:hover {
 }
 .result-audit-wrapper .audit-list {
   flex: 1;
+}
+
+/* Run Highlight & Active Row */
+@keyframes highlight-card-glow {
+  0% {
+    box-shadow: 0 0 0 2px var(--primary), 0 0 32px rgba(139, 124, 246, 0.5);
+    border-color: var(--primary);
+  }
+  50% {
+    box-shadow: 0 0 0 2px var(--accent-cyan), 0 0 36px rgba(56, 189, 248, 0.45);
+    border-color: var(--accent-cyan);
+  }
+  100% {
+    box-shadow: var(--shadow-card);
+    border-color: var(--border);
+  }
+}
+#hasil-eksekusi {
+  scroll-margin-top: 84px;
+}
+.highlight-pulse {
+  animation: highlight-card-glow 1.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.active-run-pill {
+  color: var(--accent-cyan) !important;
+  border: 1px solid var(--border-cyan) !important;
+  background: var(--cyan-muted) !important;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.15);
+}
+.table-row-selected {
+  background: rgba(139, 124, 246, 0.08) !important;
+}
+.table-row-selected td:first-child {
+  border-left: 3px solid var(--primary);
 }
 .run-submit {
   display: flex;
