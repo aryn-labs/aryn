@@ -9,17 +9,10 @@ import type { Shared } from "../lib/types";
 import { Panel, AuditList } from "../components/workspace";
 import { ArynCanvas } from "../components/canvas/aryn-canvas";
 import { buildExecutionNodesAndEdges } from "../components/canvas/canvas-builders";
+import { historicalRunContext } from "../lib/studio-state";
+import { useReducedMotion } from "../lib/motion";
 export function Runs({ data, workspace, pending, act }: Shared) {
   const [params, setParams] = useSearchParams();
-  const [assignment, setAssignment] = useState(
-    params.get("penugasan") || data.assignments[0]?.id || "",
-  );
-  const [prompt, setPrompt] = useState("");
-  const [consent, setConsent] = useState(false);
-  const [runKey, setRunKey] = useState(() => crypto.randomUUID());
-  const [validation, setValidation] = useState("");
-  const selected =
-    data.runs.find((r) => r.id === params.get("hasil")) || data.runs[0];
   const active = data.assignments.filter(
     (a) =>
       a.status === "active" &&
@@ -28,9 +21,23 @@ export function Runs({ data, workspace, pending, act }: Shared) {
           v.id === a.version_id &&
           v.blueprint_id === a.blueprint_id &&
           v.status === "published" &&
+          v.integrity_valid &&
           v.governance_valid,
       ),
   );
+  const [assignment, setAssignment] = useState(
+    params.get("penugasan") || active[0]?.id || "",
+  );
+  const [prompt, setPrompt] = useState("");
+  const [consent, setConsent] = useState(false);
+  const [runKey, setRunKey] = useState(() => crypto.randomUUID());
+  const [validation, setValidation] = useState("");
+  const [executing, setExecuting] = useState(false);
+  const reducedMotion = useReducedMotion();
+  const selected = params.has("hasil")
+    ? data.runs.find((r) => r.id === params.get("hasil"))
+    : data.runs[0];
+  const historical = historicalRunContext(data, selected?.id);
   const assigned = active.find((a) => a.id === assignment);
   const version = data.versions.find((v) => v.id === assigned?.version_id);
   const modelAvailability =
@@ -40,7 +47,10 @@ export function Runs({ data, workspace, pending, act }: Shared) {
     setParams({ hasil: runId });
     const target = document.getElementById("hasil-eksekusi");
     if (target) {
-      target.scrollIntoView({ behavior: "smooth", block: "start" });
+      target.scrollIntoView({
+        behavior: reducedMotion ? "auto" : "smooth",
+        block: "start",
+      });
       target.classList.remove("highlight-pulse");
       void target.offsetWidth;
       target.classList.add("highlight-pulse");
@@ -59,6 +69,7 @@ export function Runs({ data, workspace, pending, act }: Shared) {
       return;
     }
     setValidation("");
+    setExecuting(true);
     try {
       const r = await act(
         "/runs",
@@ -75,11 +86,17 @@ export function Runs({ data, workspace, pending, act }: Shared) {
       viewResult(newRunId);
     } catch {
       /* Retry preserves idempotency key; edits create a new key. */
+    } finally {
+      setExecuting(false);
     }
   };
   const { nodes: execNodes, edges: execEdges } = useMemo(() => {
-    return buildExecutionNodesAndEdges(selected, version, pending);
-  }, [selected, version, pending]);
+    return buildExecutionNodesAndEdges(
+      selected,
+      historical.version,
+      historical.blueprint?.name,
+    );
+  }, [selected, historical.version, historical.blueprint?.name]);
 
   return (
     <>
@@ -88,14 +105,30 @@ export function Runs({ data, workspace, pending, act }: Shared) {
         title="Eksekusi"
         description="Jalankan Research Agent melalui ARYN Core, lalu telusuri hasilnya."
       />
+      {executing && (
+        <Busy label="Core/Hermes sedang memproses eksekusi baru. Trace per-node belum tersedia; hasil historis tetap ditampilkan." />
+      )}
+      {selected && !historical.version && (
+        <Notice tone="warning">
+          Konfigurasi historis run tidak tersedia. Pilihan form baru tidak
+          digunakan sebagai penggantinya.
+        </Notice>
+      )}
+      {historical.version && !historical.version.integrity_valid && (
+        <Notice tone="warning">
+          Integritas versi historis tidak valid. Konfigurasi tersimpan tidak
+          dapat dianggap sebagai bukti konfigurasi saat eksekusi.
+        </Notice>
+      )}
       <ArynCanvas
         mode="execution"
         initialNodes={execNodes}
         initialEdges={execEdges}
         run={selected}
-        version={version}
+        version={historical.version}
+        assignment={historical.assignment}
         auditEvents={data.audit.filter((e) => e.resource_id === selected?.id)}
-        showInspectorByDefault={Boolean(selected || pending)}
+        showInspectorByDefault={Boolean(selected)}
       />
       <div className="run-layout">
         <Panel
@@ -109,13 +142,14 @@ export function Runs({ data, workspace, pending, act }: Shared) {
                 <label>
                   Penugasan agent
                   <select
-                    value={assignment}
+                    value={assigned?.id || ""}
                     onChange={(e) => {
                       setAssignment(e.target.value);
                       setRunKey(crypto.randomUUID());
                     }}
                     disabled={pending}
                   >
+                    <option value="">Pilih penugasan aktif</option>
                     {active.map((a) => (
                       <option key={a.id} value={a.id}>
                         {
@@ -174,9 +208,6 @@ export function Runs({ data, workspace, pending, act }: Shared) {
                       : "Ketersediaan model belum dapat diverifikasi. Eksekusi diblokir sampai runtime menyediakan bukti ketersediaan yang valid."}
                   </Notice>
                 )}
-                {pending && (
-                  <Busy label="Core memproses riset melalui Hermes. Hasil akan tersimpan otomatis…" />
-                )}
               </div>
               <div className="run-submit">
                 <span>
@@ -220,8 +251,16 @@ export function Runs({ data, workspace, pending, act }: Shared) {
             />
           ) : (
             <Empty
-              title="Hasil riset akan muncul di sini"
-              description="Belum ada eksekusi pada proyek ini. Output dan jumlah token hanya ditampilkan setelah dilaporkan runtime."
+              title={
+                params.has("hasil")
+                  ? "Run yang dipilih tidak tersedia"
+                  : "Hasil riset akan muncul di sini"
+              }
+              description={
+                params.has("hasil")
+                  ? "Run tidak ditemukan pada proyek aktif. Pilih run yang tersedia dari riwayat."
+                  : "Belum ada eksekusi pada proyek ini. Output dan jumlah token hanya ditampilkan setelah dilaporkan runtime."
+              }
             />
           )}
         </Panel>
@@ -299,12 +338,14 @@ function RunResultPanel({ run, audit }: { run: Run; audit: Audit[] }) {
       </div>
       <div className="result-tabs">
         <button
+          aria-pressed={tab === "output"}
           className={tab === "output" ? "selected" : ""}
           onClick={() => setTab("output")}
         >
           Output
         </button>
         <button
+          aria-pressed={tab === "audit"}
           className={tab === "audit" ? "selected" : ""}
           onClick={() => setTab("audit")}
         >

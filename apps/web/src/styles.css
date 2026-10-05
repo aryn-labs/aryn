@@ -4742,3 +4742,71 @@ tbody tr:hover {
   border-color: #fde68a !important;
 }
 
+
+/* Studio state semantics, canvas focus, and compact inspector layout. */
+.canvas-flow-area { flex: 1; min-width: 0; }
+.canvas-sub-tag { max-width: 330px; }
+.canvas-inspector { width: min(360px, 42%); }
+.inspector-meta-list { margin: 14px 0; }
+.inspector-meta-list dd, .inspector-code-block { overflow-wrap: anywhere; word-break: break-word; }
+.inspector-code-block { white-space: pre-wrap; max-width: 100%; }
+.inspector-content form .form-fields { padding: 12px 0; }
+.inspector-content form .form-actions { padding: 12px 0; }
+.approval-quick-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.provider-status-badge { display: inline-block; margin: 8px 0 16px; }
+.availability-available { color: var(--success); }
+.availability-unknown { color: var(--warning); }
+.availability-unavailable { color: var(--error); }
+.bench-score-banner.text-error .score-percent { color: var(--error); }
+.bench-score-banner.text-warning .score-percent { color: var(--warning); }
+.bench-score-banner.text-success .score-percent { color: var(--success); }
+.aryn-node.status-unverified, .aryn-node.status-waiting { border-color: var(--warning); }
+.aryn-node.status-unverified .metric-val { color: var(--warning); }
+.aryn-node.status-failed .metric-val { color: var(--error); }
+.aryn-node.status-completed .metric-val { color: var(--success); }
+.aryn-edge.aryn-edge-unverified { stroke: var(--warning) !important; }
+.aryn-handle { pointer-events: none !important; opacity: .45; cursor: default; }
+.aryn-handle:hover { transform: none; }
+.node-select-button { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; background: transparent; border-radius: inherit; z-index: 2; }
+.node-select-button:focus-visible { outline: 3px solid var(--accent-cyan); outline-offset: 4px; }
+.aryn-node:hover { transform: none; }
+.connection.degraded { color: var(--warning); }
+.connection.degraded .connection-dot { background: var(--warning); box-shadow: none; }
+.studio-hero-meta { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.hud-card, .recent-run-item { text-decoration: none; color: var(--text); }
+.hud-card-interactive:focus-visible, .recent-run-item:focus-visible { outline: 2px solid var(--accent-cyan); outline-offset: 3px; }
+.run-stream-meta { flex-wrap: wrap; }
+.recent-run-item { display: block; min-width: 0; }
+.run-stream-top .mono { overflow-wrap: anywhere; min-width: 0; }
+.canvas-header-bar { height: auto; min-height: 48px; flex-wrap: wrap; gap: 8px; padding: 10px 12px; }
+.canvas-mode-indicator { flex-wrap: wrap; min-width: 0; }
+.canvas-quick-controls { flex-wrap: wrap; }
+:root[data-theme="light"] { --success: #065f46; --warning: #92400e; --error: #be123c; --accent-cyan: #0369a1; --muted: #475569; }
+:root[data-theme="light"] .aryn-node-badge.badge-violet { color: #3730a3; background: #ede9fe; }
+:root[data-theme="light"] .node-code-badge { color: #075985; background: #e0f2fe; }
+:root[data-theme="light"] .canvas-mode-pill.mode-factory { color: #3730a3; background: #ede9fe; }
+:root[data-theme="light"] .canvas-mode-pill.mode-execution { color: #075985; background: #e0f2fe; }
+:root[data-theme="light"] .canvas-mode-pill.mode-bench { color: #78350f; background: #fef3c7; }
+@media (max-width: 1100px) {
+  .canvas-workspace { flex-direction: column; overflow: auto; }
+  .canvas-flow-area { flex: none; height: 360px; min-height: 360px; }
+  .canvas-inspector { width: 100%; min-height: 360px; max-height: 520px; border-left: 0; border-top: 1px solid var(--border); }
+  .aryn-studio-canvas-container { height: auto; min-height: 440px; }
+}
+@media (max-width: 640px) {
+  .sidebar { visibility: hidden; }
+  .mobile-open .sidebar { visibility: visible; }
+  .canvas-quick-controls .text-xs, .canvas-sub-tag { display: none; }
+  .canvas-flow-area { height: 320px; min-height: 320px; }
+  .canvas-inspector { max-height: none; }
+  .inspector-content { max-height: 620px; }
+  .canvas-mode-pill { font-size: 10px; }
+  .canvas-header-bar { gap: 6px; }
+  .inspector-tabs { flex-wrap: wrap; }
+  .approval-list > div { flex-wrap: wrap; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .aryn-node, .aryn-edge, .pulse-indicator, .connection-dot, .ambient-orb { animation: none !important; transition: none !important; }
+  .aryn-edge-flow-dot { display: none; }
+}
+.scenario-check.warning { color: var(--warning); background: var(--warning-bg); }

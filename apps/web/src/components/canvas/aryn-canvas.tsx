@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Background,
   BackgroundVariant,
@@ -24,7 +24,15 @@ import { nodeTypes } from "./nodes/custom-nodes";
 import { edgeTypes } from "./edges/aryn-edge";
 import { CanvasInspector } from "./canvas-inspector";
 import type { BaseNodeData, CanvasMode } from "./types";
-import type { Audit, Evaluation, Run, Version, Workspace } from "../../lib/types";
+import type {
+  Assignment,
+  Audit,
+  Evaluation,
+  Run,
+  Version,
+  Workspace,
+} from "../../lib/types";
+import { useReducedMotion } from "../../lib/motion";
 
 interface ArynCanvasProps {
   mode: CanvasMode;
@@ -34,14 +42,13 @@ interface ArynCanvasProps {
   version?: Version | null;
   workspace?: Workspace;
   run?: Run | null;
+  assignment?: Assignment;
+  versions?: Version[];
+  pending?: boolean;
+  error?: string;
+  onCreateVersion?: (body: unknown) => Promise<void>;
   auditEvents?: Audit[];
   evaluation?: Evaluation | null;
-  onNewVersionFromConfig?: (config: {
-    systemPrompt: string;
-    model: string;
-    temperature: number;
-    maxTokens: number;
-  }) => void;
   onRunBench?: () => void;
   onApproveVersion?: () => void;
   onPublishVersion?: () => void;
@@ -56,9 +63,13 @@ function CanvasInner({
   version,
   workspace,
   run,
+  assignment,
+  versions,
+  pending,
+  error,
+  onCreateVersion,
   auditEvents,
   evaluation,
-  onNewVersionFromConfig,
   onRunBench,
   onApproveVersion,
   onPublishVersion,
@@ -67,15 +78,28 @@ function CanvasInner({
 }: ArynCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(
+    () =>
+      initialNodes.find(
+        (n) => n.type === (mode === "bench" ? "evaluation" : "agent"),
+      )?.id || null,
+  );
   const [showInspector, setShowInspector] = useState(showInspectorByDefault);
   const [showMinimap, setShowMinimap] = useState(false);
+  const inspectorToggle = useRef<HTMLButtonElement>(null);
 
   const { fitView, zoomIn, zoomOut } = useReactFlow();
+  const reducedMotion = useReducedMotion();
 
   // Sync nodes and edges when initial props change
   useEffect(() => {
-    setNodes(initialNodes);
+    setNodes((current) =>
+      initialNodes.map((node) => ({
+        ...node,
+        position:
+          current.find((n) => n.id === node.id)?.position || node.position,
+      })),
+    );
   }, [initialNodes, setNodes]);
 
   useEffect(() => {
@@ -83,13 +107,10 @@ function CanvasInner({
   }, [initialEdges, setEdges]);
 
   // Handle node selection
-  const handleNodeClick = useCallback(
-    (_: React.MouseEvent, node: Node) => {
-      setSelectedNodeId(node.id);
-      setShowInspector(true);
-    },
-    [],
-  );
+  const handleNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
+    setSelectedNodeId(node.id);
+    setShowInspector(true);
+  }, []);
 
   const handleSelectNodeFromData = useCallback((nodeId: string) => {
     setSelectedNodeId(nodeId);
@@ -99,6 +120,10 @@ function CanvasInner({
   // Enrich node data with selection callback
   const enrichedNodes = nodes.map((node) => ({
     ...node,
+    ariaRole: "group" as const,
+    draggable: mode === "factory",
+    connectable: false,
+    deletable: false,
     data: {
       ...(node.data as BaseNodeData),
       selected: node.id === selectedNodeId,
@@ -106,8 +131,8 @@ function CanvasInner({
     },
   }));
 
-  const selectedNode =
-    enrichedNodes.find((n) => n.id === selectedNodeId)?.data as BaseNodeData | null;
+  const selectedNode = enrichedNodes.find((n) => n.id === selectedNodeId)
+    ?.data as BaseNodeData | null;
 
   return (
     <div className={`aryn-studio-canvas-container ${className}`}>
@@ -115,13 +140,14 @@ function CanvasInner({
       <div className="canvas-header-bar">
         <div className="canvas-mode-indicator">
           <span className={`canvas-mode-pill mode-${mode}`}>
-            <span className="pulse-indicator" />
             {mode === "factory" && "STUDIO ARSITEKTUR"}
-            {mode === "execution" && "LIVE RUN ENGINE"}
+            {mode === "execution" && "HASIL EKSEKUSI"}
             {mode === "bench" && "BENCH EVALUASI"}
           </span>
           <span className="canvas-sub-tag">
-            {nodes.length} node · {edges.length} koneksi
+            {mode === "factory"
+              ? "Tata letak sementara · konfigurasi melalui versi baru"
+              : "Hanya baca · pan, zoom, dan inspector"}
           </span>
         </div>
 
@@ -146,7 +172,9 @@ function CanvasInner({
             size="sm"
             variant="ghost"
             aria-label="Pusatkan canvas"
-            onClick={() => fitView({ padding: 0.2, duration: 400 })}
+            onClick={() =>
+              fitView({ padding: 0.2, duration: reducedMotion ? 0 : 400 })
+            }
           >
             <RotateCcw size={14} />
             <span className="text-xs">Pusatkan</span>
@@ -155,15 +183,18 @@ function CanvasInner({
             size="sm"
             variant={showMinimap ? "secondary" : "ghost"}
             aria-label="Peta mini"
+            aria-pressed={showMinimap}
             onClick={() => setShowMinimap(!showMinimap)}
           >
             <Maximize2 size={14} />
             <span className="text-xs">Minimap</span>
           </Button>
           <Button
+            ref={inspectorToggle}
             size="sm"
             variant={showInspector ? "secondary" : "ghost"}
             aria-label="Panel inspector"
+            aria-pressed={showInspector}
             onClick={() => setShowInspector(!showInspector)}
           >
             <SlidersHorizontal size={14} />
@@ -183,12 +214,28 @@ function CanvasInner({
             nodeTypes={nodeTypes as any}
             edgeTypes={edgeTypes as any}
             fitView
-            fitViewOptions={{ padding: 0.18 }}
+            fitViewOptions={{
+              padding: 0.18,
+              maxZoom: 1,
+              // Start Factory with readable configuration nodes; Pusatkan shows the whole architecture.
+              nodes:
+                mode === "factory"
+                  ? initialNodes.filter((n) =>
+                      ["node-input", "node-agent", "node-model"].includes(n.id),
+                    )
+                  : undefined,
+            }}
             minZoom={0.2}
             maxZoom={1.6}
             proOptions={{ hideAttribution: true }}
             className="aryn-flow-viewport"
-            aria-label="Canvas Diagram Interaktif ARYN Studio"
+            nodesDraggable={mode === "factory"}
+            nodesConnectable={false}
+            edgesReconnectable={false}
+            nodesFocusable={false}
+            edgesFocusable={false}
+            deleteKeyCode={null}
+            aria-label={`Canvas ARYN ${mode === "factory" ? "arsitektur" : "hanya baca"}`}
           >
             <Background
               variant={BackgroundVariant.Dots}
@@ -211,14 +258,21 @@ function CanvasInner({
           <CanvasInspector
             mode={mode}
             selectedNode={selectedNode}
-            onClose={() => setShowInspector(false)}
+            onClose={() => {
+              setShowInspector(false);
+              inspectorToggle.current?.focus();
+            }}
             version={version}
             workspace={workspace}
-            onNewVersionFromConfig={onNewVersionFromConfig}
             onRunBench={onRunBench}
             onApproveVersion={onApproveVersion}
             onPublishVersion={onPublishVersion}
             run={run}
+            assignment={assignment}
+            versions={versions}
+            pending={pending}
+            error={error}
+            onCreateVersion={onCreateVersion}
             auditEvents={auditEvents}
             evaluation={evaluation}
           />
@@ -231,7 +285,10 @@ function CanvasInner({
 export function ArynCanvas(props: ArynCanvasProps) {
   return (
     <ReactFlowProvider>
-      <CanvasInner {...props} />
+      <CanvasInner
+        key={`${props.mode}:${props.run?.id || props.evaluation?.id || props.version?.id || "empty"}`}
+        {...props}
+      />
     </ReactFlowProvider>
   );
 }

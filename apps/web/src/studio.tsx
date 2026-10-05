@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -36,6 +36,7 @@ import { Runs } from "./features/runs";
 import { Governance } from "./features/governance";
 import { SettingsPage, Unavailable } from "./features/settings";
 import { AmbientBackground } from "./components/ambient-background";
+import { needsApproval } from "./lib/studio-state";
 import arynMark from "./assets/aryn-mark.png";
 import arynMarkDark from "./assets/aryn-mark-dark.png";
 const navigation = [
@@ -70,6 +71,8 @@ export function App() {
     () => localStorage.getItem("aryn-sidebar") === "collapsed",
   );
   const [mobile, setMobile] = useState(false);
+  const sidebarRef = useRef<HTMLElement>(null);
+  const menuRef = useRef<HTMLButtonElement>(null);
   const [project, setProject] = useState(
     () => localStorage.getItem("aryn-project") || "proj_studio_research",
   );
@@ -102,6 +105,13 @@ export function App() {
     setMobile(false);
     mutation.reset();
   }, [location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!mobile) return;
+    sidebarRef.current
+      ?.querySelector<HTMLAnchorElement>('a[aria-current="page"], a')
+      ?.focus();
+    return () => menuRef.current?.focus();
+  }, [mobile]);
   useEffect(() => {
     if (toast) {
       const timer = setTimeout(() => setToast(""), 6000);
@@ -166,7 +176,33 @@ export function App() {
           onClick={() => setMobile(false)}
         />
       )}
-      <aside className="sidebar">
+      <aside
+        id="studio-sidebar"
+        ref={sidebarRef}
+        className="sidebar"
+        role={mobile ? "dialog" : undefined}
+        aria-modal={mobile || undefined}
+        aria-label="Navigasi Studio"
+        onKeyDown={(event) => {
+          if (!mobile) return;
+          if (event.key === "Escape") {
+            event.preventDefault();
+            setMobile(false);
+          } else if (event.key === "Tab") {
+            const controls = Array.from(
+              sidebarRef.current?.querySelectorAll<HTMLElement>(
+                "a[href], button:not(:disabled), select:not(:disabled)",
+              ) || [],
+            ).filter((el) => el.getClientRects().length > 0);
+            const target = event.shiftKey ? controls.at(-1) : controls[0];
+            const boundary = event.shiftKey ? controls[0] : controls.at(-1);
+            if (document.activeElement === boundary) {
+              event.preventDefault();
+              target?.focus();
+            }
+          }
+        }}
+      >
         <div className="brand">
           <img
             className="brand-mark"
@@ -193,7 +229,8 @@ export function App() {
               <span className="workspace-card-tag">SESI AKTIF</span>
             </div>
             <strong className="workspace-card-title">
-              {w?.projects.find((p) => p.id === project)?.name || "Laboratorium Riset"}
+              {w?.projects.find((p) => p.id === project)?.name ||
+                "Laboratorium Riset"}
             </strong>
           </div>
           {w && w.projects.length > 1 && (
@@ -202,6 +239,7 @@ export function App() {
                 aria-label="Pilih proyek"
                 value={project}
                 className="workspace-card-select"
+                disabled={mutation.isPending}
                 onChange={(e) => {
                   setProject(e.target.value);
                   localStorage.setItem("aryn-project", e.target.value);
@@ -237,15 +275,9 @@ export function App() {
               )}
               {n.path === "/approvals" &&
                 data &&
-                data.versions.filter(
-                  (v) => v.status === "draft" && v.bench_eligible,
-                ).length > 0 && (
+                data.versions.filter(needsApproval).length > 0 && (
                   <small className="nav-count">
-                    {
-                      data.versions.filter(
-                        (v) => v.status === "draft" && v.bench_eligible,
-                      ).length
-                    }
+                    {data.versions.filter(needsApproval).length}
                   </small>
                 )}
             </NavLink>
@@ -286,14 +318,17 @@ export function App() {
           </div>
         </div>
       </aside>
-      <div className="app-body">
+      <div className="app-body" inert={mobile}>
         <header className="topbar">
           <div className="breadcrumb">
             <Button
+              ref={menuRef}
               size="icon"
               variant="ghost"
               className="mobile-menu"
               aria-label="Buka navigasi"
+              aria-controls="studio-sidebar"
+              aria-expanded={mobile}
               onClick={() => setMobile(true)}
             >
               <Menu size={19} />
@@ -317,7 +352,7 @@ export function App() {
               API {apiConnected ? "terhubung" : "terputus"}
             </span>
             <span
-              className={`connection ${apiConnected && w?.runtime.ready ? "online" : "offline"}`}
+              className={`connection ${apiConnected && w?.runtime.ready ? "online" : apiConnected && w?.runtime.connected ? "degraded" : "offline"}`}
               title={w?.runtime.message || "Memeriksa Hermes"}
             >
               <span className="connection-dot" />
@@ -379,7 +414,7 @@ export function App() {
               </Button>
             </div>
           ) : data && w ? (
-            <>
+            <Fragment key={project}>
               {mutation.error && !newBlueprint && (
                 <div className="global-error">
                   <Notice tone="error">{mutation.error.message}</Notice>
@@ -428,7 +463,7 @@ export function App() {
                   onAction={() => navigate("/")}
                 />
               )}
-            </>
+            </Fragment>
           ) : null}
         </main>
         <footer className="app-footer">

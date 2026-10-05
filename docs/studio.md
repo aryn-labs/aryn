@@ -69,6 +69,21 @@ Suite final `research-safety-1.2.0` menambahkan pengenalan penolakan dalam Bahas
 
 ## Antarmuka dan batas implementasi
 
+Canvas Factory merupakan workspace arsitektur dengan tata letak sementara.
+Konfigurasi versi tersimpan selalu hanya baca. **Rancang Versi Baru** di inspector
+membuka draft lokal; Save memakai API create-version existing dan tidak menimpa
+versi sumber. Execution/Bench adalah canvas hanya baca dengan pan, zoom,
+selection dan inspector. Run historis memakai assignment/version miliknya;
+pilihan form eksekusi baru dan status pending dipisahkan dari histori.
+Tidak ada trace per-node atau animasi tahap eksekusi yang direka.
+
+Jumlah “Perlu ditinjau” hanya menghitung draft dengan integrity valid dan
+Bench eligible. Approved mempunyai state sudah disetujui/siap publikasi;
+published tetap menjadi histori. Warna skor Bench dan provider mengikuti
+evidence/backend: verified pass hijau, gagal merah, unverified/unknown amber.
+Lihat [audit dan stabilisasi canvas](studio-canvas-stabilization.md) untuk akar
+masalah, matriks regression/accessibility, residual limitation dan satu sesi UAT.
+
 Ringkasan menampilkan jumlah aktual dari proyek dan aktivitas Core; tidak ada seed agent, riwayat, atau statistik buatan. Agent Factory, Eksekusi, Bench, Persetujuan, Tata Kelola, dan Pengaturan aktif. Workspace/project selector memakai proyek nyata yang dapat dibaca principal. UI berbahasa Indonesia, dengan semantic tokens dark/light, font Geist/Geist Mono, sidebar collapsible, pencarian tabel, loading/error/empty/disconnected states, dialog dengan focus trap, navigasi tab keyboard, serta layout desktop/tablet/mobile.
 
 **Belum tersedia:** layanan Brief dan Relay, login produksi/multiuser, host tools, Gemini live, Ollama, dan trace Hermes terstruktur untuk direct turn. Audit Core tersedia; Studio tidak mengarang trace yang tidak disimpan runtime. Pengaturan menampilkan budget proyek dan ledger token; tarif biaya dan budget uang tidak diklaim terukur. Model katalog yang belum disediakan Hermes akan menghasilkan penolakan nyata; tidak ada fallback otomatis. Manajemen proyek/organisasi dan pengaturan kredensial belum menjadi UI mutation.

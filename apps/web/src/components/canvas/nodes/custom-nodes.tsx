@@ -11,7 +11,9 @@ export function InputNode({ data, selected }: any) {
       {hasPrompt ? (
         <div className="node-snippet">
           <small>Status Masukan:</small>
-          <div className="node-stat-value">{promptLength} karakter terkonfigurasi</div>
+          <div className="node-stat-value">
+            {promptLength} karakter terkonfigurasi
+          </div>
         </div>
       ) : null}
     </ArynBaseNode>
@@ -54,7 +56,7 @@ export function KnowledgeNode({ data, selected }: any) {
   return (
     <ArynBaseNode data={nodeData} selected={selected}>
       <div className="node-text-subtle">
-        Lingkup riset teks terisolasi · Tanpa akses tool host
+        Konteks versi dan proyek · Bukan sumber data eksternal
       </div>
     </ArynBaseNode>
   );
@@ -65,7 +67,9 @@ export function PolicyNode({ data, selected }: any) {
   return (
     <ArynBaseNode data={nodeData} selected={selected}>
       <div className="node-text-subtle">
-        {nodeData.details?.policyText ? String(nodeData.details.policyText) : "Batas keamanan Core · Zero host toolset"}
+        {nodeData.details?.policyText
+          ? String(nodeData.details.policyText)
+          : "Batas keamanan Core · Zero host toolset"}
       </div>
     </ArynBaseNode>
   );
@@ -93,7 +97,9 @@ export function OutputNode({ data, selected }: any) {
       {hasOutput ? (
         <div className="node-snippet">
           <small>Hasil Output:</small>
-          <div className="node-stat-value">{outputLength} karakter dihasilkan</div>
+          <div className="node-stat-value">
+            {outputLength} karakter dihasilkan
+          </div>
         </div>
       ) : null}
     </ArynBaseNode>
@@ -118,7 +124,7 @@ export function HermesNode({ data, selected }: any) {
   return (
     <ArynBaseNode data={nodeData} selected={selected}>
       <div className="node-text-subtle">
-        Runtime Text Confinement Adapter
+        Adapter teks · trace per-node belum tersedia
       </div>
     </ArynBaseNode>
   );

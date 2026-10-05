@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   ArrowRight,
   Beaker,
@@ -12,42 +12,36 @@ import {
 import { date, number } from "../lib/utils";
 import { Button } from "../components/ui/button";
 import { Empty, PageHeading, Status } from "../components/shared";
+import { needsApproval, runtimeTone } from "../lib/studio-state";
 import type { Shared } from "../lib/types";
 import { Panel, AuditList } from "../components/workspace";
 import { AgentFlow } from "../components/agent-flow";
 
-export function Overview({ data, workspace, openBlueprint }: Shared) {
+export function Overview({ data, workspace, project, openBlueprint }: Shared) {
   const navigate = useNavigate();
   const published = data.versions.filter(
     (v) => v.status === "published",
   ).length;
 
-  const pendingApprovals = data.versions.filter(
-    (v) => v.status === "draft" && v.bench_eligible,
-  ).length;
+  const pendingApprovals = data.versions.filter(needsApproval).length;
 
-  const activeProject =
-    workspace.projects.find((p) => p.id === workspace.organization?.id) ||
-    workspace.projects[0];
+  const activeProject = workspace.projects.find((p) => p.id === project);
 
   return (
     <div className="overview-page studio-control-center">
       {/* Studio Control Center Hero */}
       <div className="studio-hero">
         <div className="studio-hero-meta">
-          <span className="studio-live-pill">
-            <span className="pulse-indicator" />
-            CONTROL CENTER · ARYN STUDIO OPERATIONAL
-          </span>
+          <span className="studio-live-pill">PUSAT KENDALI · ARYN STUDIO</span>
           <span className="studio-project-tag">
             <Radio size={12} />
-            {activeProject?.name || "Laboratorium Riset"}
+            {activeProject?.name || "Proyek tidak tersedia"}
           </span>
         </div>
         <PageHeading
           eyebrow="ARYN STUDIO CONTROL CENTER"
           title="Ruang kerja agent Anda."
-          description="Pusat kendali operasional arsitektur agen, verifikasi Bench, dan telemetri runtime terisolasi."
+          description="Rancang agent, tinjau evidence, dan telusuri eksekusi pada proyek aktif."
         >
           <Button
             onClick={openBlueprint}
@@ -63,19 +57,7 @@ export function Overview({ data, workspace, openBlueprint }: Shared) {
       {/* Spatial Control & Telemetry HUD */}
       <div className="control-center-hud">
         {/* Workspace Context Card */}
-        <div
-          className="hud-card hud-card-interactive"
-          tabIndex={0}
-          role="button"
-          aria-label="Buka Agent Factory"
-          onClick={() => navigate("/factory")}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              navigate("/factory");
-            }
-          }}
-        >
+        <Link className="hud-card hud-card-interactive" to="/factory">
           <div className="hud-header">
             <div className="hud-icon hud-icon-violet">
               <Bot size={17} />
@@ -83,30 +65,20 @@ export function Overview({ data, workspace, openBlueprint }: Shared) {
             <span className="hud-badge hud-badge-violet">Factory</span>
           </div>
           <div className="hud-body">
-            <strong className="hud-metric">{number(data.blueprints.length)}</strong>
+            <strong className="hud-metric">
+              {number(data.blueprints.length)}
+            </strong>
             <span className="hud-title">Blueprint Agent</span>
-            <p className="hud-desc">Arsitektur & peran aktif</p>
+            <p className="hud-desc">Definisi agent dalam proyek aktif</p>
           </div>
           <div className="hud-footer">
             <span>{published} versi dipublikasikan</span>
             <ChevronRight size={14} />
           </div>
-        </div>
+        </Link>
 
         {/* Runtime & Hermes Confinement */}
-        <div
-          className="hud-card hud-card-interactive"
-          tabIndex={0}
-          role="button"
-          aria-label="Buka riwayat Eksekusi"
-          onClick={() => navigate("/runs")}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              navigate("/runs");
-            }
-          }}
-        >
+        <Link className="hud-card hud-card-interactive" to="/runs">
           <div className="hud-header">
             <div className="hud-icon hud-icon-cyan">
               <Workflow size={17} />
@@ -116,31 +88,23 @@ export function Overview({ data, workspace, openBlueprint }: Shared) {
           <div className="hud-body">
             <strong className="hud-metric">{number(data.runs.length)}</strong>
             <span className="hud-title">Eksekusi Tersimpan</span>
-            <p className="hud-desc">Jejak eksekusi terverifikasi Core</p>
+            <p className="hud-desc">Hasil dan status tersimpan dari Core</p>
           </div>
           <div className="hud-footer">
-            <span className="text-success flex items-center gap-1.5">
-              <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />
-              Hermes {workspace.runtime.ready ? "Siap Confinement" : "Siaga"}
+            <span className={`text-${runtimeTone(workspace.runtime)}`}>
+              Hermes{" "}
+              {workspace.runtime.ready
+                ? "siap"
+                : workspace.runtime.connected
+                  ? "belum siap"
+                  : "tidak tersedia"}
             </span>
             <ChevronRight size={14} />
           </div>
-        </div>
+        </Link>
 
         {/* Governance & Core Integrity */}
-        <div
-          className="hud-card hud-card-interactive"
-          tabIndex={0}
-          role="button"
-          aria-label="Buka Tata Kelola"
-          onClick={() => navigate("/governance")}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              navigate("/governance");
-            }
-          }}
-        >
+        <Link className="hud-card hud-card-interactive" to="/governance">
           <div className="hud-header">
             <div className="hud-icon hud-icon-emerald">
               <ShieldCheck size={17} />
@@ -148,32 +112,23 @@ export function Overview({ data, workspace, openBlueprint }: Shared) {
             <span className="hud-badge stat-pill-emerald">Core Security</span>
           </div>
           <div className="hud-body">
-            <strong className="hud-metric text-success">
-              {workspace.runtime.ready ? "100%" : "Siaga"}
-            </strong>
-            <span className="hud-title">Integritas Audit</span>
-            <p className="hud-desc">Kebijakan lokal terisolasi & diaudit</p>
+            <strong className="hud-metric">{number(data.audit.length)}</strong>
+            <span className="hud-title">Jejak Core</span>
+            <p className="hud-desc">
+              Peristiwa aplikasi tersimpan pada proyek aktif
+            </p>
           </div>
           <div className="hud-footer">
-            <span>{number(data.audit.length)} jejak peristiwa</span>
+            <span>
+              {data.versions.filter((v) => v.integrity_valid).length} versi
+              dengan integritas valid
+            </span>
             <ChevronRight size={14} />
           </div>
-        </div>
+        </Link>
 
         {/* Bench & Pending Approvals */}
-        <div
-          className="hud-card hud-card-interactive"
-          tabIndex={0}
-          role="button"
-          aria-label="Buka Persetujuan"
-          onClick={() => navigate("/approvals")}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              navigate("/approvals");
-            }
-          }}
-        >
+        <Link className="hud-card hud-card-interactive" to="/approvals">
           <div className="hud-header">
             <div className="hud-icon hud-icon-amber">
               <Beaker size={17} />
@@ -183,9 +138,7 @@ export function Overview({ data, workspace, openBlueprint }: Shared) {
             </span>
           </div>
           <div className="hud-body">
-            <strong className="hud-metric">
-              {number(pendingApprovals)}
-            </strong>
+            <strong className="hud-metric">{number(pendingApprovals)}</strong>
             <span className="hud-title">Menunggu Persetujuan</span>
             <p className="hud-desc">Lulus Bench & siap tinjauan Core</p>
           </div>
@@ -193,7 +146,7 @@ export function Overview({ data, workspace, openBlueprint }: Shared) {
             <span>{data.evaluations.length} evaluasi Bench</span>
             <ChevronRight size={14} />
           </div>
-        </div>
+        </Link>
       </div>
 
       <div className="overview-content">
@@ -259,7 +212,9 @@ export function Overview({ data, workspace, openBlueprint }: Shared) {
                         <div className="agent-meta">
                           <strong>{bp.name}</strong>
                           <small>
-                            {bp.description || bp.slug || "Blueprint riset teks"}
+                            {bp.description ||
+                              bp.slug ||
+                              "Blueprint riset teks"}
                           </small>
                           <div className="agent-sub-pills">
                             {v && (
@@ -313,24 +268,30 @@ export function Overview({ data, workspace, openBlueprint }: Shared) {
               >
                 <div className="recent-runs-stream">
                   {data.runs.slice(0, 3).map((r) => (
-                    <div
+                    <Link
                       key={r.id}
                       className="recent-run-item"
-                      onClick={() => navigate(`/runs?hasil=${r.id}`)}
+                      to={`/runs?hasil=${encodeURIComponent(r.id)}`}
                     >
                       <div className="run-stream-top">
-                        <span className="mono text-xs text-secondary">{r.id}</span>
+                        <span className="mono text-xs text-secondary">
+                          {r.id}
+                        </span>
                         <Status value={r.status} />
                       </div>
-                      <p className="run-stream-prompt line-clamp-2">{r.prompt}</p>
+                      <p className="run-stream-prompt line-clamp-2">
+                        {r.prompt}
+                      </p>
                       <div className="run-stream-meta">
                         <span className="mono text-xs">{r.model}</span>
                         <span className="text-xs text-secondary">
                           {number(r.total_tokens || 0)} token
                         </span>
-                        <span className="text-xs text-secondary">{date(r.created_at)}</span>
+                        <span className="text-xs text-secondary">
+                          {date(r.created_at)}
+                        </span>
                       </div>
-                    </div>
+                    </Link>
                   ))}
                 </div>
               </Panel>

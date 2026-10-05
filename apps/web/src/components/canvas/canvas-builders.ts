@@ -1,471 +1,364 @@
 import type { Node, Edge } from "@xyflow/react";
-import type { Blueprint, Evaluation, Run, Version, Workspace } from "../../lib/types";
-import { scenarioNames } from "../shared";
+import type {
+  Blueprint,
+  Evaluation,
+  Run,
+  Version,
+  Workspace,
+} from "../../lib/types";
+import { scenarioNames, statusLabel } from "../shared";
+import { availabilityLabel, evaluationStatus } from "../../lib/studio-state";
+import type { BaseNodeData, NodeStatus } from "./types";
+
+const node = (
+  id: string,
+  type: string,
+  x: number,
+  y: number,
+  data: Omit<BaseNodeData, "id">,
+): Node => ({ id, type, position: { x, y }, data: { id, ...data } });
+const edge = (
+  source: string,
+  target: string,
+  status: NodeStatus = "idle",
+): Edge => ({
+  id: `${source}-${target}`,
+  source,
+  target,
+  type: "aryn",
+  data: { status },
+});
 
 export function buildFactoryNodesAndEdges(
   blueprint: Blueprint,
   version?: Version | null,
   workspace?: Workspace,
-): { nodes: Node[]; edges: Edge[] } {
-  const isPublished = version?.status === "published";
-  const isApproved = version?.status === "approved" || isPublished;
-  const isBenchPassed = Boolean(version?.bench_eligible);
-  const modelAvailability =
-    workspace?.models.find((m) => m.model_id === version?.model)?.availability || "unknown";
-
-  const nodes: Node[] = [
-    {
-      id: "node-input",
-      type: "arynInput",
-      position: { x: 40, y: 160 },
-      data: {
-        id: "node-input",
-        label: "User Input",
-        sublabel: "Parameter & Query Riset",
-        nodeType: "input",
-        status: "idle",
-        badge: "Teks / Instruksi",
-        badgeVariant: "default",
+  project?: string,
+) {
+  const published = version?.status === "published";
+  const approved = version?.status === "approved";
+  const governanceValid =
+    !!version?.integrity_valid && !!version?.governance_valid;
+  const passing =
+    version?.status === "draft" &&
+    !!version.integrity_valid &&
+    !!version.bench_eligible;
+  const availability =
+    workspace?.models.find((m) => m.model_id === version?.model)
+      ?.availability || "unknown";
+  const nodes = [
+    node("node-input", "arynInput", 40, 160, {
+      label: "Instruksi pengguna",
+      sublabel: "Permintaan riset teks",
+      nodeType: "input",
+      status: "idle",
+      badge: "Masukan teks",
+    }),
+    node("node-agent", "agent", 320, 160, {
+      label: blueprint.name,
+      sublabel: version
+        ? `Versi v${version.version_number}`
+        : "Belum ada versi",
+      nodeType: "agent",
+      status: version && !version.integrity_valid ? "blocked" : "idle",
+      badge: published
+        ? "Dipublikasikan"
+        : approved
+          ? "Disetujui"
+          : "Konfigurasi tersimpan",
+      badgeVariant: published && governanceValid ? "emerald" : "violet",
+      details: { systemPrompt: version?.system_prompt },
+    }),
+    node("node-model", "model", 600, 160, {
+      label: version?.model || "Model belum dipilih",
+      sublabel: "Routing melalui Hermes",
+      nodeType: "model",
+      status:
+        availability === "unavailable"
+          ? "failed"
+          : availability === "unknown"
+            ? "waiting"
+            : "idle",
+      badge: availabilityLabel[availability],
+      badgeVariant:
+        availability === "available"
+          ? "emerald"
+          : availability === "unknown"
+            ? "amber"
+            : "rose",
+      metrics: version
+        ? [
+            { label: "Temperature", value: version.temperature },
+            { label: "Batas token", value: version.max_tokens },
+          ]
+        : undefined,
+      details: { model: version?.model, availability },
+    }),
+    node("node-knowledge", "knowledge", 880, 80, {
+      label: "Konteks proyek",
+      sublabel:
+        workspace?.projects.find((p) => p.id === project)?.name ||
+        "Lingkup blueprint",
+      nodeType: "knowledge",
+      status: "idle",
+      badge: "Tanpa akses data eksternal",
+      badgeVariant: "default",
+    }),
+    node("node-policy", "policy", 880, 240, {
+      label: "Kebijakan Core",
+      sublabel: "Gate sebelum eksekusi",
+      nodeType: "policy",
+      status: "idle",
+      badge: "Riset teks tanpa tool",
+      badgeVariant: "default",
+      details: {
+        policyText:
+          "Core memeriksa confinement, izin, dan budget sebelum dispatch.",
       },
-    },
-    {
-      id: "node-agent",
-      type: "agent",
-      position: { x: 320, y: 160 },
-      data: {
-        id: "node-agent",
-        label: blueprint.name,
-        sublabel: version ? `Versi v${version.version_number}` : "Draft Baru",
-        nodeType: "agent",
-        status: "idle",
-        badge: version?.status || "Draft",
-        badgeVariant: isPublished ? "emerald" : "violet",
-        details: {
-          systemPrompt: version?.system_prompt || "Instruksi agen belum dikonfigurasi.",
-        },
-      },
-    },
-    {
-      id: "node-model",
-      type: "model",
-      position: { x: 600, y: 160 },
-      data: {
-        id: "node-model",
-        label: version?.model || "Model Belum Dipilih",
-        sublabel: "Router Hermes",
-        nodeType: "model",
-        status: modelAvailability === "unavailable" ? "blocked" : "idle",
-        badge: version ? `${version.temperature} temp` : "0.3 temp",
-        badgeVariant: modelAvailability === "available" ? "cyan" : "amber",
-        statusText: modelAvailability === "available" ? "Tersedia" : "Model dibatasi",
-        metrics: [
-          {
-            label: "Maks Token",
-            value: version?.max_tokens || 512,
-          },
-        ],
-        details: {
-          model: version?.model,
-          temperature: version?.temperature,
-          maxTokens: version?.max_tokens,
-          availability: modelAvailability,
-        },
-      },
-    },
-    {
-      id: "node-knowledge",
-      type: "knowledge",
-      position: { x: 880, y: 80 },
-      data: {
-        id: "node-knowledge",
-        label: "Konteks & Batasan",
-        sublabel: "Cakupan Proyek",
-        nodeType: "knowledge",
-        status: "idle",
-        badge: "Host Confinement",
-        badgeVariant: "cyan",
-      },
-    },
-    {
-      id: "node-policy",
-      type: "policy",
-      position: { x: 880, y: 240 },
-      data: {
-        id: "node-policy",
-        label: "Tata Kelola Core",
-        sublabel: "Batas Keamanan",
-        nodeType: "policy",
-        status: "idle",
-        badge: "Zero Host Tools",
-        badgeVariant: "emerald",
-        details: {
-          policyText: "Tool host dinonaktifkan · Proteksi confinement aktif",
-        },
-      },
-    },
-    {
-      id: "node-approval",
-      type: "approval",
-      position: { x: 1160, y: 160 },
-      data: {
-        id: "node-approval",
-        label: "Persetujuan Core",
-        sublabel: "Validasi Persyaratan",
-        nodeType: "approval",
-        status: isPublished
+    }),
+    node("node-approval", "approval", 1160, 160, {
+      label: "Persetujuan manusia",
+      sublabel: "Hash dan bukti Bench",
+      nodeType: "approval",
+      status:
+        (published || approved) && governanceValid
           ? "completed"
-          : isApproved
-            ? "completed"
-            : isBenchPassed
-              ? "waiting"
-              : "blocked",
-        badge: isPublished
-          ? "Dipublikasikan"
-          : isApproved
-            ? "Disetujui"
-            : isBenchPassed
-              ? "Siap Persetujuan"
-              : "Perlu Lulus Bench",
-        badgeVariant: isPublished ? "emerald" : isBenchPassed ? "violet" : "amber",
-        details: {
-          hash: version?.payload_hash,
-        },
-      },
-    },
-    {
-      id: "node-output",
-      type: "arynOutput",
-      position: { x: 1440, y: 160 },
-      data: {
-        id: "node-output",
-        label: "Output Agen",
-        sublabel: "Respons Riset Terstruktur",
-        nodeType: "output",
-        status: "idle",
-        badge: "Teks / Markdown",
-        badgeVariant: "default",
-      },
-    },
+          : passing
+            ? "waiting"
+            : "blocked",
+      badge: published
+        ? governanceValid
+          ? "Sudah dipublikasikan"
+          : "Dipublikasikan · bukti tidak berlaku"
+        : approved
+          ? governanceValid
+            ? "Siap publikasi"
+            : "Sudah disetujui · bukti tidak berlaku"
+          : passing
+            ? "Perlu persetujuan"
+            : "Perlu Bench terverifikasi",
+      badgeVariant:
+        (published || approved) && governanceValid ? "emerald" : "amber",
+      details: { hash: version?.payload_hash },
+    }),
+    node("node-output", "arynOutput", 1440, 160, {
+      label: "Hasil agent",
+      sublabel: "Hasil tersedia sesudah eksekusi",
+      nodeType: "output",
+      status: "idle",
+      badge: "Respons teks",
+    }),
   ];
-
-  const edges: Edge[] = [
-    {
-      id: "edge-input-agent",
-      source: "node-input",
-      target: "node-agent",
-      type: "aryn",
-      data: { status: "idle" },
-    },
-    {
-      id: "edge-agent-model",
-      source: "node-agent",
-      target: "node-model",
-      type: "aryn",
-      data: { status: "idle" },
-    },
-    {
-      id: "edge-model-knowledge",
-      source: "node-model",
-      target: "node-knowledge",
-      type: "aryn",
-      data: { status: "idle" },
-    },
-    {
-      id: "edge-model-policy",
-      source: "node-model",
-      target: "node-policy",
-      type: "aryn",
-      data: { status: "idle" },
-    },
-    {
-      id: "edge-knowledge-approval",
-      source: "node-knowledge",
-      target: "node-approval",
-      type: "aryn",
-      data: { status: "idle" },
-    },
-    {
-      id: "edge-policy-approval",
-      source: "node-policy",
-      target: "node-approval",
-      type: "aryn",
-      data: { status: "idle" },
-    },
-    {
-      id: "edge-approval-output",
-      source: "node-approval",
-      target: "node-output",
-      type: "aryn",
-      data: { status: isPublished ? "completed" : "idle" },
-    },
+  const edges = [
+    edge("node-input", "node-agent"),
+    edge("node-agent", "node-model"),
+    edge("node-model", "node-knowledge"),
+    edge("node-model", "node-policy"),
+    edge("node-knowledge", "node-approval"),
+    edge("node-policy", "node-approval"),
+    edge("node-approval", "node-output"),
   ];
-
   return { nodes, edges };
 }
 
 export function buildExecutionNodesAndEdges(
   run?: Run | null,
   version?: Version | null,
-  isPending?: boolean,
-): { nodes: Node[]; edges: Edge[] } {
-  const isCompleted = run?.status === "completed";
-  const isFailed = run?.status === "failed";
-
-  const nodes: Node[] = [
-    {
-      id: "exec-input",
-      type: "arynInput",
-      position: { x: 50, y: 140 },
-      data: {
-        id: "exec-input",
-        label: "Prompt Input",
-        sublabel: "Permintaan Pengguna",
-        nodeType: "input",
-        status: isPending ? "completed" : run ? "completed" : "idle",
-        badge: "Input Teks",
-        badgeVariant: "default",
-        details: {
-          prompt: run?.prompt,
-        },
-      },
-    },
-    {
-      id: "exec-agent",
-      type: "agent",
-      position: { x: 350, y: 140 },
-      data: {
-        id: "exec-agent",
-        label: "Research Agent",
-        sublabel: version ? `v${version.version_number} (Terkonfirmasi)` : "Agen Aktif",
-        nodeType: "agent",
-        status: isPending ? "running" : isCompleted ? "completed" : isFailed ? "failed" : "idle",
-        badge: "Governed",
-        badgeVariant: "emerald",
-        details: {
-          systemPrompt: version?.system_prompt,
-        },
-      },
-    },
-    {
-      id: "exec-model",
-      type: "model",
-      position: { x: 650, y: 140 },
-      data: {
-        id: "exec-model",
-        label: run?.model || version?.model || "Model Router",
-        sublabel: run?.provider ? `Provider: ${run.provider}` : "Hermes Adapter",
-        nodeType: "model",
-        status: isPending ? "running" : isCompleted ? "completed" : isFailed ? "failed" : "idle",
-        badge: isPending ? "Sedang Memproses…" : isCompleted ? "Selesai" : isFailed ? "Gagal" : "Siap",
-        badgeVariant: isPending ? "cyan" : isCompleted ? "emerald" : isFailed ? "rose" : "default",
-        metrics: run
-          ? [
-              { label: "Input Token", value: run.input_tokens || 0 },
-              { label: "Output Token", value: run.output_tokens || 0 },
-              { label: "Total Token", value: run.total_tokens || 0 },
-            ]
-          : undefined,
-        details: {
-          model: run?.model || version?.model,
-        },
-      },
-    },
-    {
-      id: "exec-output",
-      type: "arynOutput",
-      position: { x: 950, y: 140 },
-      data: {
-        id: "exec-output",
-        label: "Hasil Eksekusi",
-        sublabel: "Teks Hasil Riset",
-        nodeType: "output",
-        status: isPending ? "queued" : isCompleted ? "completed" : isFailed ? "failed" : "idle",
-        badge: isCompleted ? "Lengkap" : isFailed ? "Terputus" : isPending ? "Menunggu" : "Siap",
-        badgeVariant: isCompleted ? "emerald" : isFailed ? "rose" : "default",
-        details: {
-          output: run?.output,
-        },
-      },
-    },
+  agentName?: string,
+) {
+  // Run status is aggregate evidence, never a per-node runtime trace.
+  const runtimeStatus: NodeStatus =
+    run?.status === "completed"
+      ? "completed"
+      : run?.status === "failed"
+        ? "failed"
+        : ["running", "started"].includes(run?.status || "")
+          ? "running"
+          : run?.status === "queued"
+            ? "queued"
+            : "idle";
+  const nodes = [
+    node("exec-input", "arynInput", 40, 140, {
+      label: "Instruksi run",
+      sublabel: run ? "Masukan tersimpan" : "Belum ada run dipilih",
+      nodeType: "input",
+      status: "idle",
+      details: { prompt: run?.prompt },
+    }),
+    node("exec-agent", "agent", 330, 140, {
+      label: agentName || "Konfigurasi historis agent",
+      sublabel: version
+        ? `Versi v${version.version_number}`
+        : "Versi historis tidak tersedia",
+      nodeType: "agent",
+      status: "idle",
+      badge: "Konfigurasi run ini",
+      badgeVariant: "violet",
+      details: { systemPrompt: version?.system_prompt },
+    }),
+    node("exec-model", "model", 620, 140, {
+      label: run?.model || "Model belum dilaporkan",
+      sublabel: run?.provider || "Provider belum dilaporkan",
+      nodeType: "model",
+      status: "idle",
+      badge: "Model tercatat",
+      details: { model: run?.model },
+      metrics: run
+        ? [
+            { label: "Token input", value: run.input_tokens },
+            { label: "Token output", value: run.output_tokens },
+            { label: "Total token", value: run.total_tokens },
+          ]
+        : undefined,
+    }),
+    node("exec-runtime", "hermes", 910, 140, {
+      label: "Eksekusi Core / Hermes",
+      sublabel: "Status keseluruhan run",
+      nodeType: "hermes",
+      status: runtimeStatus,
+      badge: run ? statusLabel(run.status) : "Belum ada run",
+      badgeVariant:
+        runtimeStatus === "failed"
+          ? "rose"
+          : runtimeStatus === "completed"
+            ? "emerald"
+            : "default",
+      details: { policyText: "Trace per-node tidak tersedia." },
+    }),
+    node("exec-output", "arynOutput", 1200, 140, {
+      label: "Hasil eksekusi",
+      sublabel: "Respons tersimpan",
+      nodeType: "output",
+      status:
+        run?.status === "failed"
+          ? "failed"
+          : run?.status === "completed"
+            ? "completed"
+            : "idle",
+      details: { output: run?.output },
+    }),
   ];
-
-  const edgeStatus = isPending ? "running" : isCompleted ? "completed" : isFailed ? "failed" : "idle";
-
-  const edges: Edge[] = [
-    {
-      id: "exec-edge-1",
-      source: "exec-input",
-      target: "exec-agent",
-      type: "aryn",
-      data: { status: edgeStatus, animated: isPending },
-    },
-    {
-      id: "exec-edge-2",
-      source: "exec-agent",
-      target: "exec-model",
-      type: "aryn",
-      data: { status: edgeStatus, animated: isPending },
-    },
-    {
-      id: "exec-edge-3",
-      source: "exec-model",
-      target: "exec-output",
-      type: "aryn",
-      data: { status: edgeStatus, animated: isPending },
-    },
+  const edges = [
+    edge("exec-input", "exec-agent"),
+    edge("exec-agent", "exec-model"),
+    edge("exec-model", "exec-runtime"),
+    edge("exec-runtime", "exec-output"),
   ];
-
   return { nodes, edges };
 }
 
 export function buildBenchNodesAndEdges(
   evaluation?: Evaluation | null,
   version?: Version | null,
-  isPending?: boolean,
-): { nodes: Node[]; edges: Edge[] } {
-  const isVerifiedPass = Boolean(evaluation && evaluation.passed && evaluation.verified);
-  const isUnverified = Boolean(evaluation && evaluation.passed && !evaluation.verified);
-  const isFailed = Boolean(evaluation && !evaluation.passed);
-
-  const scenarios = evaluation?.details || [
-    { scenario_id: "prompt_injection", name: "Injeksi Prompt", category: "safety", passed: false },
-    { scenario_id: "abstention_without_evidence", name: "Abstensi Tanpa Bukti", category: "truthfulness", passed: false },
-    { scenario_id: "citation_faithfulness", name: "Ketepatan Sitasi", category: "faithfulness", passed: false },
-    { scenario_id: "domain_restraint", name: "Batasan Ranah", category: "confinement", passed: false },
-  ];
-
-  const nodes: Node[] = [];
-  const edges: Edge[] = [];
-
-  // Scenarios on the left
-  scenarios.slice(0, 4).forEach((s, idx) => {
-    const sId = `scenario-node-${idx}`;
-    const sStatus = isPending ? "running" : evaluation ? (s.passed ? "completed" : "failed") : "idle";
-    nodes.push({
-      id: sId,
-      type: "scenario",
-      position: { x: 40, y: 40 + idx * 105 },
-      data: {
-        id: sId,
-        label: scenarioNames[s.scenario_id] || s.name || `Skenario ${idx + 1}`,
-        sublabel: s.category || "Evaluasi Keselamatan",
-        nodeType: "scenario",
-        status: sStatus,
-        badge: s.passed ? "LULUS" : evaluation ? "GAGAL" : "STANDAR",
-        badgeVariant: s.passed ? "emerald" : evaluation ? "rose" : "default",
-        details: {
-          category: s.category,
-        },
-      },
-    });
-
-    edges.push({
-      id: `bench-edge-sc-${idx}`,
-      source: sId,
-      target: "bench-agent",
-      type: "aryn",
-      data: { status: sStatus, animated: isPending },
-    });
-  });
-
-  // Agent Node
-  nodes.push({
-    id: "bench-agent",
-    type: "agent",
-    position: { x: 360, y: 195 },
-    data: {
-      id: "bench-agent",
-      label: "Agen Subjek Uji",
-      sublabel: version ? `v${version.version_number}` : "Versi Uji",
-      nodeType: "agent",
-      status: isPending ? "running" : evaluation ? "completed" : "idle",
-      badge: "Target Bench",
-      badgeVariant: "violet",
-      details: {
-        systemPrompt: version?.system_prompt,
-      },
-    },
-  });
-
-  // Hermes Runtime Adapter
-  nodes.push({
-    id: "bench-hermes",
-    type: "hermes",
-    position: { x: 640, y: 195 },
-    data: {
-      id: "bench-hermes",
-      label: "Hermes Adapter",
-      sublabel: "Turn Teks Terisolasi",
-      nodeType: "hermes",
-      status: isPending ? "running" : evaluation ? "completed" : "idle",
-      badge: "Zero Tool Confinement",
-      badgeVariant: "cyan",
-    },
-  });
-
-  // Evaluation Result Node
-  const evalStatus = isPending
-    ? "running"
-    : isVerifiedPass
-      ? "completed"
-      : isUnverified
-        ? "blocked"
-        : isFailed
-          ? "failed"
+) {
+  const state = evaluation ? evaluationStatus(evaluation) : undefined;
+  const status: NodeStatus =
+    state === "failed"
+      ? "failed"
+      : state === "bench_unverified"
+        ? "unverified"
+        : state === "bench_passed"
+          ? "completed"
           : "idle";
-
-  nodes.push({
-    id: "bench-evaluation",
-    type: "evaluation",
-    position: { x: 920, y: 195 },
-    data: {
-      id: "bench-evaluation",
+  const scenarios =
+    evaluation?.details ||
+    Object.entries(scenarioNames).map(([scenario_id, name]) => ({
+      scenario_id,
+      name,
+      passed: undefined,
+    }));
+  const nodes = scenarios.map((s, i) => {
+    const scenarioStatus: NodeStatus = !evaluation
+      ? "idle"
+      : !s.passed
+        ? "failed"
+        : !evaluation.verified
+          ? "unverified"
+          : "completed";
+    return node(`scenario-node-${i}`, "scenario", 40, 40 + i * 140, {
+      label: scenarioNames[s.scenario_id] || s.name || s.scenario_id,
+      nodeType: "scenario",
+      status: scenarioStatus,
+      badge: !evaluation
+        ? "Skenario suite · belum dievaluasi"
+        : !s.passed
+          ? "GAGAL"
+          : evaluation.verified
+            ? "LULUS"
+            : "TIDAK TERVERIFIKASI",
+      badgeVariant:
+        scenarioStatus === "completed"
+          ? "emerald"
+          : scenarioStatus === "failed"
+            ? "rose"
+            : scenarioStatus === "unverified"
+              ? "amber"
+              : "default",
+      details: { scenarioId: s.scenario_id },
+    });
+  });
+  nodes.push(
+    node("bench-agent", "agent", 350, 220, {
+      label: "Versi subjek evaluasi",
+      sublabel: version
+        ? `v${version.version_number}`
+        : evaluation?.version_id || "Belum ada versi",
+      nodeType: "agent",
+      status: "idle",
+      badge: "Konfigurasi evaluasi",
+      badgeVariant: "violet",
+    }),
+    node("bench-hermes", "hermes", 640, 220, {
+      label: "Model yang dievaluasi",
+      sublabel: evaluation?.provenance.requested_model || "Belum dievaluasi",
+      nodeType: "hermes",
+      status: "idle",
+      badge: "Respons historis tersimpan",
+    }),
+    node("bench-evaluation", "evaluation", 930, 220, {
       label: "Hasil Bench Core",
-      sublabel: evaluation ? `${evaluation.passed_scenarios}/${evaluation.total_scenarios} Skenario` : "Belum Dievaluasi",
+      sublabel: evaluation
+        ? `${evaluation.passed_scenarios}/${evaluation.total_scenarios} skenario`
+        : "Belum dievaluasi",
       nodeType: "evaluation",
-      status: evalStatus,
-      badge: isVerifiedPass
-        ? "LULUS VERIFIED"
-        : isUnverified
-          ? "TIDAK TERVERIFIKASI"
-          : isFailed
-            ? "GAGAL"
-            : "SIAGA",
-      badgeVariant: isVerifiedPass ? "emerald" : isUnverified ? "amber" : isFailed ? "rose" : "default",
+      status,
+      badge:
+        state === "bench_passed"
+          ? "LULUS"
+          : state === "bench_unverified"
+            ? "TIDAK TERVERIFIKASI"
+            : state === "failed"
+              ? "GAGAL"
+              : "Belum ada hasil",
+      badgeVariant:
+        status === "completed"
+          ? "emerald"
+          : status === "failed"
+            ? "rose"
+            : status === "unverified"
+              ? "amber"
+              : "default",
       metrics: evaluation
-        ? [
-            { label: "Skor", value: `${Math.round(evaluation.score * 100)}%` },
-            { label: "Bukti", value: evaluation.verified ? "Valid" : "Invalid" },
-          ]
+        ? [{ label: "Skor", value: `${Math.round(evaluation.score * 100)}%` }]
         : undefined,
       details: {
-        summary: isVerifiedPass
-          ? "4/4 Lulus dengan Bukti Terverifikasi Core"
-          : isUnverified
-            ? "Hasil Historis · Bukti Tidak Valid untuk Governance"
-            : isFailed
-              ? "Satu atau Lebih Skenario Gagal"
-              : "Siap Dievaluasi",
+        summary:
+          state === "bench_passed"
+            ? "Lulus dengan evidence terverifikasi"
+            : state === "bench_unverified"
+              ? "Histori tidak berlaku untuk approval/publish"
+              : state === "failed"
+                ? "Skenario atau skor gagal"
+                : "Metadata suite; belum ada hasil",
       },
-    },
-  });
-
-  edges.push(
-    {
-      id: "bench-edge-agent-hermes",
-      source: "bench-agent",
-      target: "bench-hermes",
-      type: "aryn",
-      data: { status: isPending ? "running" : "idle", animated: isPending },
-    },
-    {
-      id: "bench-edge-hermes-eval",
-      source: "bench-hermes",
-      target: "bench-evaluation",
-      type: "aryn",
-      data: { status: isPending ? "running" : evalStatus, animated: isPending },
-    },
+    }),
   );
-
+  const edges = scenarios.map((_, i) =>
+    edge(`scenario-node-${i}`, "bench-agent"),
+  );
+  edges.push(
+    edge("bench-agent", "bench-hermes"),
+    edge("bench-hermes", "bench-evaluation", status),
+  );
   return { nodes, edges };
 }

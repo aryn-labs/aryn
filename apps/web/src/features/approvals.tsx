@@ -6,12 +6,13 @@ import { Button } from "../components/ui/button";
 import { Empty, PageHeading, Status } from "../components/shared";
 import type { Shared } from "../lib/types";
 import { Panel } from "../components/workspace";
+import { needsApproval } from "../lib/studio-state";
 export function Approvals({ data }: Shared) {
   const [view, setView] = useState("pending");
   const navigate = useNavigate();
-  const candidates = data.versions.filter(
-    (v) => ["draft", "approved"].includes(v.status) && v.bench_eligible,
-  );
+  const candidates = data.versions.filter(needsApproval);
+  const approved = data.versions.filter((v) => v.status === "approved");
+  const visible = view === "approved" ? approved : candidates;
   return (
     <>
       <PageHeading
@@ -21,12 +22,21 @@ export function Approvals({ data }: Shared) {
       />
       <div className="tabs">
         <button
+          aria-pressed={view === "pending"}
           className={view === "pending" ? "selected" : ""}
           onClick={() => setView("pending")}
         >
           Perlu ditinjau <span className="count-pill">{candidates.length}</span>
         </button>
         <button
+          aria-pressed={view === "approved"}
+          className={view === "approved" ? "selected" : ""}
+          onClick={() => setView("approved")}
+        >
+          Sudah disetujui <span className="count-pill">{approved.length}</span>
+        </button>
+        <button
+          aria-pressed={view === "history"}
           className={view === "history" ? "selected" : ""}
           onClick={() => setView("history")}
         >
@@ -36,13 +46,17 @@ export function Approvals({ data }: Shared) {
       </div>
       <Panel
         title={
-          view === "pending" ? "Versi siap ditinjau" : "Persetujuan tercatat"
+          view === "pending"
+            ? "Versi siap ditinjau"
+            : view === "approved"
+              ? "Versi sudah disetujui"
+              : "Persetujuan tercatat"
         }
       >
-        {view === "pending" ? (
-          candidates.length ? (
+        {view !== "history" ? (
+          visible.length ? (
             <div className="approval-list">
-              {candidates.map((v) => (
+              {visible.map((v) => (
                 <div key={v.id}>
                   <div className="approval-icon">
                     <ShieldCheck size={20} />
@@ -54,7 +68,14 @@ export function Approvals({ data }: Shared) {
                           ?.name
                       }
                     </strong>
-                    <small>v{v.version_number} · Bench terakhir lulus</small>
+                    <small>
+                      v{v.version_number} ·{" "}
+                      {view === "approved"
+                        ? v.governance_valid
+                          ? "Sudah disetujui · Siap publikasi"
+                          : "Evidence tidak berlaku untuk publikasi"
+                        : "Bench terakhir terverifikasi dan lulus"}
+                    </small>
                     <code className="hash-short">{v.payload_hash}</code>
                   </div>
                   <Status value={v.status} />
@@ -64,7 +85,7 @@ export function Approvals({ data }: Shared) {
                       navigate(`/factory/${v.blueprint_id}?versi=${v.id}`)
                     }
                   >
-                    Tinjau versi
+                    {view === "approved" ? "Buka versi" : "Tinjau versi"}
                     <ArrowRight size={14} />
                   </Button>
                 </div>
@@ -72,7 +93,11 @@ export function Approvals({ data }: Shared) {
             </div>
           ) : (
             <Empty
-              title="Tidak ada versi yang menunggu tinjauan"
+              title={
+                view === "approved"
+                  ? "Belum ada versi yang sudah disetujui"
+                  : "Tidak ada versi yang menunggu tinjauan"
+              }
               description="Versi baru muncul di sini setelah evaluasi Bench terakhir lulus seluruh skenario."
             />
           )
@@ -106,6 +131,7 @@ export function Approvals({ data }: Shared) {
                       <td className="mono">{a.approved_by}</td>
                       <td>
                         {a.comments}
+                        {v && <Status value={v.status} />}
                         {!a.verified && (
                           <small className="table-sub">
                             Persetujuan belum berlaku untuk bukti saat ini.

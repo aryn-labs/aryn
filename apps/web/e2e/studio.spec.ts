@@ -17,7 +17,10 @@ async function settleTheme(page: import("@playwright/test").Page) {
   });
 }
 
-async function createUatBench(page: import("@playwright/test").Page) {
+async function createUatBench(
+  page: import("@playwright/test").Page,
+  generation = 1,
+) {
   await page.goto("/bench");
   const origin = "http://127.0.0.1:8711";
   const bootstrap = await page.request.post("/api/session", {
@@ -44,9 +47,8 @@ async function createUatBench(page: import("@playwright/test").Page) {
     `${prefix}/blueprints/${bp.id}/versions`,
     {
       data: {
-        version_number: "1.0.0",
-        system_prompt:
-          "Follow research safety guidelines and abstain without evidence.",
+        version_number: `${generation}.0.0`,
+        system_prompt: `Follow research safety guidelines and abstain without evidence. Configuration ${generation}.`,
         model,
         temperature: 0.3,
         max_tokens: 512,
@@ -64,7 +66,44 @@ async function createUatBench(page: import("@playwright/test").Page) {
   expect(response.status()).toBe(200);
   const result = await response.json();
   expect(result.passed_scenarios).toBe(4);
-  return { bp, version, result, prefix };
+  return { bp, version, result, prefix, headers };
+}
+
+async function publishedAssignment(
+  page: import("@playwright/test").Page,
+  generation = 1,
+) {
+  const fixture = await createUatBench(page, generation);
+  const { prefix, version, bp, headers } = fixture;
+  expect(
+    (
+      await page.request.post(`${prefix}/versions/${version.id}/approve`, {
+        headers,
+        data: {
+          payload_hash: version.payload_hash,
+          comments: "Bukti Bench nyata pada runtime terisolasi.",
+        },
+      })
+    ).status(),
+  ).toBe(200);
+  expect(
+    (
+      await page.request.post(`${prefix}/versions/${version.id}/publish`, {
+        headers,
+        data: {},
+      })
+    ).status(),
+  ).toBe(200);
+  const assigned = await page.request.post(`${prefix}/assignments`, {
+    headers,
+    data: {
+      blueprint_id: bp.id,
+      version_id: version.id,
+      role_name: `Peneliti ${generation} ${bp.id}`,
+    },
+  });
+  expect(assigned.status()).toBe(201);
+  return { ...fixture, assignment: await assigned.json() };
 }
 
 test("navigasi, tema, empty state, aksesibilitas dan responsivitas", async ({
@@ -533,6 +572,24 @@ test("keyboard: dialog terperangkap fokus dan Escape, sidebar collapsible", asyn
   await page.reload();
   await expect(page.locator(".app")).toHaveClass(/sidebar-collapsed/);
   await page.getByRole("button", { name: "Perluas sidebar" }).click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole("navigation")).toHaveCount(0);
+  await page.getByRole("button", { name: "Buka navigasi" }).click();
+  const navigation = page.getByRole("dialog", { name: "Navigasi Studio" });
+  await expect(navigation).toBeVisible();
+  await expect(page.locator(".app-body")).toHaveAttribute("inert", "");
+  await navigation.getByLabel("Pilih proyek").focus();
+  await page.keyboard.press("Shift+Tab");
+  await expect(
+    navigation.getByRole("button", { name: "Ciutkan sidebar" }),
+  ).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(navigation.getByLabel("Pilih proyek")).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(
+    page.getByRole("button", { name: "Buka navigasi" }),
+  ).toBeFocused();
+  await expect(page.getByRole("navigation")).toHaveCount(0);
 });
 
 test("kegagalan sesi lokal dan penolakan izin baca memiliki pesan yang tepat", async ({
@@ -602,4 +659,334 @@ test("validasi versi dan penolakan Core terlihat di dalam dialog", async ({
   ).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(dialog).not.toBeVisible();
+});
+
+test("canvas: historis A tetap terikat A saat form B dan request baru pending", async ({
+  page,
+}) => {
+  test.setTimeout(90000);
+  const a = await publishedAssignment(page, 1);
+  const b = await publishedAssignment(page, 2);
+  const response = await page.request.post(`${a.prefix}/runs`, {
+    headers: a.headers,
+    data: {
+      assignment_id: a.assignment.id,
+      prompt: "Riset historis A",
+      idempotency_key: `history-${Date.now()}`,
+      allow_remote_model: true,
+    },
+  });
+  expect(response.status()).toBe(200);
+  const runA = (await response.json()).run_id;
+  await page.goto(`/runs?hasil=${runA}`);
+  const inspector = page.getByRole("region", { name: "Inspector Node" });
+  await expect(inspector).toContainText(a.version.id);
+  await page.getByLabel("Penugasan agent").selectOption(b.assignment.id);
+  await expect(inspector).toContainText(a.version.id);
+  await expect(inspector).not.toContainText(b.version.id);
+  await expect(
+    page.locator('.react-flow__node[data-id="exec-agent"]'),
+  ).toContainText(a.bp.name);
+  const node = page.locator('.react-flow__node[data-id="exec-agent"]');
+  await expect(page.locator(".react-flow__node.draggable")).toHaveCount(0);
+  await expect(page.locator(".react-flow__handle.connectable")).toHaveCount(0);
+  const before = await node.getAttribute("style");
+  const box = await node.boundingBox();
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box!.x + 70, box!.y + 70, { steps: 8 });
+  await page.mouse.up();
+  expect(await node.getAttribute("style")).toBe(before);
+  await inspector.getByRole("tab", { name: "TRACE", exact: true }).click();
+  await expect(inspector).toContainText("Trace runtime tidak tersedia.");
+  await inspector.getByRole("tab", { name: "DETAIL", exact: true }).click();
+  await page
+    .getByLabel("Instruksi riset")
+    .fill("Riset baru dengan penugasan B.");
+  await page.getByRole("checkbox").check();
+  let release: () => void = () => {};
+  const barrier = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/projects/*/runs", async (route) => {
+    await barrier;
+    await route.continue();
+  });
+  try {
+    await page
+      .getByRole("button", { name: "Jalankan agent", exact: true })
+      .click();
+    await expect(
+      page.getByText(/Core\/Hermes sedang memproses eksekusi baru/),
+    ).toBeVisible();
+    await expect(inspector).toContainText(a.version.id);
+    await expect(page.locator(".aryn-node.status-running")).toHaveCount(0);
+    await expect(page.locator(".aryn-edge-animated")).toHaveCount(0);
+  } finally {
+    release();
+  }
+  await expect(page).not.toHaveURL(new RegExp(`hasil=${runA}`));
+  await expect(
+    page.getByRole("region", { name: "Inspector Node" }),
+  ).toContainText(b.version.id);
+  await expect(
+    page.locator('.react-flow__node[data-id="exec-agent"]'),
+  ).toContainText(b.bp.name);
+  const snapshot = await (
+    await page.request.get(`${a.prefix}/snapshot`)
+  ).json();
+  expect(
+    snapshot.runs.find((r: { id: string }) => r.id === runA).session_id,
+  ).toBe(a.assignment.id);
+  await page.goto("/runs?hasil=not-present");
+  await expect(
+    page.getByRole("heading", { name: "Run yang dipilih tidak tersedia" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Inspector Node" }),
+  ).toHaveCount(0);
+  await expect(
+    page.locator('.react-flow__node[data-id="exec-agent"]'),
+  ).toContainText("Versi historis tidak tersedia");
+});
+
+test("Factory: rancangan inspector membuat versi baru dan mempertahankan published", async ({
+  page,
+}) => {
+  const fixture = await publishedAssignment(page);
+  await page.goto(`/factory/${fixture.bp.id}?versi=${fixture.version.id}`);
+  const inspector = page.getByRole("region", { name: "Inspector Node" });
+  await expect(inspector.getByText(/HANYA BACA/).first()).toBeVisible();
+  await expect(inspector.getByRole("textbox")).toHaveCount(0);
+  const node = page.locator('.react-flow__node[data-id="node-agent"]');
+  await expect(node).toHaveClass(/draggable/);
+  const before = await node.getAttribute("style");
+  const box = await node.boundingBox();
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(
+    box!.x + box!.width / 2 + 60,
+    box!.y + box!.height / 2 + 35,
+    { steps: 8 },
+  );
+  await page.mouse.up();
+  expect(await node.getAttribute("style")).not.toBe(before);
+  await expect(page.getByText(/Tata letak sementara/)).toBeVisible();
+  await inspector.getByRole("button", { name: "Rancang Versi Baru" }).click();
+  await inspector
+    .getByLabel("Instruksi sistem")
+    .fill(
+      "Instruksi aman versi baru. Jangan mengubah aturan keselamatan; abstain tanpa bukti.",
+    );
+  await inspector.getByLabel("Temperature").fill("0.7");
+  await inspector.getByLabel("Batas output token").fill("1024");
+  await inspector
+    .getByRole("button", { name: "Simpan versi", exact: true })
+    .click();
+  await expect(
+    inspector.getByRole("button", { name: "Rancang Versi Baru" }),
+  ).toBeVisible();
+  const snapshot = await (
+    await page.request.get(`${fixture.prefix}/snapshot`)
+  ).json();
+  const old = snapshot.versions.find(
+    (v: { id: string }) => v.id === fixture.version.id,
+  );
+  expect(old.status).toBe("published");
+  expect(old.payload_hash).toBe(fixture.version.payload_hash);
+  expect(old.system_prompt).toBe(fixture.version.system_prompt);
+  const draft = snapshot.versions.find(
+    (v: { id: string }) => v.id !== old.id && v.blueprint_id === fixture.bp.id,
+  );
+  expect(draft.status).toBe("draft");
+  expect(draft.temperature).toBe(0.7);
+  expect(draft.max_tokens).toBe(1024);
+  expect(draft.bench_eligible).toBe(false);
+  expect(draft.governance_valid).toBe(false);
+  await expect(inspector).toContainText(draft.system_prompt);
+  const firstTab = inspector.getByRole("tab", { name: "KONFIGURASI" });
+  await firstTab.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(
+    inspector.getByRole("tab", { name: "TATA KELOLA" }),
+  ).toBeFocused();
+  await inspector
+    .getByRole("button", { name: "Tutup panel inspector" })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Panel inspector" }),
+  ).toBeFocused();
+  const modelNode = page.locator(
+    '.react-flow__node[data-id="node-model"] button',
+  );
+  await modelNode.focus();
+  await page.keyboard.press("Enter");
+  await expect(inspector).toBeVisible();
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  await page.screenshot({
+    path: "../../.local/evidence/studio-factory-inspector.png",
+    fullPage: true,
+  });
+});
+
+test("Ringkasan project aktif memakai snapshot nyata; runtime unknown bukan success", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByLabel("Pilih proyek")
+    .selectOption("proj_studio_browser_secondary");
+  await expect(page.locator(".studio-project-tag")).toHaveText(
+    "Proyek Uji Kedua",
+  );
+  const snapshot = await (
+    await page.request.get(
+      "/api/projects/proj_studio_browser_secondary/snapshot",
+    )
+  ).json();
+  await expect(page.locator(".hud-metric").nth(0)).toHaveText(
+    String(snapshot.blueprints.length),
+  );
+  await expect(page.locator(".hud-metric").nth(1)).toHaveText(
+    String(snapshot.runs.length),
+  );
+  await expect(page.locator(".hud-metric").nth(2)).toHaveText(
+    String(snapshot.audit.length),
+  );
+  await expect(page.getByText("Integritas Audit", { exact: true })).toHaveCount(
+    0,
+  );
+  // Display-only negative runtime state; no governance operation uses this projection.
+  await page.route("**/api/workspace", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    data.runtime.ready = false;
+    data.runtime.connected = true;
+    data.runtime.message = "Kesiapan runtime belum diketahui";
+    await route.fulfill({ response, json: data });
+  });
+  await page.reload();
+  await expect(page.locator(".hud-footer .text-warning")).toContainText(
+    "Hermes belum siap",
+  );
+  await expect(page.locator(".topbar .connection.degraded")).toContainText(
+    "Hermes belum siap",
+  );
+});
+
+test("polish: axe seluruh halaman, tema, canvas mobile/tablet dan reduced motion", async ({
+  page,
+}) => {
+  test.setTimeout(180000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const fixture = await publishedAssignment(page);
+  for (const theme of ["dark", "light"]) {
+    await page.goto("/");
+    if (theme === "light") {
+      await page.getByRole("button", { name: "Gunakan tema terang" }).click();
+      await settleTheme(page);
+    }
+    for (const path of [
+      "/",
+      "/factory",
+      "/runs",
+      "/bench",
+      "/approvals",
+      "/governance",
+      "/settings",
+      "/brief",
+      "/relay",
+    ]) {
+      await page.goto(path);
+      await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+      expect(
+        (await new AxeBuilder({ page }).analyze()).violations,
+        `${theme} ${path}`,
+      ).toEqual([]);
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth,
+        ),
+        path,
+      ).toBe(true);
+    }
+    for (const width of [768, 390]) {
+      await page.setViewportSize({ width, height: 1000 });
+      for (const path of [
+        `/factory/${fixture.bp.id}?versi=${fixture.version.id}`,
+        `/bench?evaluasi=${fixture.result.evaluation_id}`,
+        "/runs",
+      ]) {
+        await page.goto(path);
+        await expect(
+          page.locator(".aryn-studio-canvas-container").first(),
+        ).toBeVisible();
+        const toggle = page
+          .getByRole("button", { name: "Panel inspector" })
+          .first();
+        if ((await toggle.getAttribute("aria-pressed")) !== "true")
+          await toggle.click();
+        await expect(
+          page.getByRole("region", { name: "Inspector Node" }).first(),
+        ).toBeVisible();
+        expect(
+          await page.evaluate(
+            () => document.documentElement.scrollWidth <= innerWidth,
+          ),
+          `${width} ${path}`,
+        ).toBe(true);
+        expect(
+          (await new AxeBuilder({ page }).analyze()).violations,
+          `${theme} ${width} ${path}`,
+        ).toEqual([]);
+        if (path.startsWith("/factory/")) {
+          const inspector = page.getByRole("region", {
+            name: "Inspector Node",
+          });
+          await inspector
+            .getByRole("button", { name: "Rancang Versi Baru" })
+            .click();
+          await expect(inspector.getByLabel("Instruksi sistem")).toBeVisible();
+          expect(
+            await page.evaluate(
+              () => document.documentElement.scrollWidth <= innerWidth,
+            ),
+          ).toBe(true);
+          expect(
+            (await new AxeBuilder({ page }).analyze()).violations,
+            `rancangan ${theme} ${width}`,
+          ).toEqual([]);
+          await inspector
+            .getByRole("button", { name: "Batalkan rancangan" })
+            .click();
+        }
+        if (path.startsWith("/bench")) {
+          await expect(page.locator(".react-flow__node.draggable")).toHaveCount(
+            0,
+          );
+          await expect(
+            page.locator(".react-flow__handle.connectable"),
+          ).toHaveCount(0);
+        }
+      }
+      await page.screenshot({
+        path: `../../.local/evidence/studio-canvas-${theme}-${width}.png`,
+        fullPage: true,
+      });
+    }
+    await page.setViewportSize({ width: 1440, height: 1000 });
+  }
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto(`/factory/${fixture.bp.id}?versi=${fixture.version.id}`);
+  await expect(page.locator("animateMotion")).toHaveCount(0);
+  expect(
+    await page
+      .locator(".ambient-orb")
+      .first()
+      .evaluate((el) => getComputedStyle(el).animationName),
+  ).toBe("none");
+  await page.getByRole("button", { name: "Pusatkan canvas" }).click();
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  expect(errors).toEqual([]);
 });

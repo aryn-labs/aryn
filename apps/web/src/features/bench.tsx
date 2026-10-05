@@ -16,15 +16,9 @@ import type { Shared } from "../lib/types";
 import { Panel } from "../components/workspace";
 import { ArynCanvas } from "../components/canvas/aryn-canvas";
 import { buildBenchNodesAndEdges } from "../components/canvas/canvas-builders";
-export function evaluationStatus(evaluation: Evaluation) {
-  if (
-    !evaluation.passed ||
-    evaluation.score < 1 ||
-    evaluation.passed_scenarios < evaluation.total_scenarios
-  )
-    return "failed";
-  return evaluation.verified ? "bench_passed" : "bench_unverified";
-}
+import { evaluationStatus } from "../lib/studio-state";
+import { useReducedMotion } from "../lib/motion";
+export { evaluationStatus } from "../lib/studio-state";
 export function EvaluationPanel({ evaluation }: { evaluation: Evaluation }) {
   const status = evaluationStatus(evaluation);
   const unverified = status === "bench_unverified";
@@ -84,7 +78,11 @@ export function EvaluationPanel({ evaluation }: { evaluation: Evaluation }) {
             <summary>
               <div
                 className={
-                  s.passed ? "scenario-check success" : "scenario-check error"
+                  !s.passed
+                    ? "scenario-check error"
+                    : unverified
+                      ? "scenario-check warning"
+                      : "scenario-check success"
                 }
               >
                 {s.passed ? <Check size={15} /> : <X size={15} />}
@@ -96,7 +94,15 @@ export function EvaluationPanel({ evaluation }: { evaluation: Evaluation }) {
                 <small>{failureReason(s.failure_reason)}</small>
               </div>
               <span className="mono subtle">{s.latency_seconds}s</span>
-              <Status value={s.passed ? "completed" : "failed"} />
+              <Status
+                value={
+                  !s.passed
+                    ? "failed"
+                    : unverified
+                      ? "bench_unverified"
+                      : "bench_passed"
+                }
+              />
               <ChevronDown size={15} />
             </summary>
             <div className="scenario-output">
@@ -125,6 +131,7 @@ export function EvaluationPanel({ evaluation }: { evaluation: Evaluation }) {
 }
 
 export function BenchPage({ data }: Pick<Shared, "data">) {
+  const reducedMotion = useReducedMotion();
   const [params, setParams] = useSearchParams();
   const selected = data.evaluations.find(
     (e) => e.id === params.get("evaluasi"),
@@ -135,7 +142,10 @@ export function BenchPage({ data }: Pick<Shared, "data">) {
     setTimeout(() => {
       const target = document.getElementById("evaluasi-bench");
       if (target) {
-        target.scrollIntoView({ behavior: "smooth", block: "start" });
+        target.scrollIntoView({
+          behavior: reducedMotion ? "auto" : "smooth",
+          block: "start",
+        });
         target.classList.remove("highlight-pulse");
         void target.offsetWidth;
         target.classList.add("highlight-pulse");

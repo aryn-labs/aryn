@@ -37,19 +37,28 @@ function StatusIndicator({ status }: { status: NodeStatus }) {
   switch (status) {
     case "running":
       return (
-        <span className="node-status-indicator status-running" title="Sedang berjalan">
+        <span
+          className="node-status-indicator status-running"
+          title="Sedang berjalan"
+        >
           <RotateCw size={11} className="spin" />
         </span>
       );
     case "queued":
       return (
-        <span className="node-status-indicator status-queued" title="Dalam antrean">
+        <span
+          className="node-status-indicator status-queued"
+          title="Dalam antrean"
+        >
           <Clock size={11} />
         </span>
       );
     case "completed":
       return (
-        <span className="node-status-indicator status-completed" title="Selesai">
+        <span
+          className="node-status-indicator status-completed"
+          title="Selesai"
+        >
           <Check size={11} />
         </span>
       );
@@ -61,13 +70,24 @@ function StatusIndicator({ status }: { status: NodeStatus }) {
       );
     case "blocked":
       return (
-        <span className="node-status-indicator status-blocked" title="Terblokir">
+        <span
+          className="node-status-indicator status-blocked"
+          title="Terblokir"
+        >
           <AlertTriangle size={11} />
         </span>
       );
     case "waiting":
+    case "unverified":
       return (
-        <span className="node-status-indicator status-waiting" title="Menunggu persetujuan">
+        <span
+          className="node-status-indicator status-waiting"
+          title={
+            status === "unverified"
+              ? "Tidak terverifikasi"
+              : "Menunggu atau belum terverifikasi"
+          }
+        >
           <Clock size={11} />
         </span>
       );
@@ -114,20 +134,24 @@ export function ArynBaseNode({
 
   return (
     <div
-      role="button"
-      tabIndex={0}
       className={`aryn-node aryn-node-${data.nodeType} status-${data.status} ${
         isSelected ? "node-selected" : ""
       }`}
-      onClick={handleClick}
-      onKeyDown={handleKeyDown}
-      aria-label={`Node ${data.label}: ${data.statusText || data.status}`}
     >
+      <button
+        type="button"
+        className="node-select-button"
+        onClick={handleClick}
+        onKeyDown={handleKeyDown}
+        aria-pressed={!!isSelected}
+        aria-label={`Node ${data.label}: ${data.badge || data.statusText || "detail"}`}
+      />
       {hasTarget && (
         <Handle
           type="target"
           position={targetPosition}
           className="aryn-handle aryn-handle-target"
+          isConnectable={false}
         />
       )}
 
@@ -175,6 +199,7 @@ export function ArynBaseNode({
           type="source"
           position={sourcePosition}
           className="aryn-handle aryn-handle-source"
+          isConnectable={false}
         />
       )}
     </div>

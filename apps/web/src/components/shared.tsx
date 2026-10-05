@@ -36,6 +36,7 @@ export function Status({ value }: { value: string }) {
     </span>
   );
 }
+export const statusLabel = (value: string) => labels[value] || value;
 export function Empty({
   title,
   description,

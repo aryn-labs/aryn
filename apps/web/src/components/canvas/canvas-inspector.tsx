@@ -1,43 +1,37 @@
-import { useState } from "react";
-import {
-  AlertTriangle,
-  Beaker,
-  Bot,
-  Copy,
-  Fingerprint,
-  Lock,
-  Plus,
-  ShieldCheck,
-  X,
-  XCircle,
-  CheckCircle2,
-} from "lucide-react";
+import { useId, useState } from "react";
+import { Bot, Copy, Lock, Plus, ShieldCheck, X } from "lucide-react";
 import { Button } from "../ui/button";
-import { Status, scenarioNames, failureReason } from "../shared";
+import { Notice, Status, scenarioNames, failureReason } from "../shared";
+import { VersionForm } from "../version-form";
+import { AuditList } from "../workspace";
 import { date, number } from "../../lib/utils";
+import { availabilityLabel, evaluationStatus } from "../../lib/studio-state";
 import type { BaseNodeData, CanvasMode } from "./types";
-import type { Audit, Evaluation, Run, Version, Workspace } from "../../lib/types";
+import type {
+  Assignment,
+  Audit,
+  Evaluation,
+  Run,
+  Version,
+  Workspace,
+} from "../../lib/types";
 
 interface CanvasInspectorProps {
   mode: CanvasMode;
   selectedNode: BaseNodeData | null;
   onClose: () => void;
-  // Factory mode props
   version?: Version | null;
   workspace?: Workspace;
-  onNewVersionFromConfig?: (config: {
-    systemPrompt: string;
-    model: string;
-    temperature: number;
-    maxTokens: number;
-  }) => void;
+  versions?: Version[];
+  pending?: boolean;
+  error?: string;
+  onCreateVersion?: (body: unknown) => Promise<void>;
   onRunBench?: () => void;
   onApproveVersion?: () => void;
   onPublishVersion?: () => void;
-  // Execution mode props
   run?: Run | null;
+  assignment?: Assignment;
   auditEvents?: Audit[];
-  // Bench mode props
   evaluation?: Evaluation | null;
 }
 
@@ -47,497 +41,478 @@ export function CanvasInspector({
   onClose,
   version,
   workspace,
-  onNewVersionFromConfig,
+  versions = [],
+  pending = false,
+  error,
+  onCreateVersion,
   onRunBench,
   onApproveVersion,
   onPublishVersion,
   run,
+  assignment,
   auditEvents = [],
   evaluation,
 }: CanvasInspectorProps) {
-  const [activeTab, setActiveTab] = useState<string>(() => {
-    if (mode === "execution") return "detail";
-    if (mode === "bench") return "skenario";
-    return "konfigurasi";
-  });
-
+  const tabs =
+    mode === "execution"
+      ? [
+          ["detail", "DETAIL"],
+          ["output", "OUTPUT"],
+          ["trace", "TRACE"],
+        ]
+      : mode === "bench"
+        ? [
+            ["skenario", "SKENARIO"],
+            ["bukti", "BUKTI BENCH"],
+          ]
+        : [
+            ["konfigurasi", "KONFIGURASI"],
+            ["integritas", "TATA KELOLA"],
+          ];
+  const [activeTab, setActiveTab] = useState(tabs[0][0]);
+  const [draft, setDraft] = useState(false);
   const [copied, setCopied] = useState(false);
-
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const [copyError, setCopyError] = useState("");
+  const id = useId();
+  const availability =
+    workspace?.models.find((m) => m.model_id === version?.model)
+      ?.availability || "unknown";
+  const benchState = evaluation
+    ? evaluationStatus(evaluation)
+    : "bench_unverified";
+  const benchTone =
+    benchState === "failed"
+      ? "error"
+      : benchState === "bench_passed"
+        ? "success"
+        : "warning";
+  const scenarios =
+    evaluation?.details.filter(
+      (s) =>
+        selectedNode?.nodeType !== "scenario" ||
+        s.scenario_id === selectedNode.details?.scenarioId,
+    ) || [];
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(run?.output || "");
+      setCopied(true);
+      setCopyError("");
+    } catch {
+      setCopyError(
+        "Output belum dapat disalin. Pilih teks output untuk menyalinnya.",
+      );
+    }
   };
-
-  if (!selectedNode) {
-    return (
-      <section className="canvas-inspector canvas-inspector-empty" aria-label="Inspector Node">
-        <div className="inspector-empty-state">
-          <Bot size={28} className="text-secondary" />
-          <div className="inspector-empty-title">Pilih Node</div>
-          <p>Klik salah satu node di canvas untuk memeriksa detail, konfigurasi nyata, atau jejak eksekusi.</p>
-        </div>
-      </section>
-    );
-  }
-
-  const isPublished = version?.status === "published";
-
   return (
     <section className="canvas-inspector" aria-label="Inspector Node">
       <div className="inspector-header">
         <div className="inspector-title-group">
           <div className="inspector-node-type">
-            <span className="mono uppercase">{selectedNode.nodeType}</span>
-            <span className={`status-badge-dot status-${selectedNode.status}`} />
+            {mode === "factory"
+              ? draft
+                ? "RANCANGAN LOKAL"
+                : "VERSI TERSIMPAN · HANYA BACA"
+              : "DATA TERSIMPAN · HANYA BACA"}
           </div>
-          <h3 className="inspector-title">{selectedNode.label}</h3>
+          <h2 className="inspector-title">
+            {draft ? "Rancang Versi Baru" : selectedNode?.label || "Pilih node"}
+          </h2>
         </div>
         <Button
           variant="ghost"
           size="icon"
           aria-label="Tutup panel inspector"
+          disabled={pending && draft}
           onClick={onClose}
         >
           <X size={16} />
         </Button>
       </div>
-
-      {/* Tabs based on mode */}
-      <div className="inspector-tabs" role="tablist">
-        {mode === "execution" && (
-          <>
-            <button
-              role="tab"
-              aria-selected={activeTab === "detail"}
-              className={activeTab === "detail" ? "active" : ""}
-              onClick={() => setActiveTab("detail")}
-            >
-              DETAIL
-            </button>
-            <button
-              role="tab"
-              aria-selected={activeTab === "output"}
-              className={activeTab === "output" ? "active" : ""}
-              onClick={() => setActiveTab("output")}
-            >
-              OUTPUT
-            </button>
-            <button
-              role="tab"
-              aria-selected={activeTab === "trace"}
-              className={activeTab === "trace" ? "active" : ""}
-              onClick={() => setActiveTab("trace")}
-            >
-              TRACE
-            </button>
-          </>
-        )}
-
-        {mode === "factory" && (
-          <>
-            <button
-              role="tab"
-              aria-selected={activeTab === "konfigurasi"}
-              className={activeTab === "konfigurasi" ? "active" : ""}
-              onClick={() => setActiveTab("konfigurasi")}
-            >
-              KONFIGURASI
-            </button>
-            <button
-              role="tab"
-              aria-selected={activeTab === "integritas"}
-              className={activeTab === "integritas" ? "active" : ""}
-              onClick={() => setActiveTab("integritas")}
-            >
-              TATA KELOLA
-            </button>
-          </>
-        )}
-
-        {mode === "bench" && (
-          <>
-            <button
-              role="tab"
-              aria-selected={activeTab === "skenario"}
-              className={activeTab === "skenario" ? "active" : ""}
-              onClick={() => setActiveTab("skenario")}
-            >
-              SKENARIO
-            </button>
-            <button
-              role="tab"
-              aria-selected={activeTab === "bukti"}
-              className={activeTab === "bukti" ? "active" : ""}
-              onClick={() => setActiveTab("bukti")}
-            >
-              BUKTI BENCH
-            </button>
-          </>
-        )}
-      </div>
-
-      <div className="inspector-content">
-        {/* ======================= EXECUTION MODE ======================= */}
-        {mode === "execution" && run && (
-          <>
-            {activeTab === "detail" && (
-              <div className="inspector-panel-detail">
-                <div className="inspector-status-card">
-                  <div className="status-row">
-                    <span className="subtle-label">STATUS</span>
-                    <Status value={run.status} />
-                  </div>
-                  <div className="metrics-grid">
-                    <div className="metric-box">
-                      <small>TOTAL TOKEN</small>
-                      <strong className="mono">{number(run.total_tokens || 0)}</strong>
-                    </div>
-                    <div className="metric-box">
-                      <small>TOKEN INPUT</small>
-                      <strong className="mono">{number(run.input_tokens || 0)}</strong>
-                    </div>
-                    <div className="metric-box">
-                      <small>TOKEN OUTPUT</small>
-                      <strong className="mono">{number(run.output_tokens || 0)}</strong>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="inspector-section">
-                  <div className="field-caption">IDENTITAS CORE</div>
-                  <dl className="inspector-meta-list">
-                    <dt>Core Run ID</dt>
-                    <dd className="mono text-wrap">{run.id}</dd>
-                    <dt>Session ID</dt>
-                    <dd className="mono text-wrap">{run.session_id}</dd>
-                    <dt>Model</dt>
-                    <dd className="mono">{run.model}</dd>
-                    <dt>Provider</dt>
-                    <dd>{run.provider}</dd>
-                    <dt>Dibuat</dt>
-                    <dd>{date(run.created_at)}</dd>
-                    {run.completed_at && (
-                      <>
+      {!selectedNode ? (
+        <div className="inspector-empty-state">
+          <Bot size={28} />
+          <p>Pilih node menggunakan klik atau keyboard untuk memeriksa data.</p>
+        </div>
+      ) : (
+        <>
+          <div
+            className="inspector-tabs"
+            role="tablist"
+            aria-label="Bagian inspector"
+          >
+            {tabs.map(([key, label], index) => (
+              <button
+                key={key}
+                role="tab"
+                id={`${id}-${key}`}
+                aria-controls={`${id}-panel`}
+                aria-selected={activeTab === key}
+                tabIndex={activeTab === key ? 0 : -1}
+                className={activeTab === key ? "active" : ""}
+                onClick={() => setActiveTab(key)}
+                onKeyDown={(e) => {
+                  if (
+                    ["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)
+                  ) {
+                    e.preventDefault();
+                    const next =
+                      e.key === "Home"
+                        ? 0
+                        : e.key === "End"
+                          ? tabs.length - 1
+                          : (index +
+                              (e.key === "ArrowRight" ? 1 : -1) +
+                              tabs.length) %
+                            tabs.length;
+                    setActiveTab(tabs[next][0]);
+                    document.getElementById(`${id}-${tabs[next][0]}`)?.focus();
+                  }
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div
+            className="inspector-content"
+            role="tabpanel"
+            id={`${id}-panel`}
+            aria-labelledby={`${id}-${activeTab}`}
+            tabIndex={0}
+          >
+            {mode === "execution" &&
+              (run ? (
+                <>
+                  {activeTab === "detail" && (
+                    <>
+                      <Status value={run.status} />
+                      <dl className="inspector-meta-list">
+                        <dt>Core Run ID</dt>
+                        <dd className="mono">{run.id}</dd>
+                        <dt>Penugasan</dt>
+                        <dd className="mono">
+                          {assignment?.role_name ||
+                            run.session_id ||
+                            "Tidak tercatat"}
+                        </dd>
+                        <dt>Assignment ID</dt>
+                        <dd className="mono">
+                          {run.session_id || "Tidak tercatat"}
+                        </dd>
+                        <dt>Versi historis</dt>
+                        <dd className="mono">
+                          {version
+                            ? `v${version.version_number} · ${version.id}`
+                            : "Tidak tersedia"}
+                        </dd>
+                        <dt>Model tercatat</dt>
+                        <dd className="mono">
+                          {run.model || "Tidak dilaporkan"}
+                        </dd>
+                        <dt>Provider</dt>
+                        <dd>{run.provider || "Tidak dilaporkan"}</dd>
+                        <dt>Token input / output</dt>
+                        <dd className="mono">
+                          {number(run.input_tokens)} /{" "}
+                          {number(run.output_tokens)}
+                        </dd>
+                        <dt>Total token</dt>
+                        <dd className="mono">{number(run.total_tokens)}</dd>
+                        <dt>Dibuat</dt>
+                        <dd>{date(run.created_at)}</dd>
                         <dt>Selesai</dt>
                         <dd>{date(run.completed_at)}</dd>
+                      </dl>
+                      {version && (
+                        <>
+                          <div className="field-caption">
+                            INSTRUKSI SISTEM VERSI HISTORIS
+                          </div>
+                          <pre tabIndex={0} className="inspector-code-block">
+                            {version.system_prompt}
+                          </pre>
+                          <dl className="inspector-meta-list">
+                            <dt>Temperature</dt>
+                            <dd>{version.temperature}</dd>
+                            <dt>Batas token</dt>
+                            <dd>{version.max_tokens}</dd>
+                          </dl>
+                        </>
+                      )}
+                      <div className="field-caption">INSTRUKSI RUN</div>
+                      <pre tabIndex={0} className="inspector-code-block">
+                        {run.prompt}
+                      </pre>
+                    </>
+                  )}
+                  {activeTab === "output" && (
+                    <>
+                      {run.error_message && (
+                        <Notice tone="error">{run.error_message}</Notice>
+                      )}
+                      <div className="field-caption">RESPONS TERSIMPAN</div>
+                      <pre tabIndex={0} className="inspector-code-block">
+                        {run.output || "Runtime belum memberikan output."}
+                      </pre>
+                      {run.output && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => void copy()}
+                        >
+                          <Copy size={13} />
+                          {copied ? "Tersalin" : "Salin output"}
+                        </Button>
+                      )}
+                      {copyError && <Notice tone="warning">{copyError}</Notice>}
+                    </>
+                  )}
+                  {activeTab === "trace" && (
+                    <>
+                      <Notice>
+                        Trace runtime tidak tersedia. Jejak audit Core tersimpan
+                        berikut adalah peristiwa aplikasi, bukan trace per-node
+                        Hermes.
+                      </Notice>
+                      <AuditList events={auditEvents} />
+                    </>
+                  )}
+                </>
+              ) : (
+                <Notice>
+                  Belum ada run dipilih. Status eksekusi baru ditampilkan
+                  terpisah sampai Core mengembalikan hasil.
+                </Notice>
+              ))}
+            {mode === "factory" && version && (
+              <>
+                {activeTab === "konfigurasi" && (
+                  <>
+                    {draft && onCreateVersion ? (
+                      <>
+                        <Notice>
+                          Rancangan ini belum tersimpan. Simpan membuat
+                          AgentVersion baru; versi sumber tetap utuh.
+                        </Notice>
+                        {error && <Notice tone="error">{error}</Notice>}
+                        <VersionForm
+                          versions={versions}
+                          models={workspace?.models || []}
+                          previous={version}
+                          pending={pending}
+                          onSubmit={(body) => {
+                            void onCreateVersion(body).catch(() => {});
+                          }}
+                        />
+                        <Button
+                          variant="ghost"
+                          disabled={pending}
+                          onClick={() => setDraft(false)}
+                        >
+                          Batalkan rancangan
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Notice>
+                          <Lock size={14} /> Konfigurasi versi tersimpan hanya
+                          baca.{" "}
+                          {version.status === "published"
+                            ? "Versi dipublikasikan tidak dapat diubah."
+                            : "Perubahan disimpan melalui versi baru."}
+                        </Notice>
+                        <dl className="inspector-meta-list">
+                          <dt>Versi</dt>
+                          <dd className="mono">v{version.version_number}</dd>
+                          <dt>Model</dt>
+                          <dd className="mono">{version.model}</dd>
+                          <dt>Temperature</dt>
+                          <dd>{version.temperature}</dd>
+                          <dt>Batas token</dt>
+                          <dd>{version.max_tokens}</dd>
+                        </dl>
+                        <span
+                          className={`provider-status-badge availability-${availability}`}
+                        >
+                          {availabilityLabel[availability]}
+                        </span>
+                        <div className="field-caption">
+                          INSTRUKSI SISTEM · HANYA BACA
+                        </div>
+                        <pre tabIndex={0} className="inspector-code-block">
+                          {version.system_prompt}
+                        </pre>
+                        {selectedNode.nodeType === "policy" && (
+                          <Notice>
+                            Core memeriksa izin, budget, dan confinement Hermes
+                            sebelum dispatch. Status runtime saat ini:{" "}
+                            {workspace?.runtime.message || "Belum diperiksa"}
+                          </Notice>
+                        )}
+                        {onCreateVersion && (
+                          <Button
+                            className="w-full"
+                            disabled={pending}
+                            onClick={() => setDraft(true)}
+                          >
+                            <Plus size={15} />
+                            Rancang Versi Baru
+                          </Button>
+                        )}
+                        {selectedNode.nodeType === "approval" && (
+                          <div className="approval-quick-actions">
+                            {onRunBench && (
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={onRunBench}
+                              >
+                                Jalankan Bench
+                              </Button>
+                            )}
+                            {onApproveVersion && (
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={onApproveVersion}
+                              >
+                                <ShieldCheck size={14} />
+                                Tinjau dan setujui
+                              </Button>
+                            )}
+                            {onPublishVersion && (
+                              <Button size="sm" onClick={onPublishVersion}>
+                                Publikasikan versi
+                              </Button>
+                            )}
+                          </div>
+                        )}
                       </>
                     )}
-                  </dl>
-                </div>
-
-                <div className="inspector-section">
-                  <div className="field-caption">INSTRUKSI INPUT</div>
-                  <pre className="inspector-code-block">{run.prompt}</pre>
-                </div>
-              </div>
-            )}
-
-            {activeTab === "output" && (
-              <div className="inspector-panel-output">
-                {run.error_message && (
-                  <div className="inspector-notice notice-error">
-                    <AlertTriangle size={15} />
-                    <span>{run.error_message}</span>
-                  </div>
+                  </>
                 )}
-                <div className="field-caption">RESPONS RUNTIME</div>
-                <div className="inspector-output-box">
-                  <pre className="inspector-code-block whitespace-pre-wrap">
-                    {run.output || "Runtime belum memberikan output."}
-                  </pre>
-                  {run.output && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="copy-btn"
-                      onClick={() => copyToClipboard(run.output)}
-                    >
-                      <Copy size={13} />
-                      {copied ? "Tersalin" : "Salin output"}
-                    </Button>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {activeTab === "trace" && (
-              <div className="inspector-panel-trace">
-                <div className="inspector-notice notice-info">
-                  <ShieldCheck size={15} />
-                  <span>
-                    Trace runtime Hermes: Tidak tersedia untuk eksekusi langsung.
-                    Jejak peristiwa audit Core tercatat di bawah secara kriptografis.
-                  </span>
-                </div>
-                <div className="field-caption">JEJAK PERISTIWA CORE ({auditEvents.length})</div>
-                {auditEvents.length > 0 ? (
-                  <div className="audit-timeline">
-                    {auditEvents.map((evt) => (
-                      <div key={evt.id} className="audit-timeline-item">
-                        <div className="timeline-marker" />
-                        <div className="timeline-content">
-                          <strong className="mono">{evt.event_type}</strong>
-                          <span className="mono subtle text-xs">{evt.id}</span>
-                          <span className="subtle text-xs">{date(evt.occurred_at)}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="subtle text-sm">Belum ada peristiwa audit untuk run ini.</p>
-                )}
-              </div>
-            )}
-          </>
-        )}
-
-        {/* ======================= FACTORY MODE ======================= */}
-        {mode === "factory" && version && (
-          <>
-            {activeTab === "konfigurasi" && (
-              <div className="inspector-panel-config">
-                {isPublished && (
-                  <div className="inspector-notice notice-locked">
-                    <Lock size={15} />
-                    <div>
-                      <strong>Versi Dipublikasikan (Immutable)</strong>
-                      <p>
-                        Versi ini terkunci dan tidak dapat diubah langsung demi tata kelola Core.
-                        Gunakan tombol di bawah untuk membuat versi baru dari konfigurasi ini.
-                      </p>
+                {activeTab === "integritas" && (
+                  <>
+                    <Status value={version.status} />
+                    <div className="field-caption">
+                      HASH KONFIGURASI SHA-256
                     </div>
-                  </div>
-                )}
-
-                {selectedNode.nodeType === "model" && (
-                  <div className="inspector-section">
-                    <div className="field-caption">PILIHAN MODEL & PARAMETER</div>
-                    <div className="config-item">
-                      <label>Model yang Dipilih</label>
-                      <input
-                        type="text"
-                        className="mono"
-                        disabled
-                        value={version.model}
-                      />
-                    </div>
-                    <div className="config-item">
-                      <label>Temperature ({version.temperature})</label>
-                      <input
-                        type="range"
-                        min="0"
-                        max="1"
-                        step="0.05"
-                        disabled={isPublished}
-                        value={version.temperature}
-                        readOnly
-                      />
-                    </div>
-                    <div className="config-item">
-                      <label>Batas Token (Max Tokens)</label>
-                      <input
-                        type="number"
-                        className="mono"
-                        disabled
-                        value={version.max_tokens}
-                      />
-                    </div>
-                    <div className="config-item">
-                      <label>Kesiapan Provider</label>
-                      <span className="provider-status-badge">
-                        {workspace?.models.find((m) => m.model_id === version.model)?.availability === "available"
-                          ? "Tersedia di Hermes & Model Router"
-                          : "Model tidak siap atau belum terverifikasi"}
-                      </span>
-                    </div>
-                  </div>
-                )}
-
-                {selectedNode.nodeType === "agent" && (
-                  <div className="inspector-section">
-                    <div className="field-caption">INSTRUKSI SISTEM (PROMPT)</div>
-                    <textarea
-                      rows={8}
-                      disabled={isPublished}
-                      value={version.system_prompt}
-                      readOnly
-                      className="inspector-textarea mono"
-                    />
-                    <small className="subtle">
-                      {version.system_prompt.length} karakter · Instruksi dasar agen riset
-                    </small>
-                  </div>
-                )}
-
-                {selectedNode.nodeType === "policy" && (
-                  <div className="inspector-section">
-                    <div className="field-caption">BATAS KEBIJAKAN & GOVERNANCE</div>
-                    <div className="policy-box">
-                      <ShieldCheck size={16} className="text-success" />
-                      <div>
-                        <strong>Confinement Terisolasi</strong>
-                        <p>Seluruh toolset host nonaktif. Hanya turn teks langsung ke Hermes yang diizinkan.</p>
-                      </div>
-                    </div>
-                    <div className="policy-box mt-3">
-                      <Fingerprint size={16} className="text-secondary" />
-                      <div>
-                        <strong>Integritas Kriptografis</strong>
-                        <p>Konfigurasi diproteksi hash SHA-256 dan divalidasi oleh Core.</p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {selectedNode.nodeType === "approval" && (
-                  <div className="inspector-section">
-                    <div className="field-caption">STATUS PERSETUJUAN</div>
+                    <pre tabIndex={0} className="inspector-code-block">
+                      {version.payload_hash}
+                    </pre>
                     <dl className="inspector-meta-list">
-                      <dt>Status Versi</dt>
-                      <dd><Status value={version.status} /></dd>
-                      <dt>Bench Lulus</dt>
-                      <dd>{version.bench_eligible ? "Ya (100% Lulus)" : "Belum Lulus"}</dd>
-                      <dt>Governance Valid</dt>
-                      <dd>{version.governance_valid ? "Terverifikasi" : "Belum / Tidak Valid"}</dd>
+                      <dt>Integritas versi</dt>
+                      <dd>
+                        {version.integrity_valid
+                          ? "Valid menurut Core"
+                          : "Tidak valid"}
+                      </dd>
+                      <dt>Evidence Bench eligible</dt>
+                      <dd>
+                        {version.bench_eligible
+                          ? "Terverifikasi dan lulus"
+                          : "Belum / tidak berlaku"}
+                      </dd>
+                      <dt>Governance</dt>
+                      <dd>
+                        {version.governance_valid
+                          ? "Valid menurut Core"
+                          : "Belum / tidak valid"}
+                      </dd>
+                      <dt>Dibuat</dt>
+                      <dd>{date(version.created_at)}</dd>
                     </dl>
-                    <div className="approval-quick-actions mt-3 flex flex-col gap-2">
-                      {!version.bench_eligible && onRunBench && (
-                        <Button variant="secondary" size="sm" onClick={onRunBench}>
-                          <Beaker size={14} /> Jalankan Bench
-                        </Button>
-                      )}
-                      {version.bench_eligible && version.status === "draft" && onApproveVersion && (
-                        <Button variant="secondary" size="sm" onClick={onApproveVersion}>
-                          <ShieldCheck size={14} /> Tinjau dan Setujui
-                        </Button>
-                      )}
-                      {version.status === "approved" && onPublishVersion && (
-                        <Button size="sm" onClick={onPublishVersion}>
-                          Publikasikan Versi
-                        </Button>
-                      )}
-                    </div>
-                  </div>
+                  </>
                 )}
-
-                {isPublished && onNewVersionFromConfig && (
-                  <div className="inspector-actions mt-4">
-                    <Button
-                      className="w-full btn-studio-primary"
-                      onClick={() =>
-                        onNewVersionFromConfig({
-                          systemPrompt: version.system_prompt,
-                          model: version.model,
-                          temperature: version.temperature,
-                          maxTokens: version.max_tokens,
-                        })
-                      }
-                    >
-                      <Plus size={15} />
-                      Buat Versi Baru Dari Konfigurasi Ini
-                    </Button>
-                  </div>
-                )}
-              </div>
+              </>
             )}
-
-            {activeTab === "integritas" && (
-              <div className="inspector-panel-governance">
-                <div className="field-caption">PAYLOAD HASH SHA-256</div>
-                <div className="hash-display mono break-all">
-                  {version.payload_hash}
-                </div>
-                <dl className="inspector-meta-list mt-4">
-                  <dt>Integritas Valid</dt>
-                  <dd>{version.integrity_valid ? "Ya" : "Tidak Valid"}</dd>
-                  <dt>Dibuat Pada</dt>
-                  <dd>{date(version.created_at)}</dd>
-                  <dt>Versi Number</dt>
-                  <dd className="mono">v{version.version_number}</dd>
-                </dl>
-              </div>
-            )}
-          </>
-        )}
-
-        {/* ======================= BENCH MODE ======================= */}
-        {mode === "bench" && evaluation && (
-          <>
-            {activeTab === "skenario" && (
-              <div className="inspector-panel-scenarios">
-                <div className="bench-score-banner">
+            {mode === "bench" && evaluation && (
+              <>
+                <div className={`bench-score-banner text-${benchTone}`}>
                   <div className="score-percent">
                     {Math.round(evaluation.score * 100)}%
                   </div>
                   <div>
-                    <strong>
-                      {evaluation.passed_scenarios}/{evaluation.total_scenarios} Skenario Lulus
-                    </strong>
-                    <p className="subtle text-xs">
-                      {evaluation.verified ? "Bukti Terverifikasi Core" : "Hasil Historis (Tidak Terverifikasi)"}
+                    <Status value={benchState} />
+                    <p>
+                      {evaluation.passed_scenarios}/{evaluation.total_scenarios}{" "}
+                      skenario tercatat lulus
                     </p>
                   </div>
                 </div>
-
-                <div className="field-caption">DETAIL SKENARIO EVALUASI</div>
-                <div className="scenario-item-list">
-                  {evaluation.details.map((s, idx) => (
-                    <div key={s.scenario_id} className={`scenario-inspector-item ${s.passed ? "item-pass" : "item-fail"}`}>
-                      <div className="scenario-item-header">
-                        <div className="scenario-title">
-                          <span className="scenario-idx mono">0{idx + 1}</span>
-                          <strong>{scenarioNames[s.scenario_id] || s.name || s.scenario_id}</strong>
-                        </div>
-                        {s.passed ? (
-                          <span className="badge-pass"><CheckCircle2 size={13} /> LULUS</span>
-                        ) : (
-                          <span className="badge-fail"><XCircle size={13} /> GAGAL</span>
-                        )}
-                      </div>
-                      <div className="scenario-item-meta">
-                        <span>Latensi: {s.latency_seconds}s</span>
-                        <span>Token: {number(s.total_tokens || 0)}</span>
-                        <span className="mono">{s.actual_model}</span>
-                      </div>
-                      {s.failure_reason && (
-                        <div className="scenario-fail-reason">
-                          <AlertTriangle size={13} />
-                          <span>{failureReason(s.failure_reason)}</span>
-                        </div>
-                      )}
-                      {s.actual_output && (
-                        <div className="scenario-output-preview">
-                          <small>Respons Model:</small>
-                          <pre className="inspector-code-block">{s.actual_output}</pre>
-                        </div>
+                {!evaluation.verified && (
+                  <Notice tone="warning">
+                    Hasil historis tetap disimpan. Evidence tidak terverifikasi
+                    dan tidak dapat dipakai untuk approval/publish.
+                  </Notice>
+                )}
+                {activeTab === "skenario" &&
+                  scenarios.map((s) => (
+                    <div
+                      key={s.scenario_id}
+                      className="scenario-inspector-item"
+                    >
+                      <strong>
+                        {scenarioNames[s.scenario_id] ||
+                          s.name ||
+                          s.scenario_id}
+                      </strong>
+                      <Status
+                        value={
+                          !s.passed
+                            ? "failed"
+                            : !evaluation.verified
+                              ? "bench_unverified"
+                              : "bench_passed"
+                        }
+                      />
+                      <p className="subtle">
+                        {failureReason(s.failure_reason)}
+                      </p>
+                      <dl className="inspector-meta-list">
+                        <dt>Model aktual tercatat</dt>
+                        <dd>{s.actual_model || "Tidak dilaporkan"}</dd>
+                        <dt>Token</dt>
+                        <dd>{number(s.total_tokens)}</dd>
+                        <dt>Latensi</dt>
+                        <dd>{s.latency_seconds}s</dd>
+                      </dl>
+                      {selectedNode.nodeType === "scenario" && (
+                        <pre tabIndex={0} className="inspector-code-block">
+                          {s.actual_output || "Tidak ada respons tersimpan."}
+                        </pre>
                       )}
                     </div>
                   ))}
-                </div>
-              </div>
+                {activeTab === "bukti" && (
+                  <dl className="inspector-meta-list">
+                    <dt>Evaluation ID</dt>
+                    <dd className="mono">{evaluation.id}</dd>
+                    <dt>Version ID</dt>
+                    <dd className="mono">{evaluation.version_id}</dd>
+                    <dt>Model diminta</dt>
+                    <dd>
+                      {evaluation.provenance.requested_model ||
+                        "Tidak tercatat"}
+                    </dd>
+                    <dt>Versi suite</dt>
+                    <dd className="mono">
+                      {evaluation.provenance.evaluation_version ||
+                        "Tidak tercatat"}
+                    </dd>
+                    <dt>Hash konfigurasi</dt>
+                    <dd className="mono">
+                      {evaluation.provenance.payload_hash || "Tidak tercatat"}
+                    </dd>
+                    <dt>Dievaluasi</dt>
+                    <dd>{date(evaluation.evaluated_at)}</dd>
+                  </dl>
+                )}
+              </>
             )}
-
-            {activeTab === "bukti" && (
-              <div className="inspector-panel-provenance">
-                <div className="field-caption">PROVENANCE & INTEGRITAS BUKTI</div>
-                <dl className="inspector-meta-list">
-                  <dt>Evaluation ID</dt>
-                  <dd className="mono break-all">{evaluation.id}</dd>
-                  <dt>Model Diminta</dt>
-                  <dd className="mono">{evaluation.provenance?.requested_model || "—"}</dd>
-                  <dt>Versi Evaluasi</dt>
-                  <dd className="mono">{evaluation.provenance?.evaluation_version || "—"}</dd>
-                  <dt>Payload Hash</dt>
-                  <dd className="mono break-all">{evaluation.provenance?.payload_hash || "—"}</dd>
-                  <dt>Dievaluasi Pada</dt>
-                  <dd>{date(evaluation.evaluated_at)}</dd>
-                </dl>
-              </div>
-            )}
-          </>
-        )}
-      </div>
+          </div>
+        </>
+      )}
     </section>
   );
 }

@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
 import { BaseEdge, getBezierPath } from "@xyflow/react";
+import { useReducedMotion } from "../../../lib/motion";
 
 export function ArynEdge({
   sourceX,
@@ -22,7 +23,8 @@ export function ArynEdge({
   });
 
   const status = (data?.status as string) || "idle";
-  const animated = Boolean(data?.animated || status === "running");
+  const reducedMotion = useReducedMotion();
+  const animated = !reducedMotion && Boolean(data?.animated);
 
   return (
     <>
@@ -37,11 +39,7 @@ export function ArynEdge({
       />
       {animated && (
         <circle r="3" className="aryn-edge-flow-dot">
-          <animateMotion
-            dur="2s"
-            repeatCount="indefinite"
-            path={edgePath}
-          />
+          <animateMotion dur="2s" repeatCount="indefinite" path={edgePath} />
         </circle>
       )}
     </>

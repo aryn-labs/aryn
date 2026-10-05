@@ -5,6 +5,7 @@ export type NodeStatus =
   | "completed"
   | "failed"
   | "blocked"
+  | "unverified"
   | "waiting";
 
 export type CanvasMode = "factory" | "execution" | "bench";
