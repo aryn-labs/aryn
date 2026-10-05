@@ -392,12 +392,13 @@ pre {
   display: inline-block;
   vertical-align: middle;
 }
-.workspace-switcher {
+.workspace-switcher,
+.workspace-card {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   border: 1px solid var(--border);
-  padding: 10px 11px;
+  padding: 10px 12px;
   border-radius: var(--radius-sm);
   margin-bottom: 24px;
   background: var(--surface);
@@ -407,11 +408,13 @@ pre {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.workspace-switcher:hover {
+.workspace-switcher:hover,
+.workspace-card:hover {
   border-color: var(--border-highlight);
   box-shadow: 0 0 16px var(--accent-muted);
 }
 .workspace-avatar,
+.workspace-card-icon,
 .user-avatar {
   width: 32px;
   height: 32px;
@@ -424,30 +427,55 @@ pre {
   background: var(--accent-muted);
   box-shadow: 0 0 10px rgba(139, 124, 246, 0.12);
 }
+.workspace-card-info,
 .workspace-label {
   flex: 1;
   min-width: 0;
 }
+.workspace-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 3px;
+}
+.workspace-pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 6px var(--success);
+}
+.workspace-card-tag {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  color: var(--secondary);
+  text-transform: uppercase;
+}
+.workspace-card-title,
 .workspace-label strong {
   display: block;
   font-size: 12px;
   color: var(--text);
-  font-weight: 550;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
+.workspace-card-select,
 .workspace-label select {
-  border: 0;
-  background: transparent;
-  padding: 2px 15px 0 0;
-  font-size: 11px;
-  color: var(--secondary);
-  min-height: 0;
-  appearance: none;
+  position: absolute;
+  inset: 0;
+  opacity: 0;
   cursor: pointer;
+  width: 100%;
+  height: 100%;
 }
 .workspace-chevron {
   position: absolute;
   right: 11px;
-  bottom: 16px;
+  top: 50%;
+  transform: translateY(-50%);
   pointer-events: none;
   color: var(--secondary);
 }
@@ -1054,15 +1082,33 @@ pre {
 }
 .overview-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 24px;
-  align-items: start;
+  align-items: stretch;
 }
 .overview-primary,
 .overview-secondary {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 24px;
   min-width: 0;
+}
+.overview-primary > .panel,
+.overview-secondary > .panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.overview-layout .panel-heading {
+  min-height: 72px;
+  box-sizing: border-box;
+}
+.overview-layout .agent-overview-list,
+.overview-layout .audit-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Agent Flow Pipeline */
@@ -1771,17 +1817,72 @@ pre {
   border-color: var(--border-soft);
 }
 .overview-layout .audit-event {
-  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 14px;
+  padding: 16px 24px;
+  min-height: 72px;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--border-soft);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.overview-layout .event-top {
-  display: block;
+.overview-layout .audit-event:last-child {
+  border-bottom: 0;
 }
-.overview-layout .event-meta {
-  display: block;
+.overview-layout .audit-event:hover {
+  background: var(--elevated);
+  transform: translateX(2px);
 }
-.overview-layout .event-meta time {
-  display: block;
-  margin-top: 3px;
+.overview-layout .audit-event .event-dot {
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  background: var(--cyan-muted);
+  color: var(--accent-cyan);
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.12);
+}
+.overview-layout .audit-event .event-content {
+  flex: 1;
+  min-width: 0;
+}
+.overview-layout .audit-event .event-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.overview-layout .audit-event .event-top span {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.overview-layout .audit-event .event-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 2px;
+}
+.overview-layout .audit-event .event-meta .mono {
+  font-size: 11px;
+  color: var(--secondary);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.overview-layout .audit-event .event-meta time {
+  font-size: 10px;
+  color: var(--secondary);
+  flex-shrink: 0;
 }
 .list-toolbar {
   display: flex;
@@ -1816,6 +1917,110 @@ pre {
 .search-field:focus-within {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
+}
+
+/* Modern Pagination Bar */
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  border-top: 1px solid var(--border-soft);
+  background: var(--surface-solid);
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.pagination-info {
+  font-size: 11px;
+  color: var(--secondary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.pagination-info strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.pagination-count-note {
+  color: var(--secondary);
+  font-size: 10px;
+  opacity: 0.8;
+  margin-left: 4px;
+}
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pagination-pages {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.pagination-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--elevated);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.pagination-btn:hover:not(:disabled) {
+  background: var(--surface);
+  border-color: var(--border-highlight);
+  color: var(--primary);
+  box-shadow: 0 0 10px var(--accent-muted);
+}
+.pagination-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.pagination-pill {
+  min-width: 32px;
+  height: 32px;
+  padding: 0 6px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--secondary);
+  font-size: 11px;
+  font-weight: 550;
+  font-family: var(--font-mono);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.pagination-pill:hover:not(.active) {
+  color: var(--text);
+  border-color: var(--border-highlight);
+  background: var(--elevated);
+}
+.pagination-pill.active {
+  background: linear-gradient(135deg, rgba(139, 124, 246, 0.3) 0%, rgba(56, 189, 248, 0.2) 100%);
+  border-color: var(--primary);
+  color: #fff;
+  font-weight: 650;
+  box-shadow: 0 0 12px rgba(139, 124, 246, 0.35);
+}
+:root[data-theme="light"] .pagination-pill.active {
+  color: var(--primary);
+  background: var(--accent-muted);
+}
+.pagination-ellipsis {
+  width: 20px;
+  text-align: center;
+  color: var(--secondary);
+  font-size: 12px;
+  user-select: none;
 }
 .search-field input:focus {
   outline: none;
@@ -2725,6 +2930,7 @@ tbody tr:hover {
 }
 .sidebar-collapsed .brand > span,
 .sidebar-collapsed .workspace-label,
+.sidebar-collapsed .workspace-card-info,
 .sidebar-collapsed .workspace-chevron,
 .sidebar-collapsed .nav-caption,
 .sidebar-collapsed .nav-item > span,
@@ -2733,11 +2939,13 @@ tbody tr:hover {
 .sidebar-collapsed .user-area > div {
   display: none;
 }
-.sidebar-collapsed .workspace-switcher {
+.sidebar-collapsed .workspace-switcher,
+.sidebar-collapsed .workspace-card {
   border: 0;
   background: none;
   padding: 10px;
   margin-bottom: 12px;
+  justify-content: center;
 }
 .sidebar-collapsed .nav-item {
   justify-content: center;
@@ -3123,6 +3331,7 @@ tbody tr:hover {
     display: block;
   }
   .sidebar-collapsed .workspace-label,
+  .sidebar-collapsed .workspace-card-info,
   .sidebar-collapsed .nav-caption,
   .sidebar-collapsed .local-mode,
   .sidebar-collapsed .nav-item > span,
@@ -3132,10 +3341,12 @@ tbody tr:hover {
   .sidebar-collapsed .workspace-chevron {
     display: block;
   }
-  .sidebar-collapsed .workspace-switcher {
+  .sidebar-collapsed .workspace-switcher,
+  .sidebar-collapsed .workspace-card {
     border: 1px solid var(--border);
     background: var(--surface);
     margin-bottom: 24px;
+    justify-content: flex-start;
   }
   .sidebar-collapsed .nav-item {
     justify-content: flex-start;

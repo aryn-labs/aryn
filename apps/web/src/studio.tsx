@@ -9,7 +9,6 @@ import {
   ChevronRight,
   FileText,
   Fingerprint,
-  Layers3,
   LayoutDashboard,
   Menu,
   Moon,
@@ -181,29 +180,43 @@ export function App() {
             ARYN <small>Studio</small>
           </span>
         </div>
-        <div className="workspace-switcher">
-          <div className="workspace-avatar">
-            <Layers3 size={17} />
+        <div
+          className="workspace-card"
+          title={`Proyek aktif: ${w?.projects.find((p) => p.id === project)?.name || "Laboratorium Riset"}`}
+        >
+          <div className="workspace-card-icon">
+            <Radio size={15} />
           </div>
-          <div className="workspace-label">
-            <strong>{w?.organization.name || "ARYN Lokal"}</strong>
-            <select
-              aria-label="Pilih proyek"
-              value={project}
-              onChange={(e) => {
-                setProject(e.target.value);
-                localStorage.setItem("aryn-project", e.target.value);
-                navigate("/");
-              }}
-            >
-              {w?.projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              )) || <option>Memuat proyek…</option>}
-            </select>
+          <div className="workspace-card-info">
+            <div className="workspace-card-meta">
+              <span className="workspace-pulse" />
+              <span className="workspace-card-tag">SESI AKTIF</span>
+            </div>
+            <strong className="workspace-card-title">
+              {w?.projects.find((p) => p.id === project)?.name || "Laboratorium Riset"}
+            </strong>
           </div>
-          <ChevronDown size={14} className="workspace-chevron" />
+          {w && w.projects.length > 1 && (
+            <>
+              <select
+                aria-label="Pilih proyek"
+                value={project}
+                className="workspace-card-select"
+                onChange={(e) => {
+                  setProject(e.target.value);
+                  localStorage.setItem("aryn-project", e.target.value);
+                  navigate("/");
+                }}
+              >
+                {w.projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={14} className="workspace-chevron" />
+            </>
+          )}
         </div>
         <div className="nav-caption">RUANG KERJA</div>
         <nav aria-label="Navigasi utama">

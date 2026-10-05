@@ -1,4 +1,4 @@
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
   ArrowRight,
   Bot,
@@ -169,7 +169,7 @@ export function Overview({ data, workspace, openBlueprint }: Shared) {
             >
               {data.blueprints.length ? (
                 <div className="agent-overview-list">
-                  {data.blueprints.slice(0, 5).map((bp) => {
+                  {data.blueprints.slice(0, 4).map((bp) => {
                     const v = data.versions.find(
                       (v) => v.blueprint_id === bp.id,
                     );
@@ -214,13 +214,14 @@ export function Overview({ data, workspace, openBlueprint }: Shared) {
               title="Aktivitas terbaru"
               subtitle="Peristiwa Core terbaru di proyek ini."
               action={
-                <Link
-                  to="/governance"
-                  className="icon-link"
-                  aria-label="Lihat seluruh audit"
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => navigate("/governance")}
                 >
-                  <ArrowRight size={16} />
-                </Link>
+                  Lihat semua
+                  <ArrowRight size={14} />
+                </Button>
               }
             >
               <AuditList events={data.audit.slice(0, 4)} compact />
