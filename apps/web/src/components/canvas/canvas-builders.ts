@@ -16,7 +16,7 @@ export function buildFactoryNodesAndEdges(
   const nodes: Node[] = [
     {
       id: "node-input",
-      type: "input",
+      type: "arynInput",
       position: { x: 40, y: 160 },
       data: {
         id: "node-input",
@@ -134,7 +134,7 @@ export function buildFactoryNodesAndEdges(
     },
     {
       id: "node-output",
-      type: "output",
+      type: "arynOutput",
       position: { x: 1440, y: 160 },
       data: {
         id: "node-output",
@@ -214,7 +214,7 @@ export function buildExecutionNodesAndEdges(
   const nodes: Node[] = [
     {
       id: "exec-input",
-      type: "input",
+      type: "arynInput",
       position: { x: 50, y: 140 },
       data: {
         id: "exec-input",
@@ -272,7 +272,7 @@ export function buildExecutionNodesAndEdges(
     },
     {
       id: "exec-output",
-      type: "output",
+      type: "arynOutput",
       position: { x: 950, y: 140 },
       data: {
         id: "exec-output",

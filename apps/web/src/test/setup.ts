@@ -9,7 +9,7 @@ if (typeof window !== "undefined") {
     disconnect() {}
   }
   window.ResizeObserver = window.ResizeObserver || (ResizeObserverMock as any);
-  global.ResizeObserver = global.ResizeObserver || (ResizeObserverMock as any);
+  (globalThis as any).ResizeObserver = (globalThis as any).ResizeObserver || (ResizeObserverMock as any);
 }
 
 afterEach(cleanup);

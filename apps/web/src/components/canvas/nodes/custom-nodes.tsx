@@ -138,12 +138,14 @@ export function EvaluationNode({ data, selected }: any) {
 }
 
 export const nodeTypes: Record<string, ComponentType<any>> = {
+  arynInput: InputNode,
   input: InputNode,
   agent: AgentNode,
   model: ModelNode,
   knowledge: KnowledgeNode,
   policy: PolicyNode,
   approval: ApprovalNode,
+  arynOutput: OutputNode,
   output: OutputNode,
   scenario: ScenarioNode,
   hermes: HermesNode,

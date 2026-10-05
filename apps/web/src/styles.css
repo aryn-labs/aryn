@@ -3639,6 +3639,43 @@ tbody tr:hover {
   opacity: 0.15;
 }
 
+/* React Flow Node Container Reset */
+.react-flow__node,
+.react-flow__node-input,
+.react-flow__node-output,
+.react-flow__node-default,
+.react-flow__node-group {
+  background: transparent !important;
+  background-color: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  width: auto !important;
+  box-shadow: none !important;
+  color: inherit !important;
+  text-align: left !important;
+}
+
+.react-flow__node.selectable:hover,
+.react-flow__node-input.selectable:hover,
+.react-flow__node-output.selectable:hover,
+.react-flow__node-default.selectable:hover,
+.react-flow__node-group.selectable:hover {
+  box-shadow: none !important;
+}
+
+.react-flow__node.selectable.selected,
+.react-flow__node.selectable:focus,
+.react-flow__node.selectable:focus-visible,
+.react-flow__node-input.selectable.selected,
+.react-flow__node-input.selectable:focus,
+.react-flow__node-input.selectable:focus-visible,
+.react-flow__node-output.selectable.selected,
+.react-flow__node-output.selectable:focus,
+.react-flow__node-output.selectable:focus-visible {
+  box-shadow: none !important;
+}
+
 /* Custom Nodes */
 .aryn-node {
   background: #0d1527;
