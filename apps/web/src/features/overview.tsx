@@ -14,44 +14,119 @@ import { Empty, PageHeading, Status } from "../components/shared";
 import type { Shared } from "../lib/types";
 import { Panel, AuditList } from "../components/workspace";
 import { AgentFlow } from "../components/agent-flow";
+
 export function Overview({ data, workspace, openBlueprint }: Shared) {
   const navigate = useNavigate();
   const published = data.versions.filter(
     (v) => v.status === "published",
   ).length;
+
   return (
-    <>
-      <PageHeading
-        eyebrow="ARYN STUDIO"
-        title="Ruang kerja agent Anda."
-        description="Rancang, evaluasi, dan operasikan agent dengan kendali yang jelas."
-      >
-        <Button
-          onClick={openBlueprint}
-          disabled={!data.permissions["run:create"]}
+    <div className="overview-page">
+      <div className="studio-hero">
+        <div className="studio-hero-meta">
+          <span className="studio-live-pill">
+            <span className="pulse-indicator" />
+            STUDIO AKTIF · WORKSPACE CENTRAL
+          </span>
+        </div>
+        <PageHeading
+          eyebrow="ARYN STUDIO"
+          title="Ruang kerja agent Anda."
+          description="Rancang, evaluasi, dan operasikan agent dengan kendali yang jelas."
         >
-          <Plus size={16} />
-          Buat agent
-        </Button>
-      </PageHeading>
-      <div className="overview-strip">
-        <div>
-          <Bot size={17} />
-          <strong>{number(data.blueprints.length)}</strong>
-          <span>Blueprint agent</span>
-        </div>
-        <div>
-          <GitBranch size={17} />
-          <strong>{number(published)}</strong>
-          <span>Versi dipublikasikan</span>
-        </div>
-        <div>
-          <Workflow size={17} />
-          <strong>{number(data.runs.length)}</strong>
-          <span>Eksekusi tersimpan</span>
-        </div>
-        <span className="data-source">Data proyek aktual</span>
+          <Button
+            onClick={openBlueprint}
+            disabled={!data.permissions["run:create"]}
+            className="btn-studio-primary"
+          >
+            <Plus size={16} />
+            Buat agent
+          </Button>
+        </PageHeading>
       </div>
+
+      <div className="overview-strip">
+        <div
+          className="stat-card stat-card-interactive"
+          tabIndex={0}
+          onClick={() => navigate("/factory")}
+          role="button"
+          aria-label="Buka Agent Factory"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              navigate("/factory");
+            }
+          }}
+        >
+          <div className="stat-top">
+            <div className="stat-icon-wrapper stat-icon-violet">
+              <Bot size={18} />
+            </div>
+            <span className="stat-pill-tag">Factory</span>
+          </div>
+          <strong className="stat-number">{number(data.blueprints.length)}</strong>
+          <span className="stat-title">Blueprint agent</span>
+          <p className="stat-subtext">Definisi arsitektur & peran aktif</p>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-top">
+            <div className="stat-icon-wrapper stat-icon-cyan">
+              <GitBranch size={18} />
+            </div>
+            <span className="stat-pill-tag stat-pill-cyan">Governed</span>
+          </div>
+          <strong className="stat-number">{number(published)}</strong>
+          <span className="stat-title">Versi dipublikasikan</span>
+          <p className="stat-subtext">Lulus Bench & disetujui Core</p>
+        </div>
+
+        <div
+          className="stat-card stat-card-interactive"
+          tabIndex={0}
+          onClick={() => navigate("/runs")}
+          role="button"
+          aria-label="Buka riwayat Eksekusi"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              navigate("/runs");
+            }
+          }}
+        >
+          <div className="stat-top">
+            <div className="stat-icon-wrapper stat-icon-blue">
+              <Workflow size={18} />
+            </div>
+            <span className="stat-pill-tag stat-pill-blue">Runtime</span>
+          </div>
+          <strong className="stat-number">{number(data.runs.length)}</strong>
+          <span className="stat-title">Eksekusi tersimpan</span>
+          <p className="stat-subtext">Riwayat eksekusi terverifikasi Core</p>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-top">
+            <div className="stat-icon-wrapper stat-icon-emerald">
+              <ShieldCheck size={18} />
+            </div>
+            <span className="stat-pill-tag stat-pill-emerald">Core Security</span>
+          </div>
+          <strong className="stat-number text-success">
+            {workspace.runtime.ready ? "100%" : "Siaga"}
+          </strong>
+          <span className="stat-title">Integritas Audit</span>
+          <p className="stat-subtext">Kebijakan lokal terisolasi & diaudit</p>
+        </div>
+
+        <div className="data-source">
+          <span className="connection-dot" />
+          <span>Data proyek aktual</span>
+        </div>
+      </div>
+
       <div className="overview-content">
         <Panel
           className="overview-flow-panel"
@@ -61,7 +136,7 @@ export function Overview({ data, workspace, openBlueprint }: Shared) {
         >
           <AgentFlow />
           <div className="workflow-footer">
-            <span>
+            <span className="workflow-assurance">
               <ShieldCheck size={15} />
               Bench lulus dan persetujuan Core sebelum publikasi
             </span>
@@ -75,6 +150,7 @@ export function Overview({ data, workspace, openBlueprint }: Shared) {
             </Button>
           </div>
         </Panel>
+
         <div className="overview-layout">
           <div className="overview-primary">
             <Panel
@@ -106,7 +182,7 @@ export function Overview({ data, workspace, openBlueprint }: Shared) {
                         <div className="agent-icon">
                           <Bot size={19} />
                         </div>
-                        <div>
+                        <div className="agent-meta">
                           <strong>{bp.name}</strong>
                           <small>
                             {bp.description || "Blueprint riset teks"}
@@ -117,7 +193,7 @@ export function Overview({ data, workspace, openBlueprint }: Shared) {
                         ) : (
                           <span className="subtle">Belum ada versi</span>
                         )}
-                        <ChevronRight size={16} />
+                        <ChevronRight size={16} className="agent-arrow" />
                       </button>
                     );
                   })}
@@ -131,28 +207,34 @@ export function Overview({ data, workspace, openBlueprint }: Shared) {
                 />
               )}
             </Panel>
+
             <Panel
               title="Kesiapan lingkungan"
               subtitle="Status koneksi saat ini."
             >
               <div className="readiness">
-                <div>
-                  <span className="connection-dot" />
-                  <span>ARYN API</span>
+                <div className="readiness-row">
+                  <div className="readiness-item-left">
+                    <span className="connection-dot" />
+                    <span>ARYN API</span>
+                  </div>
+                  <span className="readiness-host mono">127.0.0.1:8710</span>
                   <Status value="active" />
                 </div>
-                <div>
-                  <span
-                    className={`connection-dot ${!workspace.runtime.ready ? "warning" : ""}`}
-                  />
-                  <span>Hermes {workspace.runtime.version || ""}</span>
+                <div className="readiness-row">
+                  <div className="readiness-item-left">
+                    <span
+                      className={`connection-dot ${!workspace.runtime.ready ? "warning" : ""}`}
+                    />
+                    <span>Hermes {workspace.runtime.version || ""}</span>
+                  </div>
                   <span
                     className={`subtle ${workspace.runtime.ready ? "text-success" : ""}`}
                   >
                     {workspace.runtime.ready ? "Siap" : "Belum siap"}
                   </span>
                 </div>
-                <p>{workspace.runtime.message}</p>
+                <p className="readiness-runtime-msg">{workspace.runtime.message}</p>
               </div>
               <div className="security-note">
                 <ShieldCheck size={16} />
@@ -163,6 +245,7 @@ export function Overview({ data, workspace, openBlueprint }: Shared) {
               </div>
             </Panel>
           </div>
+
           <div className="overview-secondary">
             <Panel
               title="Aktivitas terbaru"
@@ -182,6 +265,6 @@ export function Overview({ data, workspace, openBlueprint }: Shared) {
           </div>
         </div>
       </div>
-    </>
+    </div>
   );
 }

@@ -36,6 +36,7 @@ import { Approvals } from "./features/approvals";
 import { Runs } from "./features/runs";
 import { Governance } from "./features/governance";
 import { SettingsPage, Unavailable } from "./features/settings";
+import { AmbientBackground } from "./components/ambient-background";
 import arynMark from "./assets/aryn-mark.png";
 import arynMarkDark from "./assets/aryn-mark-dark.png";
 const navigation = [
@@ -155,6 +156,7 @@ export function App() {
     <div
       className={`app ${collapsed ? "sidebar-collapsed" : ""} ${mobile ? "mobile-open" : ""}`}
     >
+      <AmbientBackground />
       <a className="skip-link" href="#main">
         Lewati ke konten
       </a>

@@ -17,6 +17,7 @@ const stages = [
     icon: BookOpen,
     path: "/factory",
     module: "Agent Factory",
+    phase: "rancang",
   },
   {
     title: "Versi",
@@ -24,6 +25,7 @@ const stages = [
     icon: GitBranch,
     path: "/factory",
     module: "Agent Factory",
+    phase: "rancang",
   },
   {
     title: "Bench",
@@ -31,6 +33,7 @@ const stages = [
     icon: FlaskConical,
     path: "/bench",
     module: "Bench",
+    phase: "validasi",
   },
   {
     title: "Persetujuan",
@@ -38,6 +41,7 @@ const stages = [
     icon: ShieldCheck,
     path: "/approvals",
     module: "Persetujuan",
+    phase: "validasi",
   },
   {
     title: "Publikasi",
@@ -45,6 +49,7 @@ const stages = [
     icon: Upload,
     path: "/factory",
     module: "Agent Factory",
+    phase: "operasikan",
   },
   {
     title: "Penugasan",
@@ -52,6 +57,7 @@ const stages = [
     icon: UsersRound,
     path: "/factory",
     module: "Agent Factory",
+    phase: "operasikan",
   },
   {
     title: "Eksekusi",
@@ -59,6 +65,7 @@ const stages = [
     icon: Play,
     path: "/runs",
     module: "Eksekusi",
+    phase: "operasikan",
   },
 ];
 
@@ -66,24 +73,41 @@ export function AgentFlow() {
   return (
     <div className="agent-flow">
       <div className="flow-phases" aria-hidden="true">
-        <span>Rancang</span>
-        <span>Validasi</span>
-        <span>Operasikan</span>
+        <span className="phase-pill phase-rancang">
+          <span className="phase-dot" />
+          Rancang
+        </span>
+        <span className="phase-pill phase-validasi">
+          <span className="phase-dot" />
+          Validasi
+        </span>
+        <span className="phase-pill phase-operasikan">
+          <span className="phase-dot" />
+          Operasikan
+        </span>
       </div>
       <ol
         className="flow-chart"
         aria-label="Alur agent dari blueprint hingga eksekusi"
       >
         {stages.map((stage, index) => (
-          <li className={`flow-step flow-step-${index + 1}`} key={stage.title}>
+          <li
+            className={`flow-step flow-step-${index + 1} phase-${stage.phase}`}
+            key={stage.title}
+            data-phase={stage.phase}
+          >
             <Link
               className="flow-node"
               to={stage.path}
               aria-label={`Tahap ${index + 1}: ${stage.title} — buka ${stage.module}`}
             >
               <div className="flow-node-top" aria-hidden="true">
-                <stage.icon size={18} />
-                <span>{String(index + 1).padStart(2, "0")}</span>
+                <div className="flow-icon-wrap">
+                  <stage.icon size={17} />
+                </div>
+                <span className="flow-step-idx">
+                  {String(index + 1).padStart(2, "0")}
+                </span>
               </div>
               <div className="flow-node-label">
                 <strong>{stage.title}</strong>
@@ -92,7 +116,8 @@ export function AgentFlow() {
             </Link>
             {index < stages.length - 1 && (
               <span className="flow-connector" aria-hidden="true">
-                <ArrowRight size={14} />
+                <span className="flow-connector-line" />
+                <ArrowRight size={14} className="flow-connector-arrow" />
               </span>
             )}
           </li>
