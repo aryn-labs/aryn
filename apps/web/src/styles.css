@@ -2573,7 +2573,8 @@ tbody tr:hover {
     border-color: var(--border);
   }
 }
-#hasil-eksekusi {
+#hasil-eksekusi,
+#evaluasi-bench {
   scroll-margin-top: 84px;
 }
 .highlight-pulse {

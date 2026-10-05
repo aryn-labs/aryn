@@ -16,6 +16,7 @@ import { Panel } from "../components/workspace";
 export function EvaluationPanel({ evaluation }: { evaluation: Evaluation }) {
   return (
     <Panel
+      id="evaluasi-bench"
       title={
         !evaluation.verified
           ? "Bukti evaluasi belum terverifikasi"
@@ -93,6 +94,21 @@ export function BenchPage({ data }: Shared) {
   const selected = data.evaluations.find(
     (e) => e.id === params.get("evaluasi"),
   );
+
+  const viewEvaluation = (evalId: string) => {
+    setParams({ evaluasi: evalId });
+    setTimeout(() => {
+      const target = document.getElementById("evaluasi-bench");
+      if (target) {
+        target.scrollIntoView({ behavior: "smooth", block: "start" });
+        target.classList.remove("highlight-pulse");
+        void target.offsetWidth;
+        target.classList.add("highlight-pulse");
+        setTimeout(() => target.classList.remove("highlight-pulse"), 1600);
+      }
+    }, 60);
+  };
+
   return (
     <>
       <PageHeading
@@ -128,8 +144,12 @@ export function BenchPage({ data }: Shared) {
               <tbody>
                 {data.evaluations.map((e) => {
                   const v = data.versions.find((v) => v.id === e.version_id);
+                  const isCurrent = selected?.id === e.id;
                   return (
-                    <tr key={e.id}>
+                    <tr
+                      key={e.id}
+                      className={isCurrent ? "table-row-selected" : ""}
+                    >
                       <td>
                         <strong>
                           {data.blueprints.find((b) => b.id === e.blueprint_id)
@@ -153,9 +173,10 @@ export function BenchPage({ data }: Shared) {
                       <td className="subtle">{date(e.evaluated_at)}</td>
                       <td>
                         <Button
-                          variant="ghost"
+                          variant={isCurrent ? "secondary" : "ghost"}
                           size="sm"
-                          onClick={() => setParams({ evaluasi: e.id })}
+                          onClick={() => viewEvaluation(e.id)}
+                          aria-label={`Lihat hasil evaluasi ${e.id}`}
                         >
                           Lihat hasil
                           <ChevronRight size={14} />

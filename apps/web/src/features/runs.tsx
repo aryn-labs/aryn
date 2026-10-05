@@ -186,13 +186,6 @@ export function Runs({ data, workspace, pending, act }: Shared) {
           className="run-panel-result"
           title="Hasil eksekusi"
           subtitle="Output asli, penggunaan token, dan jejak Core."
-          action={
-            selected ? (
-              <span className="subtle-label active-run-pill">
-                AKTIF DITAMPILKAN
-              </span>
-            ) : undefined
-          }
         >
           {selected ? (
             <RunResultPanel
