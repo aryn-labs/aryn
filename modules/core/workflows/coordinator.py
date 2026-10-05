@@ -189,6 +189,7 @@ class RunCoordinator:
             caps = await self.runtime_adapter.capabilities()
             if not caps.tools_confined or caps.enabled_toolsets:
                 raise PermissionDeniedError("Managed text execution requires all runtime toolsets disabled.")
+            await self.runtime_adapter.require_model_available(request.model)
             if hasattr(self.runtime_adapter, "execute_direct_turn"):
                 result = await self.runtime_adapter.execute_direct_turn(request, context)
             else:
@@ -283,6 +284,7 @@ class RunCoordinator:
             caps = await self.runtime_adapter.capabilities()
             if not caps.tools_confined or caps.enabled_toolsets:
                 raise PermissionDeniedError("Managed asynchronous execution requires all runtime toolsets disabled.")
+            await self.runtime_adapter.require_model_available(request.model)
             runtime_id = await self.runtime_adapter.start_run(request, context)
             from database.repositories.run_state_repo import RunStateRepository
             with self.db_manager.session(write=True) as session:

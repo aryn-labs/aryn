@@ -31,6 +31,9 @@ export function Runs({ data, workspace, pending, act }: Shared) {
   );
   const assigned = active.find((a) => a.id === assignment);
   const version = data.versions.find((v) => v.id === assigned?.version_id);
+  const modelAvailability =
+    workspace.models.find((m) => m.model_id === version?.model)?.availability ||
+    "unknown";
   const viewResult = (runId: string) => {
     setParams({ hasil: runId });
     const target = document.getElementById("hasil-eksekusi");
@@ -149,6 +152,13 @@ export function Runs({ data, workspace, pending, act }: Shared) {
                 {!workspace.runtime.ready && (
                   <Notice tone="error">{workspace.runtime.message}</Notice>
                 )}
+                {modelAvailability !== "available" && (
+                  <Notice tone="warning">
+                    {modelAvailability === "unavailable"
+                      ? "Model tidak tersedia di provider/runtime. Pilih versi dengan model lain sebelum menjalankan agent."
+                      : "Ketersediaan model belum dapat diverifikasi. Eksekusi diblokir sampai runtime menyediakan bukti ketersediaan yang valid."}
+                  </Notice>
+                )}
                 {pending && (
                   <Busy label="Core memproses riset melalui Hermes. Hasil akan tersimpan otomatis…" />
                 )}
@@ -162,6 +172,7 @@ export function Runs({ data, workspace, pending, act }: Shared) {
                   disabled={
                     pending ||
                     !workspace.runtime.ready ||
+                    modelAvailability !== "available" ||
                     !data.permissions["run:create"] ||
                     !consent ||
                     prompt.trim().length < 5

@@ -67,6 +67,10 @@ def get_live_hermes_key() -> str:
 class IsolatedDeterministicRuntime(RuntimeAdapter):
     """Deterministic runtime simulating text-only research agent execution."""
 
+    async def model_availability(self, model, *, refresh=False):
+        from packages.contracts.runtime import RuntimeModelAvailability
+        return RuntimeModelAvailability(model=model, status="available", source="isolated-test")
+
     def __init__(self) -> None:
         self.invocations: int = 0
 

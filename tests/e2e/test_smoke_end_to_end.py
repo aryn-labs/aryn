@@ -147,6 +147,10 @@ async def test_live_end_to_end_smoke():
 async def test_mocked_end_to_end_smoke_isolated():
     """Deterministic isolated E2E test verifying full Core workflow with mock adapter."""
     class MockIsolatedAdapter(RuntimeAdapter):
+        async def model_availability(self, model, *, refresh=False):
+            from packages.contracts.runtime import RuntimeModelAvailability
+            return RuntimeModelAvailability(model=model, status="available", source="isolated-test")
+
         async def health(self) -> RuntimeHealth:
             return RuntimeHealth(is_healthy=True, status="ok", platform="mock", version="1.0", listener_url="mock://")
         async def capabilities(self) -> RuntimeCapabilities:

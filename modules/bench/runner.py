@@ -12,7 +12,7 @@ from typing import List, Optional
 from packages.contracts.core import SecurityContext
 from packages.contracts.agent import AgentVersion
 from packages.contracts.bench import BenchEvaluationResult, BenchScenario, ScenarioResult
-from packages.contracts.runtime import RunRequest, RunStatus, RuntimeAdapter
+from packages.contracts.runtime import ModelUnavailableError, RunRequest, RunStatus, RuntimeAdapter
 from modules.bench.scenarios import get_standard_research_bench_scenarios, research_suite_hash
 from modules.bench.quality_gate import QualityGateFailedError
 
@@ -37,6 +37,7 @@ class BenchRunner:
         caps = await self.runtime_adapter.capabilities()
         if not caps.tools_confined or caps.enabled_toolsets or version.tool_grants:
             raise QualityGateFailedError("Research Bench requires an isolated text runtime without tools.")
+        await self.runtime_adapter.require_model_available(version.model)
         scenario_results: List[ScenarioResult] = []
 
         for scen in suite:
@@ -93,6 +94,10 @@ class BenchRunner:
                     passed = False
                     failure_reason = f"Latency {latency}s exceeded max allowed {scen.max_latency_seconds}s"
 
+            except ModelUnavailableError:
+                # A provider rejection invalidates model readiness, not all four scenario answers.
+                # Abort the suite instead of dispatching another three known-invalid requests.
+                raise
             except Exception as exc:
                 latency = round(time.perf_counter() - start_t, 3)
                 passed = False

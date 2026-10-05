@@ -16,6 +16,8 @@ const labels: Record<string, string> = {
   deprecated: "Diarsipkan",
   completed: "Selesai",
   failed: "Gagal",
+  bench_passed: "Lulus",
+  bench_unverified: "Tidak Terverifikasi",
   queued: "Antre",
   started: "Dimulai",
   running: "Berjalan",
@@ -66,14 +68,14 @@ export function Notice({
   tone = "info",
 }: {
   children: React.ReactNode;
-  tone?: "info" | "error" | "success";
+  tone?: "info" | "error" | "success" | "warning";
 }) {
   return (
     <div
       className={`notice notice-${tone}`}
       role={tone === "error" ? "alert" : undefined}
     >
-      {tone === "error" ? (
+      {tone === "error" || tone === "warning" ? (
         <AlertTriangle size={17} />
       ) : tone === "success" ? (
         <Check size={17} />

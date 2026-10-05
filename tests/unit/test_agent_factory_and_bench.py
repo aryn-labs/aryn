@@ -43,6 +43,10 @@ from modules.core.approvals.engine import (
 class MockDeterministicRuntime(RuntimeAdapter):
     """Isolated deterministic adapter for unit bench evaluation."""
 
+    async def model_availability(self, model, *, refresh=False):
+        from packages.contracts.runtime import RuntimeModelAvailability
+        return RuntimeModelAvailability(model=model, status="available", source="isolated-test")
+
     def __init__(self, canned_response: str = "Research synthesis: market liquidity and solvency obligations.") -> None:
         self.canned_response = canned_response
 

@@ -119,7 +119,14 @@ export type Workspace = {
   organization: { id: string; name: string };
   projects: { id: string; name: string }[];
   user: { name: string; id: string; role: string };
-  models: { model_id: string; display_name: string; provider: string }[];
+  models: {
+    model_id: string;
+    display_name: string;
+    provider: string;
+    availability: "available" | "unavailable" | "unknown";
+    availability_reason: string;
+    availability_source: string;
+  }[];
   runtime: Runtime;
   mode: string;
 };

@@ -61,6 +61,7 @@ from modules.core.workflows.coordinator import (
 from packages.contracts.agent import AgentVersion, VersionIntegrityError
 from packages.contracts.bench import RESEARCH_BENCH_VERSION
 from packages.contracts.core import AuditStatus
+from packages.contracts.runtime import ModelUnavailableError
 from packages.model_adapters import ModelRouter, ModelRoutingError
 from packages.runtime_adapters import HermesAdapterError, HermesRuntimeAdapter
 
@@ -378,6 +379,10 @@ def create_app(
 
         app.add_exception_handler(error_type, handler)
 
+    @app.exception_handler(ModelUnavailableError)
+    async def unavailable_model(request, exc):
+        return fail(409 if exc.availability == "unavailable" else 503, str(exc))
+
     def context(project_id, action="run:read"):
         ctx = binder.create_trusted_context(DEV_ACTOR, DEV_ORG, project_id)
         try:
@@ -432,6 +437,14 @@ def create_app(
                 503,
                 "Hermes belum siap. Seluruh toolset harus dinonaktifkan dan kredensial server harus valid.",
             )
+
+    async def model_catalog():
+        models = []
+        for spec in catalog:
+            availability = await adapter.model_availability(spec["model_id"])
+            models.append({**spec, "availability": availability.status,
+                           "availability_reason": availability.reason, "availability_source": availability.source})
+        return models
 
     @app.exception_handler(HTTPException)
     async def http_error(request, exc):
@@ -491,7 +504,7 @@ def create_app(
             "organization": {"id": DEV_ORG, "name": "ARYN Lokal"},
             "projects": projects,
             "user": {"name": "Pemilik development", "id": DEV_ACTOR, "role": role},
-            "models": catalog,
+            "models": await model_catalog(),
             "runtime": await runtime_status(),
             "mode": "isolated-test" if testing else "development",
         }
@@ -632,6 +645,8 @@ def create_app(
                     ctx,
                     v.max_tokens + (len(scenario.prompt) + len(v.system_prompt)) // 3,
                 )
+            selected_model = v.model
+        await adapter.require_model_available(selected_model)
         result = await factory.evaluate_version_with_bench(ctx, version_id)
         from packages.contracts.runtime import RunUsage
 
@@ -699,7 +714,9 @@ def create_app(
                 ctx, v.max_tokens + (len(body.prompt) + len(v.system_prompt)) // 3
             )
             assigned_version_id = v.id
+            selected_model = v.model
         await require_runtime()
+        await adapter.require_model_available(selected_model)
         # Core binds all configuration from DB, browser supplies only task input.
         result = await coordinator.execute_assigned_agent_turn(
             body.assignment_id, body.prompt, ctx, body.idempotency_key

@@ -44,6 +44,10 @@ from packages.model_adapters import MockModelAdapter
 class DeterministicMockRuntimeAdapter(RuntimeAdapter):
     """Deterministic mock adapter for security and resilience testing."""
 
+    async def model_availability(self, model, *, refresh=False):
+        from packages.contracts.runtime import RuntimeModelAvailability
+        return RuntimeModelAvailability(model=model, status="available", source="isolated-test")
+
     def __init__(self) -> None:
         self.invocations: int = 0
         self.last_request = None

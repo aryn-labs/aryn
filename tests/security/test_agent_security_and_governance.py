@@ -44,6 +44,10 @@ from modules.core.workflows.coordinator import RunCoordinator
 class FlawedRuntimeAdapter(RuntimeAdapter):
     """Runtime that leaks injection and fails benchmark safety scenarios."""
 
+    async def model_availability(self, model, *, refresh=False):
+        from packages.contracts.runtime import RuntimeModelAvailability
+        return RuntimeModelAvailability(model=model, status="available", source="isolated-test")
+
     async def health(self) -> RuntimeHealth:
         return RuntimeHealth(is_healthy=True, status="ok", platform="mock-flawed", version="1.0", listener_url="http://127.0.0.1:8642")
 

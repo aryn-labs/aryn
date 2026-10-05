@@ -1,6 +1,72 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 
+async function settleTheme(page: import("@playwright/test").Page) {
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await page.evaluate(async () => {
+    // Measure settled colors, without disabling animations or accessibility rules.
+    await Promise.all(
+      document
+        .getAnimations()
+        .filter(
+          (animation) =>
+            animation.effect?.getComputedTiming().iterations !== Infinity,
+        )
+        .map((animation) => animation.finished.catch(() => {})),
+    );
+  });
+}
+
+async function createUatBench(page: import("@playwright/test").Page) {
+  await page.goto("/bench");
+  const origin = "http://127.0.0.1:8711";
+  const bootstrap = await page.request.post("/api/session", {
+    data: {},
+    headers: { Origin: origin },
+  });
+  const headers = {
+    Origin: origin,
+    "X-CSRF-Token": (await bootstrap.json()).csrf,
+  };
+  const prefix = "/api/projects/proj_studio_research";
+  const slug = `uat-bench-${Date.now()}`;
+  const bpResponse = await page.request.post(`${prefix}/blueprints`, {
+    data: { name: slug, slug },
+    headers,
+  });
+  expect(bpResponse.status()).toBe(201);
+  const bp = await bpResponse.json();
+  const workspace = await (await page.request.get("/api/workspace")).json();
+  const model = workspace.models.find(
+    (m: { availability: string }) => m.availability === "available",
+  ).model_id;
+  const versionResponse = await page.request.post(
+    `${prefix}/blueprints/${bp.id}/versions`,
+    {
+      data: {
+        version_number: "1.0.0",
+        system_prompt:
+          "Follow research safety guidelines and abstain without evidence.",
+        model,
+        temperature: 0.3,
+        max_tokens: 512,
+        tool_grants: [],
+      },
+      headers,
+    },
+  );
+  expect(versionResponse.status()).toBe(201);
+  const version = await versionResponse.json();
+  const response = await page.request.post(
+    `${prefix}/versions/${version.id}/bench`,
+    { data: { allow_remote_model: true }, headers },
+  );
+  expect(response.status()).toBe(200);
+  const result = await response.json();
+  expect(result.passed_scenarios).toBe(4);
+  return { bp, version, result, prefix };
+}
+
 test("navigasi, tema, empty state, aksesibilitas dan responsivitas", async ({
   page,
 }) => {
@@ -71,6 +137,7 @@ test("navigasi, tema, empty state, aksesibilitas dan responsivitas", async ({
     fullPage: true,
   });
   await page.getByRole("button", { name: "Gunakan tema terang" }).click();
+  await settleTheme(page);
   await expect(logo).not.toHaveAttribute("src", darkLogo!);
   await expect(logo).toHaveJSProperty("complete", true);
   expect(
@@ -152,6 +219,104 @@ test("navigasi, tema, empty state, aksesibilitas dan responsivitas", async ({
     fullPage: true,
   });
   expect(errors).toEqual([]);
+});
+
+test("UAT Bench membedakan Lulus, Tidak Terverifikasi, dan Gagal", async ({
+  page,
+}) => {
+  const { bp, result, prefix } = await createUatBench(page);
+  await page.goto("/bench");
+  let row = page.getByRole("row").filter({ hasText: bp.name });
+  await expect(row.getByText("Lulus", { exact: true })).toBeVisible();
+  await row.getByRole("button", { name: /Lihat hasil/ }).click();
+  await expect(
+    page.getByRole("heading", { name: "Evaluasi lulus", exact: true }),
+  ).toBeVisible();
+
+  // UI-only negative projection of a real Bench result. No PASS row is inserted,
+  // and no backend approval/publish is executed against the projected snapshot.
+  let historicalFailure = false;
+  await page.route("**/api/projects/*/snapshot", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    const evaluation = data.evaluations.find(
+      (e: { id: string }) => e.id === result.evaluation_id,
+    );
+    evaluation.verified = false;
+    if (historicalFailure) {
+      evaluation.passed = 0;
+      evaluation.passed_scenarios = 2;
+      evaluation.score = 0.5;
+    }
+    const version = data.versions.find(
+      (v: { id: string }) => v.id === evaluation.version_id,
+    );
+    version.bench_eligible = false;
+    version.governance_valid = false;
+    await route.fulfill({ response, json: data });
+  });
+  await page.reload();
+  row = page.getByRole("row").filter({ hasText: bp.name });
+  const warning = row.getByText("Tidak Terverifikasi", { exact: true });
+  await expect(warning).toBeVisible();
+  await expect(row.getByText("Gagal", { exact: true })).toHaveCount(0);
+  await expect(row).toContainText("4/4");
+  expect(await warning.evaluate((el) => getComputedStyle(el).color)).toBe(
+    "rgb(245, 158, 11)",
+  );
+  await expect(page.getByText(/Hasil historis tetap disimpan/)).toBeVisible();
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  await page.screenshot({
+    path: "../../.local/evidence/uat-bench-unverified.png",
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "Gunakan tema terang" }).click();
+  await settleTheme(page);
+  expect(
+    (
+      await new AxeBuilder({ page })
+        .include(".status-bench_unverified")
+        .include(".notice-warning")
+        .include(".score.text-warning")
+        .analyze()
+    ).violations,
+  ).toEqual([]);
+  await page.getByRole("button", { name: "Gunakan tema gelap" }).click();
+
+  historicalFailure = true;
+  await page.reload();
+  await expect(row.getByText("Gagal", { exact: true })).toBeVisible();
+  await expect(row).toContainText("2/4");
+  await expect(
+    row.getByText("Tidak Terverifikasi", { exact: true }),
+  ).toHaveCount(0);
+  const stored = await (await page.request.get(`${prefix}/snapshot`)).json();
+  const original = stored.evaluations.find(
+    (e: { id: string }) => e.id === result.evaluation_id,
+  );
+  expect(original.passed_scenarios).toBe(4);
+  expect(original.verified).toBe(true); // Display projection never changes the stored evidence.
+});
+
+test("UAT model unavailable memblokir tombol Bench dengan pesan Indonesia", async ({
+  page,
+}) => {
+  const { bp, version } = await createUatBench(page);
+  await page.route("**/api/workspace", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    data.models.find(
+      (m: { model_id: string }) => m.model_id === version.model,
+    ).availability = "unavailable";
+    await route.fulfill({ response, json: data });
+  });
+  await page.goto(`/factory/${bp.id}?versi=${version.id}`);
+  await expect(
+    page.getByRole("button", { name: "Jalankan Bench", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    page.getByText(/Model tidak tersedia di provider\/runtime/),
+  ).toBeVisible();
 });
 
 test("vertical slice HTTP nyata ke Core dengan runtime pengujian terisolasi", async ({
@@ -288,6 +453,7 @@ test("vertical slice HTTP nyata ke Core dengan runtime pengujian terisolasi", as
   );
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await page.getByRole("button", { name: "Gunakan tema terang" }).click();
+  await settleTheme(page);
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await page.setViewportSize({ width: 390, height: 844 });
   expect(

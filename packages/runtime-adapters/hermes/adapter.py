@@ -14,6 +14,7 @@ import httpx
 
 from packages.contracts.core import SecurityContext
 from packages.contracts.runtime import (
+    ModelUnavailableError,
     RunRequest,
     RunResult,
     RunStatus,
@@ -21,6 +22,7 @@ from packages.contracts.runtime import (
     RuntimeAdapter,
     RuntimeCapabilities,
     RuntimeHealth,
+    RuntimeModelAvailability,
     RuntimeTrace,
 )
 from .exceptions import (
@@ -55,6 +57,10 @@ class HermesRuntimeAdapter(RuntimeAdapter):
         self.enforce_loopback = enforce_loopback
         self.enforce_tool_confinement = enforce_tool_confinement
         self._custom_client = http_client
+        self._model_inventory = None
+        self._inventory_checked_at = 0.0
+        self._inventory_error = None
+        self._rejected_models: set[str] = set()
 
         if self.enforce_loopback:
             self._verify_loopback_only(self.base_url)
@@ -82,6 +88,75 @@ class HermesRuntimeAdapter(RuntimeAdapter):
         if self._custom_client is not None:
             return self._custom_client
         return httpx.AsyncClient(timeout=self.timeout)
+
+    async def model_availability(self, model: str, *, refresh: bool = False) -> RuntimeModelAvailability:
+        """Read runtime inventory. Curated/cached picker rows are not execution proof.
+
+        /v1/models advertises routing aliases, so it cannot establish provider availability.
+        Never return raw provider metadata or credentials to Studio.
+        """
+        if model in self._rejected_models:
+            return RuntimeModelAvailability(model=model, status="unavailable", source="provider_rejection", reason="provider_rejected")
+        client = self._get_client()
+        try:
+            if refresh or self._model_inventory is None or time.monotonic() - self._inventory_checked_at > 15:
+                response = await client.get(f"{self.base_url}/api/model/options", headers=self._headers(), timeout=self.timeout)
+                if response.status_code != 200:
+                    self._model_inventory = {}
+                    self._inventory_checked_at = time.monotonic()
+                    self._inventory_error = "discovery_unavailable"
+                    return RuntimeModelAvailability(model=model, reason="discovery_unavailable")
+                self._model_inventory = response.json()
+                self._inventory_checked_at = time.monotonic()
+                self._inventory_error = None
+            if self._inventory_error:
+                return RuntimeModelAvailability(model=model, reason=self._inventory_error)
+            inventory = self._model_inventory
+            if not isinstance(inventory, dict) or not isinstance(inventory.get("providers"), list):
+                return RuntimeModelAvailability(model=model, reason="malformed_discovery")
+            # Requests currently route through the configured Nous provider; do not switch providers.
+            if inventory.get("provider") != "nous":
+                return RuntimeModelAvailability(model=model, reason="provider_route_unknown")
+            rows = [r for r in inventory["providers"] if isinstance(r, dict) and r.get("slug") == "nous"]
+            if len(rows) != 1:
+                return RuntimeModelAvailability(model=model, reason="provider_inventory_unknown")
+            row = rows[0]
+            models, unavailable = row.get("models"), row.get("unavailable_models", [])
+            if (not isinstance(models, list) or any(not isinstance(m, str) for m in models)
+                    or not isinstance(unavailable, list) or any(not isinstance(m, str) for m in unavailable)):
+                return RuntimeModelAvailability(model=model, reason="malformed_discovery")
+            if row.get("authenticated") is False or model in unavailable or model not in models:
+                return RuntimeModelAvailability(model=model, status="unavailable", source="hermes_inventory", reason="not_offered_by_runtime")
+            # Current Hermes picker may fall back to curated/cached lists, even on refresh.
+            # A listed model is only a candidate: this API exposes no positive execution probe.
+            return RuntimeModelAvailability(model=model, source="hermes_inventory", reason="inventory_not_availability_proof")
+        except (httpx.HTTPError, ValueError, HermesAdapterError):
+            self._model_inventory = {}
+            self._inventory_checked_at = time.monotonic()
+            self._inventory_error = "discovery_unavailable"
+            return RuntimeModelAvailability(model=model, reason="discovery_unavailable")
+        finally:
+            if self._custom_client is None:
+                await client.aclose()
+
+    def _check_model_rejection(self, response, model):
+        """Recognize an explicit provider rejection without exposing its error body."""
+        if response.status_code == 200:
+            return
+        try:
+            body = response.json()
+            error = body.get("error", {}) if isinstance(body, dict) else {}
+            message = error.get("message", "") if isinstance(error, dict) else error
+            code = error.get("code", "") if isinstance(error, dict) else ""
+            message = message.lower() if isinstance(message, str) else ""
+            rejected = (isinstance(code, str) and code in {"model_not_found", "unknown_model", "model_not_available"}) or (
+                "model" in message and any(phrase in message for phrase in ("not found", "does not exist", "not available", "unknown model", "invalid model")))
+        except ValueError:
+            rejected = False
+        if rejected:
+            self._rejected_models.add(model)
+            raise ModelUnavailableError(RuntimeModelAvailability(
+                model=model, status="unavailable", source="provider_rejection", reason="provider_rejected"))
 
     async def health(self) -> RuntimeHealth:
         """Inspects Hermes /health and /health/detailed."""
@@ -228,6 +303,7 @@ class HermesRuntimeAdapter(RuntimeAdapter):
 
             if resp.status_code == 401:
                 raise RuntimeAuthenticationError("Unauthorized when creating run.")
+            self._check_model_rejection(resp, request.model)
             if resp.status_code not in (200, 201, 202):
                 raise HermesAdapterError(f"Start run failed: HTTP {resp.status_code} - {resp.text}")
 
@@ -375,6 +451,7 @@ class HermesRuntimeAdapter(RuntimeAdapter):
 
             if resp.status_code == 401:
                 raise RuntimeAuthenticationError("Unauthorized when calling /v1/chat/completions.")
+            self._check_model_rejection(resp, request.model)
             if resp.status_code != 200:
                 raise HermesAdapterError(f"Direct turn failed: HTTP {resp.status_code} - {resp.text}")
 

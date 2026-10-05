@@ -509,3 +509,59 @@ def test_snapshot_marks_forged_bench_and_malformed_details_unverified(studio):
     assert response.status_code == 200
     assert not response.json()["evaluations"][0]["verified"]
     assert not response.json()["versions"][0]["bench_eligible"]
+
+
+@pytest.mark.parametrize("availability,code", [("unavailable", 409), ("unknown", 503)])
+def test_unavailable_model_blocks_bench_before_any_scenario(studio, availability, code):
+    from types import SimpleNamespace
+    client, db, runtime, app = studio
+    bp, version = draft(client)
+    async def unavailable(model, **kwargs):
+        return SimpleNamespace(model=model, status=availability, source="isolated-test", reason="provider_rejected")
+    runtime.model_availability = unavailable
+    response = client.post(PREFIX + f"/versions/{version['id']}/bench", json={"allow_remote_model": True})
+    assert response.status_code == code
+    assert ("Model tidak tersedia" if availability == "unavailable" else "Ketersediaan model belum") in response.json()["message"]
+    assert runtime.requests == []
+    snapshot = client.get(PREFIX + "/snapshot").json()
+    assert snapshot["evaluations"] == []
+    assert snapshot["versions"][0]["status"] == "draft"
+
+
+@pytest.mark.parametrize("availability,code", [("unavailable", 409), ("unknown", 503)])
+def test_unavailable_model_blocks_run_without_fallback(studio, availability, code):
+    from types import SimpleNamespace
+    client, db, runtime, app = studio
+    bp, version = draft(client)
+    assignment = promoted(client, bp, version)
+    before = len(runtime.requests)
+    async def unavailable(model, **kwargs):
+        assert model == version["model"]
+        return SimpleNamespace(model=model, status=availability, source="isolated-test", reason="provider_rejected")
+    runtime.model_availability = unavailable
+    response = client.post(PREFIX + "/runs", json={
+        "assignment_id": assignment["id"], "prompt": "Research safely",
+        "idempotency_key": secrets.token_hex(16), "allow_remote_model": True,
+    })
+    assert response.status_code == code
+    assert len(runtime.requests) == before
+    with db.session() as s:
+        assert s.query(RunStateModel).count() == 0
+
+
+def test_historical_four_of_four_remains_stored_when_evidence_is_legacy(studio):
+    client, db, runtime, app = studio
+    bp, version = draft(client)
+    result = client.post(PREFIX + f"/versions/{version['id']}/bench", json={"allow_remote_model": True}).json()
+    with db.session() as s:
+        s.execute(text("UPDATE bench_evaluations SET provenance_json='{}' WHERE id=:id"), {"id": result["evaluation_id"]})
+    snapshot = client.get(PREFIX + "/snapshot").json()
+    assert len(snapshot["evaluations"]) == 1
+    evaluation = snapshot["evaluations"][0]
+    assert evaluation["id"] == result["evaluation_id"]
+    assert evaluation["passed_scenarios"] == evaluation["total_scenarios"] == 4
+    assert evaluation["passed"] and not evaluation["verified"]
+    assert not snapshot["versions"][0]["bench_eligible"]
+    assert client.post(PREFIX + f"/versions/{version['id']}/approve", json={
+        "payload_hash": version["payload_hash"], "comments": "Legacy evidence cannot approve."
+    }).status_code == 409

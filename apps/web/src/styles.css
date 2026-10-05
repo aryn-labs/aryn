@@ -1661,6 +1661,7 @@ pre {
 .status-published,
 .status-approved,
 .status-completed,
+.status-bench_passed,
 .status-active,
 .status-allowed {
   color: var(--success);
@@ -1678,6 +1679,11 @@ pre {
 .status-running,
 .status-started {
   color: var(--warning);
+  border-color: transparent;
+}
+.status-bench_unverified {
+  color: var(--warning);
+  background: var(--warning-muted);
   border-color: transparent;
 }
 .audit-event {
@@ -2176,6 +2182,9 @@ tbody tr:hover {
 .tab-dot.error {
   background: var(--error);
 }
+.tab-dot.warning {
+  background: var(--warning);
+}
 .count-pill {
   font-size: 10px;
   border: 1px solid var(--border);
@@ -2329,6 +2338,13 @@ tbody tr:hover {
 }
 .notice-success > svg {
   color: var(--success);
+}
+.notice-warning {
+  color: var(--warning);
+  background: var(--warning-muted);
+}
+.notice-warning > svg {
+  color: var(--warning);
 }
 .notice .mono {
   font-size: 11px;

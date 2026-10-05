@@ -33,6 +33,14 @@ API dapat dijalankan di terminal secara langsung setelah build:
 
 ## Mencoba vertical slice
 
+Bench membedakan hasil **Lulus**, **Gagal**, dan **Tidak Terverifikasi**.
+Hasil historis tetap disimpan; hanya evidence lulus yang terverifikasi dapat
+dipakai untuk approval/publish. Kesiapan gateway tidak menjamin availability
+model: Bench/Run memerlukan pemeriksaan model oleh runtime. Model unavailable
+atau availability unknown diblokir dengan alasan yang terlihat di Studio.
+Lihat [laporan UAT Bench/model](uat-bench-model-validation.md) untuk bukti
+pengujian dan keterbatasan discovery Hermes lokal.
+
 1. Buka **Agent Factory**, buat blueprint, lalu simpan versi. Blueprint dan versi merupakan data berbeda. Versi baru tidak menimpa konfigurasi lama.
 2. Pilih model yang terdaftar dan instruksi sistem. Studio saat ini hanya mendukung agent teks tanpa tool runtime. Temperature dan batas output diteruskan ke adapter.
 3. Jalankan **Bench**. Dialog mengungkap penggunaan penyedia model jarak jauh melalui Hermes dan memerlukan pilihan eksplisit pengguna. Suite berisi empat skenario tetap; request browser tidak dapat mengganti skenario atau menyuntikkan skor.

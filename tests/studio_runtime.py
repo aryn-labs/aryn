@@ -8,6 +8,7 @@ from packages.contracts.runtime import (
     RuntimeAdapter,
     RuntimeCapabilities,
     RuntimeHealth,
+    RuntimeModelAvailability,
     RuntimeTrace,
     RunUsage,
 )
@@ -20,6 +21,10 @@ class IsolatedTestRuntime(RuntimeAdapter):
         self.online = True
         self.tools = []
         self.status = RunStatus.COMPLETED
+
+    async def model_availability(self, model, *, refresh=False):
+        # Explicit test-double capability, never a production model availability claim.
+        return RuntimeModelAvailability(model=model, status="available", source="isolated-test", reason="test_runtime_ready")
 
     async def health(self):
         return RuntimeHealth(

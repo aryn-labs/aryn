@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field
 
 from packages.contracts.core import SecurityContext
@@ -40,6 +40,28 @@ class RuntimeCapabilities(BaseModel):
     supports_cancellation: bool = True
     supports_streaming: bool = True
     details: Dict[str, Any] = Field(default_factory=dict)
+
+
+class RuntimeModelAvailability(BaseModel):
+    model: str
+    status: Literal["available", "unavailable", "unknown"] = "unknown"
+    source: str = "unsupported_discovery"
+    reason: str = "availability_unknown"
+
+
+class ModelUnavailableError(RuntimeError):
+    """No verified runtime availability; never retry with a different model."""
+
+    def __init__(self, availability):
+        self.model = availability.model
+        self.availability = availability.status
+        self.reason = availability.reason
+        message = (
+            "Model tidak tersedia di provider/runtime. Pilih model lain sebelum menjalankan Bench atau eksekusi."
+            if availability.status == "unavailable" else
+            "Ketersediaan model belum dapat diverifikasi oleh runtime. Bench dan eksekusi diblokir sampai tersedia bukti ketersediaan yang valid."
+        )
+        super().__init__(message)
 
 
 class RunRequest(BaseModel):
@@ -82,6 +104,17 @@ class RuntimeTrace(BaseModel):
 
 class RuntimeAdapter(ABC):
     """Abstract interface that every ARYN runtime adapter must implement."""
+
+    async def model_availability(self, model: str, *, refresh: bool = False) -> RuntimeModelAvailability:
+        """Unsupported discovery is unknown, never proof of model readiness."""
+        return RuntimeModelAvailability(model=model)
+
+    async def require_model_available(self, model: str) -> None:
+        availability = await self.model_availability(model, refresh=True)
+        if availability.model != model:
+            raise ModelUnavailableError(RuntimeModelAvailability(model=model, reason="discovery_model_mismatch"))
+        if availability.status != "available":
+            raise ModelUnavailableError(availability)
 
     @abstractmethod
     async def health(self) -> RuntimeHealth:

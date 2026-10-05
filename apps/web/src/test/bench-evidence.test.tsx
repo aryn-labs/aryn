@@ -1,7 +1,8 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { EvaluationPanel } from "../features/bench";
-import type { Evaluation } from "../lib/types";
+import { MemoryRouter } from "react-router-dom";
+import { BenchPage, EvaluationPanel } from "../features/bench";
+import type { Evaluation, Snapshot } from "../lib/types";
 
 // Display-only fixture. Backend promotion tests execute the actual Bench.
 const recorded: Evaluation = {
@@ -27,10 +28,14 @@ describe("status bukti Bench", () => {
     render(<EvaluationPanel evaluation={recorded} />);
     expect(
       screen.getByRole("heading", {
-        name: "Bukti evaluasi belum terverifikasi",
+        name: "Evaluasi tidak terverifikasi",
       }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/Publikasi diblokir/)).toBeInTheDocument();
+    expect(screen.getByText(/historis tetap disimpan/)).toBeInTheDocument();
+    expect(screen.getByText(/persetujuan atau publikasi/)).toBeInTheDocument();
+    expect(screen.getByText("Tidak Terverifikasi")).toHaveClass(
+      "status-bench_unverified",
+    );
     expect(screen.queryByText(/Versi dapat ditinjau/)).not.toBeInTheDocument();
   });
   it("menampilkan kelayakan hanya dari hasil terverifikasi", () => {
@@ -39,5 +44,44 @@ describe("status bukti Bench", () => {
       screen.getByRole("heading", { name: "Evaluasi lulus" }),
     ).toBeInTheDocument();
     expect(screen.getByText(/Versi dapat ditinjau/)).toBeInTheDocument();
+    expect(screen.getByText("Lulus")).toHaveClass("status-bench_passed");
+  });
+  it.each([true, false])("2/4 tampil Gagal, verified=%s", (verified) => {
+    render(
+      <EvaluationPanel
+        evaluation={{
+          ...recorded,
+          passed: 0,
+          verified,
+          passed_scenarios: 2,
+          score: 0.5,
+        }}
+      />,
+    );
+    expect(screen.getByText("Gagal")).toHaveClass("status-failed");
+    expect(screen.queryByText("Tidak Terverifikasi")).not.toBeInTheDocument();
+  });
+  it("riwayat 4/4 unverified memakai status warning, bukan Gagal", () => {
+    const data: Snapshot = {
+      evaluations: [recorded],
+      versions: [],
+      blueprints: [],
+      assignments: [],
+      approvals: [],
+      runs: [],
+      audit: [],
+      permissions: {},
+      budget: { max_tokens_per_run: 1000, cumulative_tokens: 0 },
+    };
+    render(
+      <MemoryRouter>
+        <BenchPage data={data} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText("Tidak Terverifikasi")).toHaveClass(
+      "status-bench_unverified",
+    );
+    expect(screen.queryByText("Gagal")).not.toBeInTheDocument();
+    expect(screen.getByText("4/4")).toBeInTheDocument();
   });
 });
