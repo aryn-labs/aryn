@@ -207,43 +207,6 @@ export function Overview({ data, workspace, openBlueprint }: Shared) {
                 />
               )}
             </Panel>
-
-            <Panel
-              title="Kesiapan lingkungan"
-              subtitle="Status koneksi saat ini."
-            >
-              <div className="readiness">
-                <div className="readiness-row">
-                  <div className="readiness-item-left">
-                    <span className="connection-dot" />
-                    <span>ARYN API</span>
-                  </div>
-                  <span className="readiness-host mono">127.0.0.1:8710</span>
-                  <Status value="active" />
-                </div>
-                <div className="readiness-row">
-                  <div className="readiness-item-left">
-                    <span
-                      className={`connection-dot ${!workspace.runtime.ready ? "warning" : ""}`}
-                    />
-                    <span>Hermes {workspace.runtime.version || ""}</span>
-                  </div>
-                  <span
-                    className={`subtle ${workspace.runtime.ready ? "text-success" : ""}`}
-                  >
-                    {workspace.runtime.ready ? "Siap" : "Belum siap"}
-                  </span>
-                </div>
-                <p className="readiness-runtime-msg">{workspace.runtime.message}</p>
-              </div>
-              <div className="security-note">
-                <ShieldCheck size={16} />
-                <p>
-                  Identitas development diterbitkan server. Seluruh operasi
-                  diproses melalui ARYN Core.
-                </p>
-              </div>
-            </Panel>
           </div>
 
           <div className="overview-secondary">
