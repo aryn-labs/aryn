@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   ArrowDownToLine,
@@ -30,6 +30,8 @@ import {
 import type { Shared } from "../lib/types";
 import { Panel, Lifecycle, AuditList } from "../components/workspace";
 import { EvaluationPanel, evaluationStatus } from "./bench";
+import { ArynCanvas } from "../components/canvas/aryn-canvas";
+import { buildFactoryNodesAndEdges } from "../components/canvas/canvas-builders";
 export function Factory({ data, openBlueprint }: Shared) {
   const [search, setSearch] = useState("");
   const navigate = useNavigate();
@@ -209,6 +211,9 @@ export function AgentDetail({
     p.set("tab", tab);
     setParams(p);
   };
+  const { nodes: factoryNodes, edges: factoryEdges } = useMemo(() => {
+    return buildFactoryNodesAndEdges(blueprint, selected, workspace);
+  }, [blueprint, selected, workspace]);
   const runAction = async (kind: string) => {
     if (!selected) return;
     try {
@@ -357,7 +362,29 @@ export function AgentDetail({
             aria-labelledby={`tab-${tab}`}
           >
             {tab === "configuration" ? (
-              <div className="detail-layout">
+              <>
+                <ArynCanvas
+                  mode="factory"
+                  initialNodes={factoryNodes}
+                  initialEdges={factoryEdges}
+                  version={selected}
+                  workspace={workspace}
+                  onNewVersionFromConfig={() => {
+                    openDialog("version");
+                  }}
+                  onRunBench={() => {
+                    setConsent(false);
+                    openDialog("bench");
+                  }}
+                  onApproveVersion={() => {
+                    setComments("");
+                    openDialog("approve");
+                  }}
+                  onPublishVersion={() => {
+                    openDialog("publish");
+                  }}
+                />
+                <div className="detail-layout">
                 <Panel
                   title="Instruksi dan model"
                   subtitle="Konfigurasi tersimpan. Perubahan dibuat melalui versi baru."
@@ -495,7 +522,8 @@ export function AgentDetail({
                     )}
                 </div>
               </div>
-            ) : tab === "bench" ? (
+            </>
+          ) : tab === "bench" ? (
               <>
                 <div className="section-actions">
                   <p>

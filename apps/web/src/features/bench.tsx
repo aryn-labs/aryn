@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Check, ChevronDown, ChevronRight, X } from "lucide-react";
 import type { Evaluation } from "../lib/types";
@@ -13,6 +14,8 @@ import {
 } from "../components/shared";
 import type { Shared } from "../lib/types";
 import { Panel } from "../components/workspace";
+import { ArynCanvas } from "../components/canvas/aryn-canvas";
+import { buildBenchNodesAndEdges } from "../components/canvas/canvas-builders";
 export function evaluationStatus(evaluation: Evaluation) {
   if (
     !evaluation.passed ||
@@ -26,6 +29,11 @@ export function EvaluationPanel({ evaluation }: { evaluation: Evaluation }) {
   const status = evaluationStatus(evaluation);
   const unverified = status === "bench_unverified";
   const passed = status === "bench_passed";
+
+  const { nodes: benchNodes, edges: benchEdges } = useMemo(() => {
+    return buildBenchNodesAndEdges(evaluation);
+  }, [evaluation]);
+
   return (
     <Panel
       id="evaluasi-bench"
@@ -52,6 +60,15 @@ export function EvaluationPanel({ evaluation }: { evaluation: Evaluation }) {
         </div>
       }
     >
+      <div className="bench-canvas-section mb-4">
+        <ArynCanvas
+          mode="bench"
+          initialNodes={benchNodes}
+          initialEdges={benchEdges}
+          evaluation={evaluation}
+          showInspectorByDefault={false}
+        />
+      </div>
       <div className="evaluation-notice">
         <Notice tone={unverified ? "warning" : passed ? "success" : "error"}>
           {unverified

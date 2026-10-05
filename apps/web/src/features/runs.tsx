@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Bot, ChevronRight, ShieldCheck, Workflow } from "lucide-react";
 import type { Run, Audit } from "../lib/types";
@@ -7,6 +7,8 @@ import { Button } from "../components/ui/button";
 import { Busy, Empty, Notice, PageHeading, Status } from "../components/shared";
 import type { Shared } from "../lib/types";
 import { Panel, AuditList } from "../components/workspace";
+import { ArynCanvas } from "../components/canvas/aryn-canvas";
+import { buildExecutionNodesAndEdges } from "../components/canvas/canvas-builders";
 export function Runs({ data, workspace, pending, act }: Shared) {
   const [params, setParams] = useSearchParams();
   const [assignment, setAssignment] = useState(
@@ -75,12 +77,25 @@ export function Runs({ data, workspace, pending, act }: Shared) {
       /* Retry preserves idempotency key; edits create a new key. */
     }
   };
+  const { nodes: execNodes, edges: execEdges } = useMemo(() => {
+    return buildExecutionNodesAndEdges(selected, version, pending);
+  }, [selected, version, pending]);
+
   return (
     <>
       <PageHeading
         eyebrow="OPERASIKAN"
         title="Eksekusi"
         description="Jalankan Research Agent melalui ARYN Core, lalu telusuri hasilnya."
+      />
+      <ArynCanvas
+        mode="execution"
+        initialNodes={execNodes}
+        initialEdges={execEdges}
+        run={selected}
+        version={version}
+        auditEvents={data.audit.filter((e) => e.resource_id === selected?.id)}
+        showInspectorByDefault={Boolean(selected || pending)}
       />
       <div className="run-layout">
         <Panel
