@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 
 class ModelProviderType(str, Enum):
+    NINE_ROUTER = "9router"
     GEMINI = "gemini"
     NOUS = "nous"
     BYOK = "byok"
@@ -32,8 +33,8 @@ class ModelSpec(BaseModel):
 
 class ModelRoutingConfig(BaseModel):
     """Routing configuration with strict safety invariants."""
-    active_provider: ModelProviderType
-    active_model: str
+    active_provider: ModelProviderType = ModelProviderType.NINE_ROUTER
+    active_model: Optional[str] = None
     allowed_models: List[str]
     # Invariant per ADR-005: Never fallback silently between providers or models.
     allow_fallback: bool = False

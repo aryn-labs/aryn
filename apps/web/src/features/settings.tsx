@@ -1,3 +1,4 @@
+import { gatewayStatus } from "../lib/studio-state";
 import { Link } from "react-router-dom";
 import {
   ArrowRight,
@@ -83,7 +84,7 @@ export function SettingsPage({
             <dl className="definition-grid">
               <dt>API Studio</dt>
               <dd className="mono">{window.location.origin}</dd>
-              <dt>Hermes</dt>
+              <dt>ARYN Runtime</dt>
               <dd>{workspace.runtime.message}</dd>
               <dt>Batas output per eksekusi</dt>
               <dd>{number(data.budget?.max_tokens_per_run || 4096)} token</dd>
@@ -97,14 +98,22 @@ export function SettingsPage({
                     ? "Tidak ada"
                     : "Belum dapat diperiksa"}
               </dd>
-              <dt>Gemini</dt>
-              <dd>Spesifikasi tersedia; belum terintegrasi live.</dd>
-              <dt>Ollama</dt>
-              <dd>Belum tersedia.</dd>
+              <dt>Model Gateway</dt>
+              <dd className={`text-${gatewayStatus(workspace).tone}`}>
+                {gatewayStatus(workspace).label}
+              </dd>
+              <dt>Backend runtime</dt>
+              <dd>Hermes</dd>
+              <dt>Gateway model</dt>
+              <dd>9Router</dd>
+              <dt>Model ditemukan</dt>
+              <dd>{workspace.models.length}</dd>
             </dl>
             <p className="subtle">
-              Kredensial Hermes dibaca server dari lingkungan lokal yang sudah
-              ada. Kunci dan identity signing secret tidak dikirim ke browser.
+              Credential provider dikelola langsung oleh 9Router. ARYN hanya
+              menggunakan endpoint gateway dan credential akses gateway opsional
+              di server. Kunci tidak dikirim ke browser, database, audit, atau
+              log.
             </p>
           </div>
         </Panel>

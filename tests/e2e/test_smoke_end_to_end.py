@@ -33,6 +33,7 @@ from modules.core.usage.engine import BudgetEngine
 from modules.core.workflows.coordinator import RunCoordinator
 from database.connection import DatabaseManager, create_db_engine
 from database.schema import Base
+from tests.live_gateway import selected_live_model
 from tests.conftest import bind_test_context
 from database.repositories.organization_repo import OrganizationRepository
 
@@ -43,19 +44,8 @@ ModelRouter = model_adapters_module.ModelRouter
 
 
 def get_live_api_key() -> str:
-    """Safely retrieves API_SERVER_KEY from Hermes .env without leaking."""
-    key = os.getenv("API_SERVER_KEY")
-    if key:
-        return key
-    env_file = r"C:\Users\User\AppData\Local\hermes\.env"
-    if os.path.exists(env_file):
-        with open(env_file, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line.startswith("API_SERVER_KEY="):
-                    return line.split("=", 1)[1].strip()
-    return ""
-
+    """Runtime auth must be supplied explicitly; no provider secret file reads."""
+    return os.getenv("API_SERVER_KEY", "")
 
 @pytest.mark.asyncio
 async def test_live_end_to_end_smoke():
@@ -95,7 +85,7 @@ async def test_live_end_to_end_smoke():
     permission_engine = PermissionEngine(db_manager=db_manager)
     budget_engine = BudgetEngine(db_manager=db_manager)
     audit_logger = AuditLogger(db_manager=db_manager)
-    model_router = ModelRouter()
+    live_model, model_router = await selected_live_model(adapter)
 
     coordinator = RunCoordinator(
         runtime_adapter=adapter,
@@ -110,7 +100,7 @@ async def test_live_end_to_end_smoke():
     request = RunRequest(
         prompt="ping",
         system_instructions="You are ARYN's verified agent. Answer concisely.",
-        model="stealth/space-bunny-alpha",
+        model=live_model,
     )
 
     # 4. Execute through ARYN Core RunCoordinator

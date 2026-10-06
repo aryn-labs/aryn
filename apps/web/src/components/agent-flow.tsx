@@ -61,7 +61,7 @@ const stages = [
   },
   {
     title: "Eksekusi",
-    description: "Hermes dan audit",
+    description: "ARYN Runtime dan audit",
     icon: Play,
     path: "/runs",
     module: "Eksekusi",

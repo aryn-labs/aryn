@@ -1,3 +1,4 @@
+import { executionReady, gatewayStatus } from "../lib/studio-state";
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
@@ -217,7 +218,7 @@ export function AgentDetail({
   }, [blueprint, selected, workspace, project]);
   const canBench =
     !pending &&
-    workspace.runtime.ready &&
+    executionReady(workspace) &&
     modelReady &&
     selected?.integrity_valid &&
     ["draft", "rejected"].includes(selected.status) &&
@@ -328,8 +329,13 @@ export function AgentDetail({
       {selected && !modelReady && (
         <Notice tone="warning">
           {modelAvailability === "unavailable"
-            ? "Model tidak tersedia di provider/runtime. Pilih model lain pada versi baru sebelum menjalankan Bench."
+            ? "Model tidak tersedia melalui 9Router. Pilih model lain pada versi baru sebelum menjalankan Bench."
             : "Ketersediaan model belum dapat diverifikasi. Bench diblokir sampai runtime menyediakan bukti ketersediaan yang valid."}
+        </Notice>
+      )}
+      {gatewayStatus(workspace).tone !== "success" && (
+        <Notice tone={gatewayStatus(workspace).tone}>
+          {gatewayStatus(workspace).label}
         </Notice>
       )}
       {!selected ? (
@@ -494,7 +500,7 @@ export function AgentDetail({
                           }}
                           disabled={
                             pending ||
-                            !workspace.runtime.ready ||
+                            !executionReady(workspace) ||
                             !modelReady ||
                             !selected.integrity_valid ||
                             !["draft", "rejected"].includes(selected.status) ||
@@ -506,7 +512,7 @@ export function AgentDetail({
                         </Button>
                         {!workspace.runtime.ready && (
                           <p className="text-warning">
-                            Hermes belum siap. Periksa Pengaturan.
+                            ARYN Runtime belum siap. Periksa Pengaturan.
                           </p>
                         )}
                         <hr />
@@ -581,7 +587,7 @@ export function AgentDetail({
                   <Button
                     disabled={
                       pending ||
-                      !workspace.runtime.ready ||
+                      !executionReady(workspace) ||
                       !modelReady ||
                       !selected.integrity_valid ||
                       !["draft", "rejected"].includes(selected.status) ||
@@ -602,7 +608,7 @@ export function AgentDetail({
                   <Panel title="Hasil evaluasi">
                     <Empty
                       title="Versi ini belum dievaluasi"
-                      description="Bench menjalankan empat skenario pada model pilihan melalui Hermes. Tidak ada skor yang dibuat sebelum evaluasi nyata."
+                      description="Bench menjalankan empat skenario pada model pilihan melalui ARYN Runtime. Tidak ada skor yang dibuat sebelum evaluasi nyata."
                     />
                   </Panel>
                 )}
@@ -817,7 +823,7 @@ export function AgentDetail({
                   </ul>
                   <Notice>
                     Instruksi sistem dan empat prompt evaluasi dikirim melalui
-                    Hermes ke penyedia model jarak jauh. Model:{" "}
+                    ARYN Runtime ke penyedia model jarak jauh. Model:{" "}
                     <span className="mono">{selected?.model}</span>. Tidak ada
                     fallback otomatis.
                   </Notice>

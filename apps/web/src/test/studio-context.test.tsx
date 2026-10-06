@@ -27,7 +27,7 @@ describe("konteks Studio", () => {
     expect(screen.getByText("Proyek Aktif")).toBeInTheDocument();
     expect(screen.queryByText("Integritas Audit")).not.toBeInTheDocument();
     expect(screen.queryByText("100%")).not.toBeInTheDocument();
-    expect(screen.getByText(/Hermes.*tidak tersedia/i)).not.toHaveClass(
+    expect(screen.getByText(/ARYN Runtime.*tidak tersedia/i)).not.toHaveClass(
       "text-success",
     );
   });

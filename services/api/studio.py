@@ -61,7 +61,8 @@ from modules.core.workflows.coordinator import (
 from packages.contracts.agent import AgentVersion, VersionIntegrityError
 from packages.contracts.bench import RESEARCH_BENCH_VERSION
 from packages.contracts.core import AuditStatus
-from packages.contracts.runtime import ModelUnavailableError
+from packages.contracts.runtime import (ModelUnavailableError, GatewayUnavailableError, ModelIdentityError, RuntimeGatewayError)
+from packages.contracts.model import ModelProviderType, ModelSpec
 from packages.model_adapters import ModelRouter, ModelRoutingError
 from packages.runtime_adapters import HermesAdapterError, HermesRuntimeAdapter
 
@@ -134,15 +135,8 @@ class StudioHermesAdapter(HermesRuntimeAdapter):
 
 
 def runtime_key() -> str:
-    """Read only the existing local Hermes key. Never serialize/log this value."""
-    if os.getenv("API_SERVER_KEY"):
-        return os.environ["API_SERVER_KEY"]
-    path = Path.home() / "AppData/Local/hermes/.env"
-    if path.is_file():
-        for line in path.read_text(encoding="utf-8").splitlines():
-            if line.startswith("API_SERVER_KEY="):
-                return line.split("=", 1)[1].strip().strip("\"'")
-    return ""
+    """Runtime authentication only, explicitly supplied to the server process."""
+    return os.getenv("API_SERVER_KEY", "")
 
 
 def row(model):
@@ -189,21 +183,19 @@ def create_app(
     permissions = PermissionEngine(db_manager=db, identity_binder=binder)
     audit = AuditLogger(db_manager=db)
     adapter = runtime or StudioHermesAdapter(api_key=runtime_key(), timeout=10)
+    protected_credentials = [getattr(adapter, "api_key", "")]
+    gateway_client = getattr(adapter, "model_gateway", None)
+    if gateway_client:
+        protected_credentials.append(gateway_client.settings.api_key.get_secret_value())
+    model_router = ModelRouter(catalog={})
     factory = AgentFactoryService(
-        db, BenchRunner(adapter), permission_engine=permissions, audit_logger=audit
+        db, BenchRunner(adapter), permission_engine=permissions, audit_logger=audit, model_router=model_router
     )
     coordinator = RunCoordinator(
-        adapter, permission_engine=permissions, audit_logger=audit, db_manager=db
+        adapter, permission_engine=permissions, audit_logger=audit, db_manager=db, model_router=model_router
     )
     sessions = {}
     mutation_lock = asyncio.Lock()
-    catalog = [
-        s.model_dump(mode="json")
-        for s in ModelRouter().catalog.values()
-        if s.provider.value == "nous"
-    ]
-    allowed_models = {s["model_id"] for s in catalog}
-
     # Provision only dedicated development scope. Do not re-grant a revoked membership on restart.
     with db.session() as s:
         repo = OrganizationRepository(s)
@@ -262,6 +254,18 @@ def create_app(
             return fail(403, "Host tidak diizinkan. Gunakan alamat loopback Studio.")
         is_api = request.url.path.startswith("/api/")
         if is_api:
+            credential_input = request.url.path + request.url.query
+            if request.method not in {"GET", "HEAD"}:
+                body = await request.body()
+                if len(body) > 65536:
+                    return fail(413, "Isi permintaan terlalu besar.")
+                credential_input += body.decode("utf-8", errors="replace")
+                try:
+                    credential_input += json.dumps(json.loads(body), ensure_ascii=False)
+                except ValueError:
+                    pass
+            if any(key and key in credential_input for key in protected_credentials):
+                return fail(422, "Credential server tidak boleh disertakan dalam data aplikasi.")
             supplied_origin = request.headers.get("origin")
             if supplied_origin and supplied_origin != origin:
                 return fail(403, "Origin permintaan tidak diizinkan.")
@@ -365,7 +369,7 @@ def create_app(
         ),
         HermesAdapterError: (
             503,
-            "Hermes belum dapat menyelesaikan permintaan. Periksa koneksi, kredensial server, dan batas tool.",
+            "ARYN Runtime belum dapat menyelesaikan permintaan. Periksa koneksi, kredensial server, dan batas tool.",
         ),
         RuntimeError: (
             502,
@@ -382,6 +386,11 @@ def create_app(
     @app.exception_handler(ModelUnavailableError)
     async def unavailable_model(request, exc):
         return fail(409 if exc.availability == "unavailable" else 503, str(exc))
+
+    for gateway_error in (GatewayUnavailableError, RuntimeGatewayError, ModelIdentityError):
+        async def gateway_handler(request, exc):
+            return fail(409 if isinstance(exc, ModelIdentityError) else 503, str(exc))
+        app.add_exception_handler(gateway_error, gateway_handler)
 
     def context(project_id, action="run:read"):
         ctx = binder.create_trusted_context(DEV_ACTOR, DEV_ORG, project_id)
@@ -419,7 +428,7 @@ def create_app(
                 "version": health.version,
                 "tools_confined": caps.tools_confined,
                 "enabled_toolsets": caps.enabled_toolsets,
-                "message": "Hermes terhubung · tanpa tool"
+                "message": "ARYN Runtime siap · tanpa tool"
                 if ready
                 else "Runtime dibatasi: seluruh toolset harus dinonaktifkan.",
                 "readiness": health.details.get("status", "unknown"),
@@ -428,23 +437,22 @@ def create_app(
             return {
                 "connected": False,
                 "ready": False,
-                "message": "Hermes tidak terhubung atau kredensial server belum valid.",
+                "message": "ARYN Runtime belum siap.",
             }
 
     async def require_runtime():
         if not (await runtime_status())["ready"]:
             raise HTTPException(
                 503,
-                "Hermes belum siap. Seluruh toolset harus dinonaktifkan dan kredensial server harus valid.",
+                "ARYN Runtime belum siap. Seluruh toolset harus dinonaktifkan dan autentikasi runtime harus valid.",
             )
 
     async def model_catalog():
-        models = []
-        for spec in catalog:
-            availability = await adapter.model_availability(spec["model_id"])
-            models.append({**spec, "availability": availability.status,
-                           "availability_reason": availability.reason, "availability_source": availability.source})
-        return models
+        discovery = await adapter.discover_models(refresh=True)
+        model_router.replace_catalog([ModelSpec(provider=ModelProviderType.NINE_ROUTER,
+            model_id=m["model_id"], display_name=m["display_name"], requires_api_key=False)
+            for m in discovery.models] if discovery.discovery_valid else [])
+        return discovery
 
     @app.exception_handler(HTTPException)
     async def http_error(request, exc):
@@ -485,6 +493,8 @@ def create_app(
 
     @app.get("/api/workspace")
     async def workspace():
+        discovery = await model_catalog()
+        binding = await adapter.gateway_binding()
         ctx = context(DEV_PROJECT)
         with db.session() as s:
             repo = OrganizationRepository(s)
@@ -504,7 +514,10 @@ def create_app(
             "organization": {"id": DEV_ORG, "name": "ARYN Lokal"},
             "projects": projects,
             "user": {"name": "Pemilik development", "id": DEV_ACTOR, "role": role},
-            "models": await model_catalog(),
+            "models": discovery.models,
+            "gateway": {"name": "9Router", "connected": discovery.connected,
+                        "discovery_valid": discovery.discovery_valid, "reason": discovery.reason,
+                        "runtime_binding_verified": binding},
             "runtime": await runtime_status(),
             "mode": "isolated-test" if testing else "development",
         }
@@ -614,8 +627,11 @@ def create_app(
         "/api/projects/{project_id}/blueprints/{blueprint_id}/versions", status_code=201
     )
     async def create_version(project_id: str, blueprint_id: str, body: VersionInput):
-        if body.model not in allowed_models:
-            raise ModelRoutingError("Studio only supports explicit Hermes/Nous models")
+        context(project_id, "version:create")
+        discovery = await model_catalog()
+        if not discovery.discovery_valid:
+            raise GatewayUnavailableError()
+        model_router.resolve_model(body.model)
         return factory.create_version(
             context(project_id, "version:create"),
             blueprint_id=blueprint_id,
@@ -636,8 +652,6 @@ def create_app(
         await require_runtime()
         with db.session() as s:
             v = AgentRepository(s).get_version(ctx, version_id)
-            if v.model not in allowed_models:
-                raise ModelRoutingError("Invalid Studio model")
             # The existing budget is per runtime turn, not per suite. Include
             # input for every fixed scenario before dispatching any of them.
             for scenario in get_standard_research_bench_scenarios():
@@ -647,6 +661,7 @@ def create_app(
                 )
             selected_model = v.model
         await adapter.require_model_available(selected_model)
+        await model_catalog()
         result = await factory.evaluate_version_with_bench(ctx, version_id)
         from packages.contracts.runtime import RunUsage
 
@@ -683,7 +698,7 @@ def create_app(
         if not body.allow_remote_model:
             raise HTTPException(
                 422,
-                "Pilih dan konfirmasikan pengiriman instruksi riset ke model jarak jauh melalui Hermes.",
+                "Konfirmasikan pengiriman instruksi riset melalui ARYN Runtime dan Model Gateway 9Router.",
             )
         # Core validates the full fingerprint even for cached results, without runtime dispatch.
         cached = None
@@ -704,7 +719,6 @@ def create_app(
             v = AgentRepository(s).get_version(ctx, asgn.version_id)
             if (
                 asgn.status != "active"
-                or v.model not in allowed_models
                 or v.status != "published"
             ):
                 raise PermissionDeniedError(
@@ -717,6 +731,7 @@ def create_app(
             selected_model = v.model
         await require_runtime()
         await adapter.require_model_available(selected_model)
+        await model_catalog()
         # Core binds all configuration from DB, browser supplies only task input.
         result = await coordinator.execute_assigned_agent_turn(
             body.assignment_id, body.prompt, ctx, body.idempotency_key
@@ -734,6 +749,10 @@ def create_app(
                     "assignment_id": body.assignment_id,
                     "version_id": assigned_version_id,
                     "actual_model": result.model,
+                    "requested_model": selected_model,
+                    "gateway": result.gateway,
+                    "provider": result.provider,
+                    "runtime_backend": result.runtime_backend,
                     "runtime": "Hermes",
                     "trace_available": False,
                 },

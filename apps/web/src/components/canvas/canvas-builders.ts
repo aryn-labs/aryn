@@ -71,7 +71,7 @@ export function buildFactoryNodesAndEdges(
     }),
     node("node-model", "model", 600, 160, {
       label: version?.model || "Model belum dipilih",
-      sublabel: "Routing melalui Hermes",
+      sublabel: "Model Gateway · 9Router",
       nodeType: "model",
       status:
         availability === "unavailable"
@@ -197,8 +197,10 @@ export function buildExecutionNodesAndEdges(
       details: { systemPrompt: version?.system_prompt },
     }),
     node("exec-model", "model", 620, 140, {
-      label: run?.model || "Model belum dilaporkan",
-      sublabel: run?.provider || "Provider belum dilaporkan",
+      label: run?.actual_model || run?.model || "Model belum dilaporkan",
+      sublabel: run?.gateway
+        ? `Model Gateway · ${run.gateway}`
+        : "Gateway belum tercatat",
       nodeType: "model",
       status: "idle",
       badge: "Model tercatat",
@@ -212,7 +214,7 @@ export function buildExecutionNodesAndEdges(
         : undefined,
     }),
     node("exec-runtime", "hermes", 910, 140, {
-      label: "Eksekusi Core / Hermes",
+      label: "Core / ARYN Runtime",
       sublabel: "Status keseluruhan run",
       nodeType: "hermes",
       status: runtimeStatus,

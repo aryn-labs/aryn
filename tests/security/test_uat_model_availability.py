@@ -9,30 +9,26 @@ from modules.core.workflows.coordinator import RunCoordinator
 from packages.contracts.runtime import ModelUnavailableError, RunRequest, RuntimeModelAvailability
 from packages.runtime_adapters import HermesRuntimeAdapter
 
-MODEL = "stealth/space-bunny-alpha"
+from tests.gateway_fixtures import MODEL, make_adapter, standard_handler
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("inventory,status", [
-    ({"provider": "nous", "providers": [{"slug": "nous", "authenticated": True, "models": [], "source": "hermes"}]}, "unavailable"),
-    ({"provider": "nous", "providers": [{"slug": "nous", "authenticated": True, "models": [MODEL], "unavailable_models": [MODEL]}]}, "unavailable"),
-    ({"provider": "nous", "providers": [{"slug": "nous", "authenticated": True, "models": [MODEL], "source": "hermes"}]}, "unknown"),
-    ({"provider": "nous", "providers": [{"slug": "nous", "authenticated": False, "models": [MODEL]}]}, "unavailable"),
-    ({"provider": "other-provider", "providers": []}, "unknown"),
-    ({"providers": "malformed"}, "unknown"),
-    (None, "unknown"),
+    ({"object": "list", "data": []}, "unavailable"),
+    ({"object": "list", "data": [{"id": MODEL, "availability": "unavailable"}]}, "unavailable"),
+    ({"object": "list", "data": [{"id": MODEL}]}, "unknown"),
+    ({"object": "list", "data": [{"id": MODEL, "owned_by": "combo"}]}, "unavailable"),
 ])
 async def test_discovery_never_treats_static_or_alias_catalog_as_availability(inventory, status):
     posts = []
     def transport(request):
         if request.method == "POST":
             posts.append(request)
-        if request.url.path == "/api/model/options":
-            return httpx.Response(200, json=inventory) if inventory is not None else httpx.Response(404)
-        # Router alias listing is explicitly insufficient, even if it contains our exact model.
-        return httpx.Response(200, json={"data": [{"id": MODEL}]})
+        if request.url.port == 20128:
+            return httpx.Response(200, json=inventory)
+        return standard_handler(request)
     async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as client:
-        adapter = HermesRuntimeAdapter(api_key="isolated-test-only", http_client=client)
+        adapter = make_adapter(client)
         result = await adapter.model_availability(MODEL)
         assert result.status == status and result.model == MODEL
         with pytest.raises(ModelUnavailableError):
@@ -45,12 +41,12 @@ async def test_provider_rejection_is_sanitized_and_sticky_without_silent_fallbac
     db, ctx, runtime, factory, bp, version = lifecycle
     requests = []
     def transport(request):
-        if request.url.path == "/v1/toolsets":
-            return httpx.Response(200, json={"data": []})
+        if request.url.port == 20128 or request.url.path in {"/v1/toolsets", "/aryn/gateway"}:
+            return standard_handler(request)
         requests.append(request)
         return httpx.Response(404, json={"error": {"code": "model_not_found", "message": "model missing; sensitive body must not escape"}})
     async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as client:
-        adapter = HermesRuntimeAdapter(api_key="isolated-test-only", http_client=client)
+        adapter = make_adapter(client)
         with pytest.raises(ModelUnavailableError) as error:
             await adapter.execute_direct_turn(RunRequest(prompt="Test", model=MODEL), ctx)
         assert "sensitive" not in str(error.value)
@@ -67,17 +63,12 @@ async def test_model_disappearing_after_preflight_stops_bench_after_one_rejectio
     previous = await factory.evaluate_version_with_bench(ctx, version.id)
     posts = []
     def transport(request):
-        if request.url.path == "/v1/toolsets":
-            return httpx.Response(200, json={"data": []})
+        if request.url.port == 20128 or request.url.path in {"/v1/toolsets", "/aryn/gateway"}:
+            return standard_handler(request, models=[{"id": version.model, "availability": "available"}])
         posts.append(request)
         return httpx.Response(404, json={"error": {"code": "model_not_found"}})
-    class DiscoveryRaceDouble(HermesRuntimeAdapter):
-        async def model_availability(self, model, *, refresh=False):
-            if model in self._rejected_models:
-                return await super().model_availability(model, refresh=refresh)
-            return RuntimeModelAvailability(model=model, status="available", source="isolated-discovery-race")
     async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as client:
-        adapter = DiscoveryRaceDouble(api_key="isolated-test-only", http_client=client)
+        adapter = make_adapter(client)
         factory.bench_runner = BenchRunner(adapter)
         with pytest.raises(ModelUnavailableError):
             await factory.evaluate_version_with_bench(ctx, version.id)

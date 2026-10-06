@@ -12,7 +12,7 @@ import {
 import { date, number } from "../lib/utils";
 import { Button } from "../components/ui/button";
 import { Empty, PageHeading, Status } from "../components/shared";
-import { needsApproval, runtimeTone } from "../lib/studio-state";
+import { needsApproval, runtimeTone, gatewayStatus } from "../lib/studio-state";
 import type { Shared } from "../lib/types";
 import { Panel, AuditList } from "../components/workspace";
 import { AgentFlow } from "../components/agent-flow";
@@ -77,7 +77,7 @@ export function Overview({ data, workspace, project, openBlueprint }: Shared) {
           </div>
         </Link>
 
-        {/* Runtime & Hermes Confinement */}
+        {/* Runtime & ARYN Runtime Confinement */}
         <Link className="hud-card hud-card-interactive" to="/runs">
           <div className="hud-header">
             <div className="hud-icon hud-icon-cyan">
@@ -92,12 +92,15 @@ export function Overview({ data, workspace, project, openBlueprint }: Shared) {
           </div>
           <div className="hud-footer">
             <span className={`text-${runtimeTone(workspace.runtime)}`}>
-              Hermes{" "}
+              ARYN Runtime{" "}
               {workspace.runtime.ready
                 ? "siap"
                 : workspace.runtime.connected
                   ? "belum siap"
                   : "tidak tersedia"}
+            </span>
+            <span className={`text-${gatewayStatus(workspace).tone}`}>
+              {gatewayStatus(workspace).label}
             </span>
             <ChevronRight size={14} />
           </div>
@@ -254,7 +257,7 @@ export function Overview({ data, workspace, project, openBlueprint }: Shared) {
               <Panel
                 className="mt-6"
                 title="Eksekusi terbaru"
-                subtitle="Hasil pemrosesan model aktual melalui Hermes."
+                subtitle="Hasil pemrosesan model aktual melalui ARYN Runtime."
                 action={
                   <Button
                     variant="ghost"

@@ -24,6 +24,13 @@ export function studioFixture(): Shared {
     openBlueprint: () => {},
     act: async () => ({}),
     workspace: {
+      gateway: {
+        name: "9Router",
+        connected: true,
+        discovery_valid: true,
+        runtime_binding_verified: true,
+        reason: "isolated-test",
+      },
       organization: { id: "org", name: "ARYN" },
       projects: [
         { id: "project-a", name: "Proyek Pertama" },
@@ -34,7 +41,7 @@ export function studioFixture(): Shared {
       runtime: {
         connected: false,
         ready: false,
-        message: "Hermes tidak tersedia",
+        message: "ARYN Runtime tidak tersedia",
       },
       models: ["model-a", "model-b"].map((model_id) => ({
         model_id,

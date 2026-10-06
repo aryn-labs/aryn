@@ -18,8 +18,8 @@ This is the private primary monorepo for ARYN Cloud and ARYN Local.
 - `services/api/`: authoritative application API.
 - `services/worker/`: background execution; never a second policy authority.
 - `packages/contracts/`: versioned data contracts.
-- `packages/runtime-adapters/`: replaceable runtime adapters (Hermes candidate).
-- `packages/model-adapters/`: explicit BYOK/local/managed model routing.
+- `packages/runtime-adapters/`: Hermes runtime boundary (execution engine).
+- `packages/model-adapters/`: 9Router model discovery and exact-model policy; no provider credentials.
 - `packages/tool-adapters/`: allowlisted tool boundaries.
 - `packages/ui/`: reusable user interface components.
 
@@ -31,9 +31,10 @@ Core governance/persistence, Agent Factory, Bench, and the Hermes adapter are im
 
 ```powershell
 Set-Location D:\ARYN\aryn-labs\aryn
+.\scripts\start-runtime-9router.ps1
 .\scripts\start-studio.ps1
 ```
 
-Open `http://127.0.0.1:8710`. See [Studio setup, security, and capabilities](docs/studio.md) and [validation evidence](docs/studio-validation.md). Brief and Relay are not implemented in Studio.
+9Router must already listen at `http://127.0.0.1:20128/v1`; launch runtime and Studio from the same PowerShell session. See [9Router routing, readiness limitations and validation](docs/9router-gateway.md). Open `http://127.0.0.1:8710`. See [Studio setup, security, and capabilities](docs/studio.md) and [validation evidence](docs/studio-validation.md). Brief and Relay are not implemented in Studio.
 
 References: ARYN-PRD-001, ARYN-ARCH-001, ARYN-TECH-001, ARYN-SEC-001 and ARYN-PLAN-001 in private `aryn-docs`.

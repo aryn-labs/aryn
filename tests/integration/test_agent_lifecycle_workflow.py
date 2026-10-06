@@ -28,6 +28,7 @@ from packages.contracts.core import Actor, ActorType, SecurityContext
 from packages.contracts.runtime import RunRequest, RunResult, RunStatus, RunUsage, RuntimeAdapter, RuntimeHealth, RuntimeCapabilities, RuntimeTrace
 from packages.contracts.bench import BenchEvaluationResult
 from packages.runtime_adapters import HermesRuntimeAdapter
+from tests.live_gateway import selected_live_model
 from tests.conftest import bind_test_context
 from packages.model_adapters import ModelRouter
 
@@ -51,18 +52,8 @@ from modules.core.audit.logger import AuditLogger
 
 
 def get_live_hermes_key() -> str:
-    key = os.getenv("API_SERVER_KEY")
-    if key:
-        return key
-    env_file = r"C:\Users\User\AppData\Local\hermes\.env"
-    if os.path.exists(env_file):
-        with open(env_file, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line.startswith("API_SERVER_KEY="):
-                    return line.split("=", 1)[1].strip()
-    return ""
-
+    """Runtime auth must be supplied explicitly; no provider secret file reads."""
+    return os.getenv("API_SERVER_KEY", "")
 
 class IsolatedDeterministicRuntime(RuntimeAdapter):
     """Deterministic runtime simulating text-only research agent execution."""
@@ -343,9 +334,10 @@ async def test_live_hermes_assigned_research_agent_run(workflow_db, admin_securi
     caps = await hermes.capabilities()
     assert caps.tools_confined is True, "Live Hermes must have risky tools confined!"
 
+    live_model, router = await selected_live_model(hermes)
     bench_runner = BenchRunner(runtime_adapter=hermes)
-    factory_service = AgentFactoryService(db_manager=workflow_db, bench_runner=bench_runner)
-    coordinator = RunCoordinator(runtime_adapter=hermes, db_manager=workflow_db)
+    factory_service = AgentFactoryService(db_manager=workflow_db, bench_runner=bench_runner, model_router=router)
+    coordinator = RunCoordinator(runtime_adapter=hermes, db_manager=workflow_db, model_router=router)
 
     # 1. Blueprint
     bp = factory_service.create_blueprint(ctx, name="Live Research Agent", slug="live-research-agent")
@@ -356,7 +348,7 @@ async def test_live_hermes_assigned_research_agent_run(workflow_db, admin_securi
         blueprint_id=bp.id,
         version_number="1.0.0",
         system_prompt="You are a helpful research analyst. Provide concise explanations.",
-        model="stealth/space-bunny-alpha",
+        model=live_model,
         tool_grants=[],
     )
 

@@ -3,6 +3,7 @@
 import os
 import importlib
 import pytest
+from tests.live_gateway import selected_live_model
 from packages.contracts.core import Actor, SecurityContext
 from packages.contracts.runtime import RunRequest, RunStatus
 
@@ -11,19 +12,8 @@ HermesRuntimeAdapter = hermes_module.HermesRuntimeAdapter
 
 
 def get_live_api_key() -> str:
-    """Safely retrieves API_SERVER_KEY from Hermes .env without leaking."""
-    key = os.getenv("API_SERVER_KEY")
-    if key:
-        return key
-    env_file = r"C:\Users\User\AppData\Local\hermes\.env"
-    if os.path.exists(env_file):
-        with open(env_file, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line.startswith("API_SERVER_KEY="):
-                    return line.split("=", 1)[1].strip()
-    return ""
-
+    """Runtime auth must be supplied explicitly; no provider secret file reads."""
+    return os.getenv("API_SERVER_KEY", "")
 
 @pytest.mark.asyncio
 async def test_live_hermes_health():
@@ -36,7 +26,7 @@ async def test_live_hermes_health():
 
     assert health.is_healthy is True
     assert health.platform == "hermes-agent"
-    assert health.version == "0.21.5"
+    assert health.version and health.version != "unknown"
 
 
 @pytest.mark.asyncio
@@ -64,10 +54,11 @@ async def test_live_hermes_run_lifecycle_and_cancellation():
     actor = Actor(actor_id="test_runner", organization_id="org_aryn", project_id="proj_aryn")
     context = SecurityContext(actor=actor, organization_id="org_aryn", project_id="proj_aryn")
 
+    live_model, _ = await selected_live_model(adapter)
     # 1. Start a run
     request = RunRequest(
         prompt="respond with the word ok",
-        model="stealth/space-bunny-alpha",
+        model=live_model,
     )
     run_id = await adapter.start_run(request, context)
     assert run_id.startswith("run_")

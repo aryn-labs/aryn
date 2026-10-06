@@ -8,19 +8,22 @@ Prasyarat: Python 3.11+ dan Node.js 22.14+ tersedia pada PATH. Dari repository:
 
 ```powershell
 Set-Location D:\ARYN\aryn-labs\aryn
+.\scripts\start-runtime-9router.ps1
 .\scripts\start-studio.ps1
 ```
 
 Launcher membuat `.venv`, memasang dependensi dari package lock, membangun frontend, menjalankan API di `127.0.0.1:8710`, lalu membuka browser. Jika eksekusi skrip dibatasi oleh kebijakan PowerShell, gunakan proses sekali jalan tanpa mengubah kebijakan mesin:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-studio.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass
+# Pada sesi tersebut, jalankan start-runtime-9router.ps1 lalu start-studio.ps1.
 ```
 
 Buka **http://127.0.0.1:8710**. Setelah instalasi awal, gunakan `-SkipInstall -SkipBuild` untuk menjalankan hasil build yang sudah ada. `-NoBrowser` menonaktifkan pembukaan browser, `-Port 8712` memakai port loopback lain. Launcher menolak port yang dipakai proses lain. Hentikan dengan:
 
 ```powershell
 .\scripts\stop-studio.ps1
+.\scripts\stop-runtime-9router.ps1
 ```
 
 API dapat dijalankan di terminal secara langsung setelah build:
@@ -39,7 +42,7 @@ dipakai untuk approval/publish. Kesiapan gateway tidak menjamin availability
 model: Bench/Run memerlukan pemeriksaan model oleh runtime. Model unavailable
 atau availability unknown diblokir dengan alasan yang terlihat di Studio.
 Lihat [laporan UAT Bench/model](uat-bench-model-validation.md) untuk bukti
-pengujian dan keterbatasan discovery Hermes lokal.
+pengujian dan bukti historis sebelum migrasi gateway; perilaku gateway terbaru dijelaskan pada panduan 9Router.
 
 1. Buka **Agent Factory**, buat blueprint, lalu simpan versi. Blueprint dan versi merupakan data berbeda. Versi baru tidak menimpa konfigurasi lama.
 2. Pilih model yang terdaftar dan instruksi sistem. Studio saat ini hanya mendukung agent teks tanpa tool runtime. Temperature dan batas output diteruskan ke adapter.
@@ -53,15 +56,15 @@ pengujian dan keterbatasan discovery Hermes lokal.
 
 ## Keamanan dan ruang lingkup
 
-Alur operasional: **Web → ARYN API → ARYN Core → Hermes Runtime Adapter → Hermes**. Bench menggunakan Factory dan runner yang ada dengan adapter teks terbatas. Semua toolset Hermes harus nonaktif sebelum evaluasi maupun eksekusi Studio. Studio tidak mengubah hardening Hermes dan tidak membuka host tools.
+Alur operasional: **Web → ARYN API → ARYN Core → Hermes Runtime Adapter → Hermes → 9Router → provider**. Bench menggunakan Factory dan runner yang ada dengan adapter teks terbatas. Semua toolset Hermes harus nonaktif sebelum evaluasi maupun eksekusi Studio. Studio tidak mengubah hardening Hermes dan tidak membuka host tools.
 
 API hanya mendengarkan loopback. Host harus cocok dengan alamat launcher; permintaan dari IP lain ditolak. Tidak ada endpoint penerbitan identity binding untuk browser. Server memiliki signing key acak per proses dan membuat konteks Core untuk principal development tetap yang diprovisikan pada organisasi/proyek lokal. Keanggotaan tersimpan pada DB; restart tidak mengembalikan membership yang dicabut.
 
 Sesi lokal memakai cookie acak HttpOnly/SameSite Strict dengan expiry delapan jam. Semua endpoint API setelah bootstrap memerlukan sesi. Mutasi memerlukan origin yang tepat dan token CSRF sesi. Input identity/roles/security context dari browser tidak diterima. CSP membatasi koneksi ke origin Studio dan memblokir framing. Ini akses development untuk komputer lokal tepercaya, **bukan autentikasi produksi**; proses lokal yang sudah memiliki akses mesin berada di luar batas ini.
 
-Kredensial Hermes dibaca di server dari `API_SERVER_KEY` atau berkas `.env` Hermes lokal yang sudah ada. Nilai ini tidak masuk bundle frontend, respons API, Git, atau antarmuka. Tidak ada formulir browser untuk secret. Respons model diperlakukan sebagai teks tidak tepercaya, tanpa eksekusi HTML. Error runtime yang ditampilkan ke browser disanitasi.
+Autentikasi runtime hanya diterima dari environment server `API_SERVER_KEY`; launcher runtime membuat key sementara jika belum diberikan. ARYN tidak memindai `.env` Hermes dan tidak membaca provider API key. Endpoint model adalah `ARYN_9ROUTER_BASE_URL`; gateway auth opsional memakai `ARYN_9ROUTER_API_KEY`. Seluruh credential provider dikelola 9Router. Nilai ini tidak masuk bundle frontend, respons API, Git, atau antarmuka. Tidak ada formulir browser untuk secret. Respons model diperlakukan sebagai teks tidak tepercaya, tanpa eksekusi HTML. Error runtime yang ditampilkan ke browser disanitasi.
 
-Database khusus Studio: `.local/studio.sqlite3`, diabaikan Git. Alembic menerapkan migrasi pada startup sampai `008_unique_run_claim`, termasuk binding bukti approval dan mapping/claim eksekusi. Blueprint, konfigurasi, evaluation provenance, approval, assignment, run, budget ledger, dan audit menggunakan schema/repository yang ada. Run yang tertinggal saat restart ditandai gagal dengan outcome runtime belum diketahui; recovery tidak menyatakan runtime telah berhasil dibatalkan. Versi yang tertinggal dalam evaluasi ditandai ditolak dan dapat dievaluasi kembali.
+Database khusus Studio: `.local/studio.sqlite3`, diabaikan Git. Alembic menerapkan migrasi pada startup sampai `009_gateway_provenance`, termasuk binding bukti approval dan mapping/claim eksekusi. Blueprint, konfigurasi, evaluation provenance, approval, assignment, run, budget ledger, dan audit menggunakan schema/repository yang ada. Run yang tertinggal saat restart ditandai gagal dengan outcome runtime belum diketahui; recovery tidak menyatakan runtime telah berhasil dibatalkan. Versi yang tertinggal dalam evaluasi ditandai ditolak dan dapat dievaluasi kembali.
 
 Hash konfigurasi dihitung ulang dari data aktual; bukti Bench dan approval memakai attestation internal. Key SQLite persistent tersimpan pada `.local/studio.aryn-evidence.key` dan diabaikan Git. Backup key bersama database; kehilangan atau pergantian key membuat bukti lama tidak lagi terverifikasi. Versi dengan format hash lama dan bukti tanpa attestation tetap tersedia sebagai riwayat tetapi diblokir dari lifecycle baru; buat versi baru lalu jalankan Bench dan approval. Migrasi tidak menandatangani ulang bukti lama secara otomatis.
 
@@ -86,7 +89,7 @@ masalah, matriks regression/accessibility, residual limitation dan satu sesi UAT
 
 Ringkasan menampilkan jumlah aktual dari proyek dan aktivitas Core; tidak ada seed agent, riwayat, atau statistik buatan. Agent Factory, Eksekusi, Bench, Persetujuan, Tata Kelola, dan Pengaturan aktif. Workspace/project selector memakai proyek nyata yang dapat dibaca principal. UI berbahasa Indonesia, dengan semantic tokens dark/light, font Geist/Geist Mono, sidebar collapsible, pencarian tabel, loading/error/empty/disconnected states, dialog dengan focus trap, navigasi tab keyboard, serta layout desktop/tablet/mobile.
 
-**Belum tersedia:** layanan Brief dan Relay, login produksi/multiuser, host tools, Gemini live, Ollama, dan trace Hermes terstruktur untuk direct turn. Audit Core tersedia; Studio tidak mengarang trace yang tidak disimpan runtime. Pengaturan menampilkan budget proyek dan ledger token; tarif biaya dan budget uang tidak diklaim terukur. Model katalog yang belum disediakan Hermes akan menghasilkan penolakan nyata; tidak ada fallback otomatis. Manajemen proyek/organisasi dan pengaturan kredensial belum menjadi UI mutation.
+**Belum tersedia:** layanan Brief dan Relay, login produksi/multiuser, host tools, Gemini live, Ollama, dan trace Hermes terstruktur untuk direct turn. Audit Core tersedia; Studio tidak mengarang trace yang tidak disimpan runtime. Pengaturan menampilkan budget proyek dan ledger token; tarif biaya dan budget uang tidak diklaim terukur. Katalog berasal dari 9Router. Listing tanpa bukti availability yang valid berstatus unknown dan memblokir Bench/Run; tidak ada fallback otomatis. Manajemen proyek/organisasi dan pengaturan kredensial belum menjadi UI mutation. [Panduan 9Router](9router-gateway.md) menjelaskan launcher Hermes, discovery, exact-model evidence, status unknown dan batas validasi live.
 
 Jika Hermes tidak tersedia, kredensial salah, atau toolsets aktif, indikator menjelaskan ketidaksiapan dan server memblokir Bench/Run. Factory dan data tersimpan tetap dapat digunakan. Detail readiness Hermes dapat degraded walaupun jalur teks dapat dipakai; Studio tidak mengklaim runtime keseluruhan bebas masalah.
 

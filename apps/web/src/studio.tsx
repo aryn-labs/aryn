@@ -353,12 +353,20 @@ export function App() {
             </span>
             <span
               className={`connection ${apiConnected && w?.runtime.ready ? "online" : apiConnected && w?.runtime.connected ? "degraded" : "offline"}`}
-              title={w?.runtime.message || "Memeriksa Hermes"}
+              title={w?.runtime.message || "Memeriksa ARYN Runtime"}
             >
               <span className="connection-dot" />
-              Hermes {apiConnected && w?.runtime.ready ? "siap" : "belum siap"}
+              ARYN Runtime{" "}
+              {apiConnected && w?.runtime.ready ? "siap" : "belum siap"}
             </span>
             <div className="topbar-divider" />
+            <span
+              className={`connection ${apiConnected && w?.gateway.connected && w?.gateway.discovery_valid && w?.gateway.runtime_binding_verified ? "online" : apiConnected && w?.gateway.connected ? "degraded" : "offline"}`}
+            >
+              <span className="connection-dot" />
+              Model Gateway · 9Router{" "}
+              {apiConnected && w?.gateway.connected ? "terhubung" : "terputus"}
+            </span>
             <Button
               variant="ghost"
               size="icon"

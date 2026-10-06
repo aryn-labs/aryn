@@ -11,6 +11,7 @@ from packages.contracts.runtime import (
     RuntimeModelAvailability,
     RuntimeTrace,
     RunUsage,
+    GatewayDiscovery,
 )
 
 
@@ -21,6 +22,15 @@ class IsolatedTestRuntime(RuntimeAdapter):
         self.online = True
         self.tools = []
         self.status = RunStatus.COMPLETED
+
+    async def discover_models(self, *, refresh=False):
+        return GatewayDiscovery(connected=self.online, discovery_valid=self.online, reason="isolated-test",
+            models=[{"model_id": m, "display_name": m, "provider": "9router", "gateway": "9Router",
+                     "availability": "available", "availability_reason": "isolated-test",
+                     "availability_source": "isolated-test"} for m in ("test/model-a",)] if self.online else [])
+
+    async def gateway_binding(self):
+        return self.online
 
     async def model_availability(self, model, *, refresh=False):
         # Explicit test-double capability, never a production model availability claim.
@@ -62,6 +72,8 @@ class IsolatedTestRuntime(RuntimeAdapter):
             status=self.status,
             output=output,
             model=request.model,
+            requested_model=request.model, actual_model=request.model,
+            gateway="9Router", runtime_backend="Hermes", provider="isolated-test",
             usage=RunUsage(input_tokens=20, output_tokens=30, total_tokens=50),
             created_at=time.time(),
             completed_at=time.time(),

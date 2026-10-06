@@ -1,3 +1,4 @@
+import { executionReady, gatewayStatus } from "../lib/studio-state";
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Bot, ChevronRight, ShieldCheck, Workflow } from "lucide-react";
@@ -106,7 +107,7 @@ export function Runs({ data, workspace, pending, act }: Shared) {
         description="Jalankan Research Agent melalui ARYN Core, lalu telusuri hasilnya."
       />
       {executing && (
-        <Busy label="Core/Hermes sedang memproses eksekusi baru. Trace per-node belum tersedia; hasil historis tetap ditampilkan." />
+        <Busy label="Core/ARYN Runtime sedang memproses eksekusi baru. Trace per-node belum tersedia; hasil historis tetap ditampilkan." />
       )}
       {selected && !historical.version && (
         <Notice tone="warning">
@@ -183,9 +184,9 @@ export function Runs({ data, workspace, pending, act }: Shared) {
                   />
                 </label>
                 <Notice>
-                  Instruksi dan konfigurasi agent dikirim melalui Hermes ke
-                  penyedia model jarak jauh yang dipilih. Gunakan data yang Anda
-                  izinkan untuk dikirim. Tool host tidak tersedia.
+                  Instruksi dan konfigurasi agent dikirim melalui ARYN Runtime
+                  ke penyedia model jarak jauh yang dipilih. Gunakan data yang
+                  Anda izinkan untuk dikirim. Tool host tidak tersedia.
                 </Notice>
                 <label className="checkbox-field">
                   <input
@@ -201,10 +202,15 @@ export function Runs({ data, workspace, pending, act }: Shared) {
                 {!workspace.runtime.ready && (
                   <Notice tone="error">{workspace.runtime.message}</Notice>
                 )}
+                {gatewayStatus(workspace).tone !== "success" && (
+                  <Notice tone={gatewayStatus(workspace).tone}>
+                    {gatewayStatus(workspace).label}
+                  </Notice>
+                )}
                 {modelAvailability !== "available" && (
                   <Notice tone="warning">
                     {modelAvailability === "unavailable"
-                      ? "Model tidak tersedia di provider/runtime. Pilih versi dengan model lain sebelum menjalankan agent."
+                      ? "Model tidak tersedia melalui 9Router. Pilih versi dengan model lain sebelum menjalankan agent."
                       : "Ketersediaan model belum dapat diverifikasi. Eksekusi diblokir sampai runtime menyediakan bukti ketersediaan yang valid."}
                   </Notice>
                 )}
@@ -217,7 +223,7 @@ export function Runs({ data, workspace, pending, act }: Shared) {
                 <Button
                   disabled={
                     pending ||
-                    !workspace.runtime.ready ||
+                    !executionReady(workspace) ||
                     modelAvailability !== "available" ||
                     !data.permissions["run:create"] ||
                     !consent ||
@@ -357,8 +363,8 @@ function RunResultPanel({ run, audit }: { run: Run; audit: Audit[] }) {
           <div className="result-body">
             {run.error_message ? (
               <Notice tone="error">
-                Eksekusi gagal. Periksa koneksi Hermes, model, dan gate keamanan
-                server.
+                Eksekusi gagal. Periksa koneksi ARYN Runtime, model, dan gate
+                keamanan server.
               </Notice>
             ) : null}
             <pre className="prompt-output">

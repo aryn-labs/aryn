@@ -8,10 +8,11 @@ import pytest
 from packages.contracts.core import Actor, SecurityContext
 from packages.contracts.runtime import RunRequest
 from packages.runtime_adapters import HermesAdapterError, HermesRuntimeAdapter
+from tests.gateway_fixtures import make_adapter, standard_handler, MODEL, PROOF
 
 RESPONSE = {
-    "id": "actual-runtime-id", "model": "mock-fast",
-    "choices": [{"message": {"content": "Isolated output"}}],
+    "id": "actual-runtime-id", "model": MODEL,
+    "choices": [{"message": {"content": "Isolated output"}, "finish_reason": "stop"}], "aryn": PROOF,
     "usage": {"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 5},
 }
 
@@ -23,18 +24,18 @@ async def test_direct_response_requires_actual_provenance(missing):
     if missing:
         response.pop(missing)
     def handler(request):
-        if request.url.path == "/v1/toolsets":
-            return httpx.Response(200, json={"data": []})
+        if request.url.port == 20128 or request.url.path in {"/v1/toolsets", "/aryn/gateway"}:
+            return standard_handler(request)
         return httpx.Response(200, json=response)
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        adapter = HermesRuntimeAdapter(api_key="isolated-transport-test", http_client=client)
+        adapter = make_adapter(client)
         ctx = SecurityContext(actor=Actor(actor_id="test", organization_id="org"), organization_id="org", project_id="project")
         if missing:
             with pytest.raises(HermesAdapterError):
-                await adapter.execute_direct_turn(RunRequest(prompt="Test", model="mock-fast"), ctx)
+                await adapter.execute_direct_turn(RunRequest(prompt="Test", model=MODEL), ctx)
         else:
-            result = await adapter.execute_direct_turn(RunRequest(prompt="Test", model="mock-fast"), ctx)
-            assert result.run_id == "actual-runtime-id" and result.model == "mock-fast"
+            result = await adapter.execute_direct_turn(RunRequest(prompt="Test", model=MODEL), ctx)
+            assert result.run_id == "actual-runtime-id" and result.model == MODEL
             assert result.usage.total_tokens == 5
 
 

@@ -39,9 +39,6 @@ class GeminiModelAdapter:
         ),
     }
 
-    def __init__(self, api_key: Optional[str] = None) -> None:
-        self.api_key = api_key or ""
-
     def get_spec(self, model_id: str) -> ModelSpec:
         if model_id not in self.SUPPORTED_MODELS:
             raise ValueError(f"Model '{model_id}' is not supported by Gemini adapter. Supported: {list(self.SUPPORTED_MODELS.keys())}")

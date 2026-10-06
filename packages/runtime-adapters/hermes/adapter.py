@@ -15,6 +15,9 @@ import httpx
 from packages.contracts.core import SecurityContext
 from packages.contracts.runtime import (
     ModelUnavailableError,
+    GatewayUnavailableError,
+    ModelIdentityError,
+    RuntimeGatewayError,
     RunRequest,
     RunResult,
     RunStatus,
@@ -25,6 +28,7 @@ from packages.contracts.runtime import (
     RuntimeModelAvailability,
     RuntimeTrace,
 )
+from packages.model_adapters.gateway import NineRouterGateway
 from .exceptions import (
     HermesAdapterError,
     RunNotFoundError,
@@ -50,6 +54,7 @@ class HermesRuntimeAdapter(RuntimeAdapter):
         enforce_loopback: bool = True,
         enforce_tool_confinement: bool = True,
         http_client: Optional[httpx.AsyncClient] = None,
+        model_gateway: Optional[NineRouterGateway] = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key or ""
@@ -57,10 +62,8 @@ class HermesRuntimeAdapter(RuntimeAdapter):
         self.enforce_loopback = enforce_loopback
         self.enforce_tool_confinement = enforce_tool_confinement
         self._custom_client = http_client
-        self._model_inventory = None
-        self._inventory_checked_at = 0.0
-        self._inventory_error = None
-        self._rejected_models: set[str] = set()
+        self.model_gateway = model_gateway or NineRouterGateway()
+        self._gateway_binding = {}
 
         if self.enforce_loopback:
             self._verify_loopback_only(self.base_url)
@@ -87,57 +90,76 @@ class HermesRuntimeAdapter(RuntimeAdapter):
     def _get_client(self) -> httpx.AsyncClient:
         if self._custom_client is not None:
             return self._custom_client
-        return httpx.AsyncClient(timeout=self.timeout)
+        return httpx.AsyncClient(timeout=self.timeout, trust_env=False, follow_redirects=False)
 
-    async def model_availability(self, model: str, *, refresh: bool = False) -> RuntimeModelAvailability:
-        """Read runtime inventory. Curated/cached picker rows are not execution proof.
+    def _run_headers(self, request, context):
+        import hashlib
+        import uuid
+        headers = self._headers()
+        key = request.idempotency_key or uuid.uuid4().hex
+        scope = "\0".join((context.organization_id, context.project_id, key))
+        headers["Idempotency-Key"] = "aryn_" + hashlib.sha256(scope.encode()).hexdigest()
+        if request.session_id:
+            headers["X-Hermes-Session-Key"] = request.session_id
+        return headers
 
-        /v1/models advertises routing aliases, so it cannot establish provider availability.
-        Never return raw provider metadata or credentials to Studio.
-        """
-        if model in self._rejected_models:
-            return RuntimeModelAvailability(model=model, status="unavailable", source="provider_rejection", reason="provider_rejected")
+    async def discover_models(self, *, refresh=False):
+        return await self.model_gateway.discover(refresh=refresh)
+
+    async def model_availability(self, model, *, refresh=False):
+        return await self.model_gateway.availability(model, refresh=refresh)
+
+    async def gateway_binding(self):
+        """Require a runtime-side routing/actual-model contract; echoed model is not proof."""
         client = self._get_client()
         try:
-            if refresh or self._model_inventory is None or time.monotonic() - self._inventory_checked_at > 15:
-                response = await client.get(f"{self.base_url}/api/model/options", headers=self._headers(), timeout=self.timeout)
-                if response.status_code != 200:
-                    self._model_inventory = {}
-                    self._inventory_checked_at = time.monotonic()
-                    self._inventory_error = "discovery_unavailable"
-                    return RuntimeModelAvailability(model=model, reason="discovery_unavailable")
-                self._model_inventory = response.json()
-                self._inventory_checked_at = time.monotonic()
-                self._inventory_error = None
-            if self._inventory_error:
-                return RuntimeModelAvailability(model=model, reason=self._inventory_error)
-            inventory = self._model_inventory
-            if not isinstance(inventory, dict) or not isinstance(inventory.get("providers"), list):
-                return RuntimeModelAvailability(model=model, reason="malformed_discovery")
-            # Requests currently route through the configured Nous provider; do not switch providers.
-            if inventory.get("provider") != "nous":
-                return RuntimeModelAvailability(model=model, reason="provider_route_unknown")
-            rows = [r for r in inventory["providers"] if isinstance(r, dict) and r.get("slug") == "nous"]
-            if len(rows) != 1:
-                return RuntimeModelAvailability(model=model, reason="provider_inventory_unknown")
-            row = rows[0]
-            models, unavailable = row.get("models"), row.get("unavailable_models", [])
-            if (not isinstance(models, list) or any(not isinstance(m, str) for m in models)
-                    or not isinstance(unavailable, list) or any(not isinstance(m, str) for m in unavailable)):
-                return RuntimeModelAvailability(model=model, reason="malformed_discovery")
-            if row.get("authenticated") is False or model in unavailable or model not in models:
-                return RuntimeModelAvailability(model=model, status="unavailable", source="hermes_inventory", reason="not_offered_by_runtime")
-            # Current Hermes picker may fall back to curated/cached lists, even on refresh.
-            # A listed model is only a candidate: this API exposes no positive execution probe.
-            return RuntimeModelAvailability(model=model, source="hermes_inventory", reason="inventory_not_availability_proof")
+            response = await client.get(f"{self.base_url}/aryn/gateway", headers=self._headers(), timeout=self.timeout)
+            if response.status_code != 200:
+                return False
+            data = response.json()
+            self._gateway_binding = data if isinstance(data, dict) else {}
+            return (isinstance(data, dict) and data.get("gateway") == "9Router"
+                    and data.get("base_url") == self.model_gateway.settings.base_url
+                    and data.get("exact_model_enforced") is True
+                    and data.get("runtime_backend") == "Hermes")
         except (httpx.HTTPError, ValueError, HermesAdapterError):
-            self._model_inventory = {}
-            self._inventory_checked_at = time.monotonic()
-            self._inventory_error = "discovery_unavailable"
-            return RuntimeModelAvailability(model=model, reason="discovery_unavailable")
+            return False
         finally:
             if self._custom_client is None:
                 await client.aclose()
+
+    async def require_model_available(self, model):
+        discovery = await self.discover_models(refresh=True)
+        if not discovery.discovery_valid:
+            raise GatewayUnavailableError()
+        await super().require_model_available(model)
+        if not await self.gateway_binding():
+            raise RuntimeGatewayError()
+
+    def _provenance(self, data, requested):
+        evidence = data.get("aryn")
+        if (not isinstance(evidence, dict) or evidence.get("gateway") != "9Router"
+                or evidence.get("runtime_backend") != "Hermes"
+                or evidence.get("requested_model") != requested
+                or evidence.get("actual_model_source") != "gateway_response"
+                or not isinstance(evidence.get("actual_model"), str) or not evidence["actual_model"]):
+            raise RuntimeGatewayError()
+        if evidence["actual_model"] != requested:
+            raise ModelIdentityError()
+        provider = evidence.get("provider")
+        # Only a bounded identifier; upstream payloads and error text never become metadata.
+        from packages.model_adapters.gateway import MODEL_ID
+        if not isinstance(provider, str) or not MODEL_ID.fullmatch(provider):
+            provider = None
+        return dict(requested_model=requested, actual_model=evidence["actual_model"],
+                    gateway="9Router", runtime_backend="Hermes", provider=provider)
+
+    def _assert_no_secret(self, value):
+        keys = (self.api_key, self.model_gateway.settings.api_key.get_secret_value())
+        import json
+        text = json.dumps(value, ensure_ascii=False)
+        if any(key and key in text for key in keys):
+            raise RuntimeSecurityError("Runtime response contains a protected credential; result rejected.")
 
     def _check_model_rejection(self, response, model):
         """Recognize an explicit provider rejection without exposing its error body."""
@@ -148,13 +170,17 @@ class HermesRuntimeAdapter(RuntimeAdapter):
             error = body.get("error", {}) if isinstance(body, dict) else {}
             message = error.get("message", "") if isinstance(error, dict) else error
             code = error.get("code", "") if isinstance(error, dict) else ""
+            if code == "actual_model_mismatch":
+                raise ModelIdentityError()
+            if code in {"missing_gateway_provenance", "gateway_route_mismatch"}:
+                raise RuntimeGatewayError()
             message = message.lower() if isinstance(message, str) else ""
             rejected = (isinstance(code, str) and code in {"model_not_found", "unknown_model", "model_not_available"}) or (
                 "model" in message and any(phrase in message for phrase in ("not found", "does not exist", "not available", "unknown model", "invalid model")))
         except ValueError:
             rejected = False
         if rejected:
-            self._rejected_models.add(model)
+            self.model_gateway.reject(model)
             raise ModelUnavailableError(RuntimeModelAvailability(
                 model=model, status="unavailable", source="provider_rejection", reason="provider_rejected"))
 
@@ -167,9 +193,9 @@ class HermesRuntimeAdapter(RuntimeAdapter):
             try:
                 resp = await client.get(f"{self.base_url}/health", timeout=self.timeout)
             except httpx.ConnectError as exc:
-                raise RuntimeConnectionError(f"Failed to connect to Hermes at {self.base_url}: {exc}") from exc
+                raise RuntimeConnectionError("Runtime connection or timeout failure.") from exc
             except httpx.TimeoutException as exc:
-                raise RuntimeTimeoutError(f"Health check timed out: {exc}") from exc
+                raise RuntimeTimeoutError("Runtime connection or timeout failure.") from exc
 
             if resp.status_code != 200:
                 return RuntimeHealth(
@@ -178,12 +204,13 @@ class HermesRuntimeAdapter(RuntimeAdapter):
                     platform="hermes-agent",
                     version="unknown",
                     listener_url=self.base_url,
-                    details={"error": resp.text},
+                    details={"error": "runtime_http_failure"},
                 )
 
             data = resp.json()
+            self._assert_no_secret(data)
             is_healthy = data.get("status") == "ok"
-            version = data.get("version", "0.21.5")
+            version = data.get("version", "unknown")
             platform = data.get("platform", "hermes-agent")
 
             # 2. Detailed health check (requires auth if api_key present)
@@ -197,8 +224,10 @@ class HermesRuntimeAdapter(RuntimeAdapter):
                     )
                     if det_resp.status_code == 200:
                         details = det_resp.json()
+                        self._assert_no_secret(details)
                 except Exception as e:
-                    logger.warning("Could not fetch detailed health: %s", e)
+                    details = {}
+                    logger.warning("Could not fetch detailed runtime health (%s)", type(e).__name__)
 
             return RuntimeHealth(
                 is_healthy=is_healthy,
@@ -224,16 +253,17 @@ class HermesRuntimeAdapter(RuntimeAdapter):
                     timeout=self.timeout,
                 )
             except httpx.ConnectError as exc:
-                raise RuntimeConnectionError(f"Connection to Hermes failed: {exc}") from exc
+                raise RuntimeConnectionError("Runtime connection or timeout failure.") from exc
             except httpx.TimeoutException as exc:
-                raise RuntimeTimeoutError(f"Capabilities check timed out: {exc}") from exc
+                raise RuntimeTimeoutError("Runtime connection or timeout failure.") from exc
 
             if resp.status_code == 401:
                 raise RuntimeAuthenticationError("Hermes API server rejected credentials for /v1/toolsets.")
             if resp.status_code != 200:
-                raise HermesAdapterError(f"Failed to query /v1/toolsets: HTTP {resp.status_code} - {resp.text}")
+                raise HermesAdapterError(f"Failed to query /v1/toolsets: HTTP {resp.status_code}")
 
             body = resp.json()
+            self._assert_no_secret(body)
             toolsets = body.get("data") if isinstance(body, dict) else None
             if not isinstance(toolsets, list) or any(
                 not isinstance(ts, dict) or not isinstance(ts.get("name"), str)
@@ -271,8 +301,12 @@ class HermesRuntimeAdapter(RuntimeAdapter):
         # Pre-execution security check
         if self.enforce_tool_confinement:
             caps = await self.capabilities()
-            if not caps.tools_confined:
+            if not caps.tools_confined or caps.enabled_toolsets:
                 raise RuntimeSecurityError("Cannot dispatch run: runtime tools confinement failed.")
+
+        await self.require_model_available(request.model)
+        if self._gateway_binding.get("async_provenance") is not True:
+            raise RuntimeGatewayError()
 
         client = self._get_client()
         should_close = self._custom_client is None
@@ -280,14 +314,14 @@ class HermesRuntimeAdapter(RuntimeAdapter):
             payload: Dict[str, Any] = {
                 "input": request.prompt,
                 "model": request.model,
+                "provider": "9router",
+                "model_options": {"temperature": request.temperature, "max_tokens": request.max_tokens},
             }
             if request.system_instructions:
                 payload["instructions"] = request.system_instructions
 
             # Inject session scoping if specified
-            headers = self._headers(require_auth=True)
-            if request.session_id:
-                headers["X-Hermes-Session-Key"] = request.session_id
+            headers = self._run_headers(request, context)
 
             try:
                 resp = await client.post(
@@ -297,20 +331,21 @@ class HermesRuntimeAdapter(RuntimeAdapter):
                     timeout=request.timeout_seconds,
                 )
             except httpx.ConnectError as exc:
-                raise RuntimeConnectionError(f"Connection failed when starting run: {exc}") from exc
+                raise RuntimeConnectionError("Runtime connection or timeout failure.") from exc
             except httpx.TimeoutException as exc:
-                raise RuntimeTimeoutError(f"Start run request timed out: {exc}") from exc
+                raise RuntimeTimeoutError("Runtime connection or timeout failure.") from exc
 
             if resp.status_code == 401:
                 raise RuntimeAuthenticationError("Unauthorized when creating run.")
             self._check_model_rejection(resp, request.model)
             if resp.status_code not in (200, 201, 202):
-                raise HermesAdapterError(f"Start run failed: HTTP {resp.status_code} - {resp.text}")
+                raise HermesAdapterError(f"Start run failed: HTTP {resp.status_code}")
 
             data = resp.json()
+            self._assert_no_secret(data)
             run_id = data.get("run_id") or data.get("id")
             if not run_id:
-                raise HermesAdapterError(f"Invalid response from /v1/runs: missing run_id in {data}")
+                raise HermesAdapterError("Invalid response from /v1/runs: missing run_id")
 
             return str(run_id)
         finally:
@@ -329,18 +364,20 @@ class HermesRuntimeAdapter(RuntimeAdapter):
                     timeout=self.timeout,
                 )
             except httpx.ConnectError as exc:
-                raise RuntimeConnectionError(f"Connection failed when polling result: {exc}") from exc
+                raise RuntimeConnectionError("Runtime connection or timeout failure.") from exc
             except httpx.TimeoutException as exc:
-                raise RuntimeTimeoutError(f"Polling result timed out: {exc}") from exc
+                raise RuntimeTimeoutError("Runtime connection or timeout failure.") from exc
 
             if resp.status_code == 401:
                 raise RuntimeAuthenticationError("Unauthorized when retrieving run result.")
             if resp.status_code == 404:
                 raise RunNotFoundError(f"Run '{run_id}' not found.")
             if resp.status_code != 200:
-                raise HermesAdapterError(f"Failed to fetch run: HTTP {resp.status_code} - {resp.text}")
+                raise HermesAdapterError(f"Failed to fetch run: HTTP {resp.status_code}")
 
             data = resp.json()
+            if data.get("run_id", data.get("id")) != run_id:
+                raise HermesAdapterError("Runtime returned a different run identifier.")
             raw_status = data.get("status", "").lower()
             status_map = {
                 "queued": RunStatus.QUEUED,
@@ -361,7 +398,10 @@ class HermesRuntimeAdapter(RuntimeAdapter):
                 total_tokens=usage_dict.get("total_tokens", 0),
             )
 
+            provenance = self._provenance(data, data.get("model", "")) if status == RunStatus.COMPLETED else {}
+            self._assert_no_secret(data)
             return RunResult(
+                **provenance,
                 run_id=run_id,
                 status=status,
                 output=data.get("output", ""),
@@ -369,8 +409,8 @@ class HermesRuntimeAdapter(RuntimeAdapter):
                 model=data.get("model", ""),
                 created_at=data.get("created_at", time.time()),
                 completed_at=data.get("updated_at") if status in (RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELLED) else None,
-                error_message=data.get("error"),
-                raw_response=data,
+                error_message="Runtime failed." if data.get("error") else None,
+                raw_response={},
             )
         finally:
             if should_close:
@@ -388,9 +428,9 @@ class HermesRuntimeAdapter(RuntimeAdapter):
                     timeout=self.timeout,
                 )
             except httpx.ConnectError as exc:
-                raise RuntimeConnectionError(f"Connection failed when cancelling run: {exc}") from exc
+                raise RuntimeConnectionError("Runtime connection or timeout failure.") from exc
             except httpx.TimeoutException as exc:
-                raise RuntimeTimeoutError(f"Cancel request timed out: {exc}") from exc
+                raise RuntimeTimeoutError("Runtime connection or timeout failure.") from exc
 
             if resp.status_code == 401:
                 raise RuntimeAuthenticationError("Unauthorized when cancelling run.")
@@ -418,8 +458,10 @@ class HermesRuntimeAdapter(RuntimeAdapter):
         # Pre-execution security check
         if self.enforce_tool_confinement:
             caps = await self.capabilities()
-            if not caps.tools_confined:
+            if not caps.tools_confined or caps.enabled_toolsets:
                 raise RuntimeSecurityError("Cannot execute direct turn: tool confinement failed.")
+
+        await self.require_model_available(request.model)
 
         client = self._get_client()
         should_close = self._custom_client is None
@@ -432,6 +474,8 @@ class HermesRuntimeAdapter(RuntimeAdapter):
 
             payload = {
                 "model": request.model,
+                "provider": "9router",
+                "model_options": {"temperature": request.temperature, "max_tokens": request.max_tokens},
                 "messages": messages,
                 "temperature": request.temperature,
                 "max_tokens": request.max_tokens,
@@ -440,20 +484,20 @@ class HermesRuntimeAdapter(RuntimeAdapter):
             try:
                 resp = await client.post(
                     f"{self.base_url}/v1/chat/completions",
-                    headers=self._headers(require_auth=True),
+                    headers=self._run_headers(request, context),
                     json=payload,
                     timeout=request.timeout_seconds,
                 )
             except httpx.ConnectError as exc:
-                raise RuntimeConnectionError(f"Direct turn connection failed: {exc}") from exc
+                raise RuntimeConnectionError("Runtime connection or timeout failure.") from exc
             except httpx.TimeoutException as exc:
-                raise RuntimeTimeoutError(f"Direct turn timed out: {exc}") from exc
+                raise RuntimeTimeoutError("Runtime connection or timeout failure.") from exc
 
             if resp.status_code == 401:
                 raise RuntimeAuthenticationError("Unauthorized when calling /v1/chat/completions.")
             self._check_model_rejection(resp, request.model)
             if resp.status_code != 200:
-                raise HermesAdapterError(f"Direct turn failed: HTTP {resp.status_code} - {resp.text}")
+                raise HermesAdapterError(f"Direct turn failed: HTTP {resp.status_code}")
 
             data = resp.json()
             if not isinstance(data, dict) or any(
@@ -465,6 +509,13 @@ class HermesRuntimeAdapter(RuntimeAdapter):
                     or not isinstance(choices[0].get("message"), dict)
                     or not isinstance(choices[0]["message"].get("content"), str)):
                 raise HermesAdapterError("Direct response is missing actual completion content.")
+            provenance = self._provenance(data, request.model)
+            self._assert_no_secret(data)
+            if data["model"] != request.model:
+                raise ModelIdentityError()
+            if (choices[0].get("finish_reason") != "stop" or data.get("hermes", {}).get("failed")
+                    or data.get("hermes", {}).get("partial")):
+                raise HermesAdapterError("Runtime completion is incomplete or failed.")
             content = choices[0]["message"]["content"]
             usage_dict = data.get("usage") or {}
             if not isinstance(usage_dict, dict) or any(type(usage_dict.get(field)) is not int or usage_dict[field] < 0
@@ -481,10 +532,11 @@ class HermesRuntimeAdapter(RuntimeAdapter):
                 status=RunStatus.COMPLETED,
                 output=content,
                 usage=usage,
-                model=data["model"],
+                model=provenance["actual_model"],
+                **provenance,
                 created_at=start_time,
                 completed_at=time.time(),
-                raw_response=data,
+                raw_response={},
             )
         finally:
             if should_close:

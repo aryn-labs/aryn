@@ -31,7 +31,8 @@ def test_upgrade_from_005_retains_legacy_governance_and_run_data(tmp_path):
         assert tuple(run) == ("Original", 3, "", None, "legacy")
         assert connection.exec_driver_sql("PRAGMA integrity_check").scalar() == "ok"
         assert connection.exec_driver_sql("PRAGMA foreign_key_check").all() == []
-        assert connection.exec_driver_sql("SELECT version_num FROM alembic_version").scalar() == "008_unique_run_claim"
+        assert connection.exec_driver_sql("SELECT version_num FROM alembic_version").scalar() == "009_gateway_provenance"
+        assert tuple(connection.exec_driver_sql("SELECT actual_model,gateway,runtime_backend,actual_provider FROM run_states WHERE id='legacy'").one()) == (None, None, None, None)
         assert any(index["unique"] and index["column_names"] == ["project_id", "idempotency_key"]
                    for index in inspect(engine).get_indexes("run_states"))
     for table in Base.metadata.sorted_tables:
@@ -49,6 +50,7 @@ def test_postgresql_migrations_compile_offline_without_cloud_connection(monkeypa
     assert "ADD COLUMN attestation VARCHAR(64)" in sql
     assert "ADD COLUMN request_hash VARCHAR(64)" in sql
     assert "ADD COLUMN runtime_run_id VARCHAR(128)" in sql
+    assert "ADD COLUMN actual_model VARCHAR(128)" in sql
     assert "CREATE UNIQUE INDEX uq_run_project_claim ON run_states (project_id, idempotency_key)" in sql
 
 

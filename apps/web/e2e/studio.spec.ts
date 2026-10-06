@@ -354,7 +354,7 @@ test("UAT model unavailable memblokir tombol Bench dengan pesan Indonesia", asyn
     page.getByRole("button", { name: "Jalankan Bench", exact: true }),
   ).toBeDisabled();
   await expect(
-    page.getByText(/Model tidak tersedia di provider\/runtime/),
+    page.getByText(/Model tidak tersedia melalui 9Router/),
   ).toBeVisible();
 });
 
@@ -690,13 +690,18 @@ test("canvas: historis A tetap terikat A saat form B dan request baru pending", 
   const node = page.locator('.react-flow__node[data-id="exec-agent"]');
   await expect(page.locator(".react-flow__node.draggable")).toHaveCount(0);
   await expect(page.locator(".react-flow__handle.connectable")).toHaveCount(0);
-  const before = await node.getAttribute("style");
+  await expect(node).toBeVisible();
+  const before = await node.evaluate(
+    (element) => (element as HTMLElement).style.transform,
+  );
   const box = await node.boundingBox();
   await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
   await page.mouse.down();
   await page.mouse.move(box!.x + 70, box!.y + 70, { steps: 8 });
   await page.mouse.up();
-  expect(await node.getAttribute("style")).toBe(before);
+  expect(
+    await node.evaluate((element) => (element as HTMLElement).style.transform),
+  ).toBe(before);
   await inspector.getByRole("tab", { name: "TRACE", exact: true }).click();
   await expect(inspector).toContainText("Trace runtime tidak tersedia.");
   await inspector.getByRole("tab", { name: "DETAIL", exact: true }).click();
@@ -717,7 +722,7 @@ test("canvas: historis A tetap terikat A saat form B dan request baru pending", 
       .getByRole("button", { name: "Jalankan agent", exact: true })
       .click();
     await expect(
-      page.getByText(/Core\/Hermes sedang memproses eksekusi baru/),
+      page.getByText(/Core\/ARYN Runtime sedang memproses eksekusi baru/),
     ).toBeVisible();
     await expect(inspector).toContainText(a.version.id);
     await expect(page.locator(".aryn-node.status-running")).toHaveCount(0);
@@ -867,10 +872,10 @@ test("Ringkasan project aktif memakai snapshot nyata; runtime unknown bukan succ
   });
   await page.reload();
   await expect(page.locator(".hud-footer .text-warning")).toContainText(
-    "Hermes belum siap",
+    "ARYN Runtime belum siap",
   );
   await expect(page.locator(".topbar .connection.degraded")).toContainText(
-    "Hermes belum siap",
+    "ARYN Runtime belum siap",
   );
 });
 
@@ -989,4 +994,43 @@ test("polish: axe seluruh halaman, tema, canvas mobile/tablet dan reduced motion
   await page.getByRole("button", { name: "Pusatkan canvas" }).click();
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   expect(errors).toEqual([]);
+});
+
+test("9Router: browser mengakses API Studio saja", async ({ page }) => {
+  const direct: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (["20128", "8642"].includes(url.port)) direct.push(request.url());
+  });
+  const fixture = await publishedAssignment(page);
+  await page.goto(`/factory/${fixture.bp.id}`);
+  await expect(
+    page.getByText("Model Gateway · 9Router terhubung"),
+  ).toBeVisible();
+  await page.goto("/settings");
+  await expect(
+    page.getByText("Backend runtime", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("Hermes", { exact: true })).toBeVisible();
+  expect(direct).toEqual([]);
+});
+
+test("9Router: gateway terputus memblokir Bench meskipun runtime siap", async ({
+  page,
+}) => {
+  const fixture = await createUatBench(page);
+  await page.route("**/api/workspace", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    data.gateway.connected = false;
+    data.runtime.ready = true;
+    await route.fulfill({ response, json: data });
+  });
+  await page.goto(`/factory/${fixture.bp.id}`);
+  await expect(
+    page.getByText("Model Gateway 9Router tidak dapat dijangkau."),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Jalankan Bench", exact: true }),
+  ).toBeDisabled();
 });

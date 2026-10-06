@@ -23,6 +23,7 @@ from packages.contracts.runtime import (
     RuntimeAdapter,
     RuntimeTrace,
     RunUsage,
+    ModelIdentityError,
 )
 
 if TYPE_CHECKING:
@@ -77,6 +78,8 @@ class RunCoordinator:
             model=row.model, created_at=row.created_at.timestamp(),
             completed_at=row.completed_at.timestamp() if row.completed_at else None,
             error_message=row.error_message,
+            requested_model=row.model, actual_model=row.actual_model,
+            gateway=row.gateway, runtime_backend=row.runtime_backend, provider=row.actual_provider,
         )
 
     @staticmethod
@@ -154,18 +157,27 @@ class RunCoordinator:
             if row.status in repo.TERMINAL_STATES:
                 return self.stored_result(row)
             if result.model != row.model:
-                raise RuntimeError("Runtime reported a different model; silent fallback is forbidden.")
+                raise ModelIdentityError()
+            if row.provider == "9router" and (result.gateway != "9Router" or result.runtime_backend != "Hermes"
+                    or result.requested_model != row.model or result.actual_model != row.model):
+                raise ModelIdentityError()
+            if result.gateway and (result.requested_model != row.model or result.actual_model != row.model):
+                raise ModelIdentityError()
             if row.runtime_run_id and row.runtime_run_id != result.run_id:
                 raise RuntimeError("Runtime returned a different run identifier.")
             if (min(result.usage.input_tokens, result.usage.output_tokens, result.usage.total_tokens) < 0
                     or result.usage.total_tokens != result.usage.input_tokens + result.usage.output_tokens):
                 raise RuntimeError("Runtime usage is inconsistent.")
             row.runtime_run_id = result.run_id
+            row.actual_model = result.model
+            row.gateway, row.runtime_backend, row.actual_provider = result.gateway, result.runtime_backend, result.provider
             session.flush()
             repo.transition_status(context, run_id, "completed", output=result.output, usage=result.usage)
             BudgetRepository(session).record_usage(context, result.usage.total_tokens)
             self.audit_logger.record("core.run.completed", context, run_id, AuditStatus.COMPLETED,
-                                     {"model": result.model, "input_tokens": result.usage.input_tokens,
+                                     {"model": result.model, "requested_model": row.model, "actual_model": result.model,
+                                      "gateway": result.gateway, "runtime_backend": result.runtime_backend, "provider": result.provider,
+                                      "input_tokens": result.usage.input_tokens,
                                       "output_tokens": result.usage.output_tokens, "total_tokens": result.usage.total_tokens}, session=session)
             result.run_id = run_id
             return result

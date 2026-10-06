@@ -5,7 +5,6 @@ model specification and request structure definitions.
 Complies with User Requirement #6: Never claim live Gemini PASS without actual requests and actual model proof.
 """
 
-import os
 import pytest
 from packages.model_adapters import GeminiModelAdapter
 from packages.contracts.model import ModelProviderType
@@ -27,7 +26,7 @@ def test_gemini_adapter_provides_model_specifications():
 
 def test_gemini_adapter_builds_request_payload():
     """Confirms GeminiModelAdapter can construct request structures."""
-    adapter = GeminiModelAdapter(api_key="mock_key")
+    adapter = GeminiModelAdapter()
     payload = adapter.build_request_payload(
         prompt="Tell me about agent safety.",
         system_instructions="You are a safe assistant.",
@@ -42,9 +41,9 @@ def test_gemini_status_is_specification_only_not_live():
     """Explicitly verifies that Gemini is NOT live-integrated in the current runtime.
 
     Validates that:
-    1. No active GEMINI_API_KEY or GOOGLE_API_KEY is present in the runtime environment.
+    1. Legacy descriptors expose no credential interface and never read provider keys.
     2. GeminiModelAdapter does NOT implement an active network execution method.
-    3. Live inference cannot be claimed without live credentials and actual network roundtrips.
+    3. Live inference belongs to Hermes through 9Router; descriptors are not availability evidence.
     """
     adapter = GeminiModelAdapter()
 
@@ -53,9 +52,8 @@ def test_gemini_status_is_specification_only_not_live():
     assert not hasattr(adapter, "complete"), "Gemini adapter unexpectedly implemented complete"
     assert not hasattr(adapter, "stream"), "Gemini adapter unexpectedly implemented stream"
 
-    # Verify environment keys
-    has_live_key = bool(os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
-    assert not has_live_key, "Unexpected live Gemini key in local test environment"
+    # Legacy specifications have no credential interface or execution capability.
+    assert not hasattr(adapter, "api_key")
 
     # Status must be reported as SPEC_ONLY
     gemini_status = "MODEL_SPECIFICATION_ONLY"

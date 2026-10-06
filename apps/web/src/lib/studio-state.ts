@@ -1,4 +1,10 @@
-import type { Evaluation, Runtime, Snapshot, Version } from "./types";
+import type {
+  Evaluation,
+  Runtime,
+  Snapshot,
+  Version,
+  Workspace,
+} from "./types";
 
 export function evaluationStatus(e: Evaluation) {
   if (
@@ -15,6 +21,31 @@ export const needsApproval = (v: Version) =>
   v.status === "draft" && v.integrity_valid && v.bench_eligible;
 export const runtimeTone = (runtime: Runtime) =>
   runtime.ready ? "success" : runtime.connected ? "warning" : "error";
+
+export const executionReady = (workspace: Workspace) =>
+  workspace.runtime.ready &&
+  workspace.gateway.connected &&
+  workspace.gateway.discovery_valid &&
+  workspace.gateway.runtime_binding_verified;
+
+export const gatewayStatus = (workspace: Workspace) =>
+  !workspace.gateway.connected
+    ? {
+        tone: "error" as const,
+        label: "Model Gateway 9Router tidak dapat dijangkau.",
+      }
+    : !workspace.gateway.discovery_valid
+      ? {
+          tone: "warning" as const,
+          label: "Discovery Model Gateway belum dapat diverifikasi.",
+        }
+      : !workspace.gateway.runtime_binding_verified
+        ? {
+            tone: "warning" as const,
+            label:
+              "9Router terhubung; routing ARYN Runtime belum terverifikasi.",
+          }
+        : { tone: "success" as const, label: "9Router · Terhubung" };
 export const availabilityLabel = {
   available: "Model tersedia",
   unknown: "Ketersediaan belum terverifikasi",

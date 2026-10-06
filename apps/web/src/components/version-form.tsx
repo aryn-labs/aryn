@@ -142,8 +142,8 @@ export function VersionForm({
           </label>
         </div>
         <Notice>
-          Mode riset teks. Semua tool Hermes harus dinonaktifkan. Gemini belum
-          tersedia untuk eksekusi Studio.
+          Mode riset teks. Semua tool ARYN Runtime harus dinonaktifkan. Model
+          dan credential provider dikelola oleh 9Router.
         </Notice>
         {validation && <Notice tone="error">{validation}</Notice>}
       </div>

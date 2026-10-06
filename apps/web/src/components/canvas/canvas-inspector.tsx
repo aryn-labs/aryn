@@ -205,12 +205,16 @@ export function CanvasInspector({
                             ? `v${version.version_number} · ${version.id}`
                             : "Tidak tersedia"}
                         </dd>
-                        <dt>Model tercatat</dt>
-                        <dd className="mono">
-                          {run.model || "Tidak dilaporkan"}
-                        </dd>
-                        <dt>Provider</dt>
-                        <dd>{run.provider || "Tidak dilaporkan"}</dd>
+                        <dt>Model diminta</dt>
+                        <dd className="mono">{run.model || "Tidak dilaporkan"}</dd>
+                        <dt>Model aktual</dt>
+                        <dd className="mono">{run.actual_model || "Belum tercatat"}</dd>
+                        <dt>Model Gateway</dt>
+                        <dd>{run.gateway || "Belum tercatat"}</dd>
+                        <dt>Backend runtime</dt>
+                        <dd>{run.runtime_backend || "Belum tercatat"}</dd>
+                        <dt>Provider aktual</dt>
+                        <dd>{run.actual_provider || "Tidak dilaporkan"}</dd>
                         <dt>Token input / output</dt>
                         <dd className="mono">
                           {number(run.input_tokens)} /{" "}
@@ -272,7 +276,7 @@ export function CanvasInspector({
                       <Notice>
                         Trace runtime tidak tersedia. Jejak audit Core tersimpan
                         berikut adalah peristiwa aplikasi, bukan trace per-node
-                        Hermes.
+                        ARYN Runtime.
                       </Notice>
                       <AuditList events={auditEvents} />
                     </>
@@ -344,7 +348,7 @@ export function CanvasInspector({
                         </pre>
                         {selectedNode.nodeType === "policy" && (
                           <Notice>
-                            Core memeriksa izin, budget, dan confinement Hermes
+                            Core memeriksa izin, budget, dan confinement ARYN Runtime
                             sebelum dispatch. Status runtime saat ini:{" "}
                             {workspace?.runtime.message || "Belum diperiksa"}
                           </Notice>

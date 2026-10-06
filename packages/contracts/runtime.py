@@ -49,6 +49,29 @@ class RuntimeModelAvailability(BaseModel):
     reason: str = "availability_unknown"
 
 
+class GatewayDiscovery(BaseModel):
+    gateway: Literal["9Router"] = "9Router"
+    connected: bool = False
+    discovery_valid: bool = False
+    reason: str = "discovery_unavailable"
+    models: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class GatewayUnavailableError(RuntimeError):
+    def __init__(self):
+        super().__init__("Model Gateway 9Router tidak dapat dijangkau atau discovery belum valid.")
+
+
+class ModelIdentityError(RuntimeError):
+    def __init__(self):
+        super().__init__("Model aktual berbeda dengan model yang disetujui. Eksekusi ditolak.")
+
+
+class RuntimeGatewayError(RuntimeError):
+    def __init__(self):
+        super().__init__("ARYN Runtime belum siap. Routing 9Router dan bukti model aktual belum dapat diverifikasi.")
+
+
 class ModelUnavailableError(RuntimeError):
     """No verified runtime availability; never retry with a different model."""
 
@@ -57,9 +80,9 @@ class ModelUnavailableError(RuntimeError):
         self.availability = availability.status
         self.reason = availability.reason
         message = (
-            "Model tidak tersedia di provider/runtime. Pilih model lain sebelum menjalankan Bench atau eksekusi."
+            "Model tidak tersedia melalui 9Router. Pilih model lain sebelum menjalankan Bench atau eksekusi."
             if availability.status == "unavailable" else
-            "Ketersediaan model belum dapat diverifikasi oleh runtime. Bench dan eksekusi diblokir sampai tersedia bukti ketersediaan yang valid."
+            "Ketersediaan model belum dapat diverifikasi. Bench dan eksekusi diblokir sampai tersedia bukti ketersediaan yang valid."
         )
         super().__init__(message)
 
@@ -92,6 +115,11 @@ class RunResult(BaseModel):
     completed_at: Optional[float] = None
     error_message: Optional[str] = None
     raw_response: Dict[str, Any] = Field(default_factory=dict)
+    requested_model: Optional[str] = None
+    actual_model: Optional[str] = None
+    gateway: Optional[Literal["9Router"]] = None
+    runtime_backend: Optional[Literal["Hermes"]] = None
+    provider: Optional[str] = None
 
 
 class RuntimeTrace(BaseModel):
@@ -104,6 +132,12 @@ class RuntimeTrace(BaseModel):
 
 class RuntimeAdapter(ABC):
     """Abstract interface that every ARYN runtime adapter must implement."""
+
+    async def discover_models(self, *, refresh: bool = False) -> GatewayDiscovery:
+        return GatewayDiscovery()
+
+    async def gateway_binding(self) -> bool:
+        return False
 
     async def model_availability(self, model: str, *, refresh: bool = False) -> RuntimeModelAvailability:
         """Unsupported discovery is unknown, never proof of model readiness."""

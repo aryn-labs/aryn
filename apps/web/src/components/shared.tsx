@@ -133,5 +133,10 @@ export function failureReason(value?: string) {
     return "Waktu respons melebihi batas skenario.";
   if (value.startsWith("Runtime run status"))
     return "Runtime belum menyelesaikan skenario.";
-  return "Eksekusi skenario gagal. Periksa kesiapan Hermes dan model yang dipilih.";
+  if (
+    value.includes("ModelIdentityError") ||
+    value.startsWith("Runtime model differs")
+  )
+    return "Model aktual berbeda dengan model yang disetujui. Evaluasi ditolak.";
+  return "Eksekusi skenario gagal. Periksa kesiapan ARYN Runtime dan model yang dipilih.";
 }

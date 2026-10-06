@@ -11,9 +11,9 @@ ModelRoutingError = model_adapters.ModelRoutingError
 
 def test_model_router_resolves_configured_model():
     router = ModelRouter()
-    spec = router.resolve_model("gemini-2.0-flash")
-    assert spec.provider == ModelProviderType.GEMINI
-    assert spec.model_id == "gemini-2.0-flash"
+    spec = router.resolve_model("mock-fast")
+    assert spec.provider == ModelProviderType.MOCK
+    assert spec.model_id == "mock-fast"
 
 
 def test_model_router_forbids_silent_fallback_on_unallowed_model():
@@ -33,9 +33,9 @@ def test_model_router_forbids_silent_fallback_on_unallowed_model():
 
 
 def test_gemini_payload_builder():
-    router = ModelRouter()
-    spec = router.resolve_model("gemini-1.5-pro")
-    adapter = router.get_adapter_for_spec(spec)
+    from packages.model_adapters import GeminiModelAdapter
+    adapter = GeminiModelAdapter()
+    spec = adapter.get_spec("gemini-1.5-pro")
     payload = adapter.build_request_payload(
         prompt="Analyze data",
         system_instructions="You are ARYN analyst",

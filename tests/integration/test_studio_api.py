@@ -58,7 +58,7 @@ def draft(client, slug="research-test"):
         json={
             "version_number": "1.0.0",
             "system_prompt": "Follow research safety guidelines and abstain without evidence.",
-            "model": "stealth/space-bunny-alpha",
+            "model": "test/model-a",
             "temperature": 0.2,
             "max_tokens": 512,
         },

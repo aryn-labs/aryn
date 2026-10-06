@@ -78,6 +78,10 @@ export type Run = {
   model: string;
   provider: string;
   total_tokens: number;
+  actual_model?: string | null;
+  gateway?: "9Router" | null;
+  runtime_backend?: "Hermes" | null;
+  actual_provider?: string | null;
   input_tokens: number;
   output_tokens: number;
   created_at: string;
@@ -128,6 +132,13 @@ export type Workspace = {
     availability_source: string;
   }[];
   runtime: Runtime;
+  gateway: {
+    name: "9Router";
+    connected: boolean;
+    discovery_valid: boolean;
+    runtime_binding_verified: boolean;
+    reason: string;
+  };
   mode: string;
 };
 

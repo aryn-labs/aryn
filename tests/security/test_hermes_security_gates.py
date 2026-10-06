@@ -115,6 +115,9 @@ async def test_adapter_blocks_run_when_tools_are_not_confined():
 async def test_adapter_validates_malformed_run_response():
     """Security Gate: Malformed response from /v1/runs missing run_id raises HermesAdapterError."""
     def mock_handler(request: httpx.Request) -> httpx.Response:
+        if request.url.port == 20128 or request.url.path == "/aryn/gateway":
+            from tests.gateway_fixtures import standard_handler
+            return standard_handler(request, models=[{"id": "mock-model", "availability": "available"}])
         if request.url.path == "/v1/toolsets":
             return httpx.Response(200, json={"data": []})
         if request.url.path == "/v1/runs":
@@ -122,7 +125,8 @@ async def test_adapter_validates_malformed_run_response():
         return httpx.Response(404)
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
-    adapter = HermesRuntimeAdapter(base_url="http://127.0.0.1:8642", api_key="dummy-key", http_client=client)
+    from tests.gateway_fixtures import make_adapter
+    adapter = make_adapter(client)
 
     actor = Actor(actor_id="user_1", organization_id="org_1")
     context = SecurityContext(actor=actor, organization_id="org_1", project_id="proj_1")
