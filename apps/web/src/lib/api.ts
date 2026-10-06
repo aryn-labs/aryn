@@ -1,3 +1,5 @@
+import type { BenchCompletion } from "./types";
+
 let csrf = "";
 let pendingSession: Promise<void> | undefined;
 export class ApiError extends Error {
@@ -78,6 +80,21 @@ export type StreamEvent = {
   data: any;
 };
 
+export function readBenchCompletion(value: any): BenchCompletion {
+  if (
+    typeof value?.evaluation_id !== "string" ||
+    !value.evaluation_id ||
+    typeof value?.version_id !== "string" ||
+    !value.version_id ||
+    value.evaluation?.id !== value.evaluation_id ||
+    value.evaluation?.version_id !== value.version_id ||
+    typeof value.evaluation?.verified !== "boolean"
+  ) {
+    throw new ApiError("Kontrak hasil Bench tidak valid.", 502);
+  }
+  return value;
+}
+
 export async function apiStream<T = any>(
   path: string,
   body: unknown,
@@ -118,7 +135,10 @@ export async function apiStream<T = any>(
 
   const contentType = response.headers.get("content-type") || "";
   if (contentType.includes("application/json")) {
-    return (await response.json()) as T;
+    const result = await response.json();
+    return (
+      path.endsWith("/bench") ? readBenchCompletion(result) : result
+    ) as T;
   }
 
   const reader = response.body?.getReader();
@@ -146,6 +166,7 @@ export async function apiStream<T = any>(
         try {
           const parsedData = JSON.parse(dataMatch[1].trim());
           if (evType === "bench.completed" || evType === "run.completed") {
+            if (evType === "bench.completed") readBenchCompletion(parsedData);
             finalResult = parsedData as T;
           }
           if (evType === "bench.error" || evType === "run.failed") {
@@ -161,5 +182,7 @@ export async function apiStream<T = any>(
     }
   }
 
-  return finalResult as T;
+  if (!finalResult)
+    throw new ApiError("Stream berakhir tanpa hasil operasi.", 502);
+  return finalResult;
 }

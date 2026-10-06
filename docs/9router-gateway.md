@@ -63,6 +63,23 @@ Unix seconds dengan umur 0–60 detik. Tidak ada endpoint pemberian evidence dar
 browser. Penolakan model oleh provider dilatch `unavailable` selama proses API
 berjalan. Preflight selalu menyegarkan discovery; cache listing bukan izin run.
 
+Residual pre-Batch-2 (7 Oktober 2026): pembacaan `_active_gateway_providers()`
+terhadap database internal 9Router telah dihapus. `providerConnections.isActive`
+dan alias provider bukan public contract dan bukan bukti exact-model availability.
+ARYN tidak membaca database tersebut untuk credential atau availability.
+Discovery API existing tetap digunakan; tidak ada probe/fallback/katalog yang
+direka. Katalog tanpa evidence availability yang memenuhi pemeriksaan di atas
+tetap `unknown` dan gagal pada preflight Bench/Run. Instalasi yang sebelumnya
+dianggap tersedia hanya dari state provider lokal kini akan diblokir. Ini tidak
+mengubah instalasi/config 9Router atau exact-model enforcement.
+
+Seluruh default endpoint development didefinisikan hanya di `packages/config.py`.
+`GatewaySettings` mengambil settings tersebut dan tidak membaca environment/default
+sendiri. Ketiga launcher memakai resolver terpusat; non-development tanpa
+konfigurasi endpoint lengkap ditolak sebelum start. `API_SERVER_KEY` tetap
+process-only, acak jika belum ada, diwariskan ke Runtime/Studio, dan diabaikan
+saat membaca `.env`. Lihat [hasil regresi residual](pre-batch2-residual-validation.md).
+
 Pemeriksaan lokal read-only tanggal 6 Oktober 2026 menghasilkan gateway
 terhubung, discovery valid, **49 kandidat, semuanya `unknown`**. Versi 9Router
 lokal tidak memberi evidence readiness yang dibutuhkan pada `/v1/models`.

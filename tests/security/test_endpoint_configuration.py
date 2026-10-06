@@ -1,6 +1,9 @@
 """Regression tests for centralized endpoint configuration and security validation."""
 
 import os
+import json
+import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
@@ -63,7 +66,7 @@ def test_non_loopback_rejected_in_local_mode(monkeypatch):
         ARYNSettings.from_env()
 
     with pytest.raises(RuntimeSecurityError, match="must bind only to loopback"):
-        HermesRuntimeAdapter(base_url="http://192.168.1.100:8642")
+        HermesRuntimeAdapter(base_url="http://192.168.1.100:8642", model_gateway=MagicMock())
 
     monkeypatch.setenv("ARYN_RUNTIME_BASE_URL", "http://127.0.0.1:8642")
     monkeypatch.setenv("ARYN_9ROUTER_BASE_URL", "http://10.0.0.1:20128/v1")
@@ -93,7 +96,7 @@ def test_runtime_url_credentials_and_queries_rejected(monkeypatch, invalid_url):
         ARYNSettings.from_env()
 
     with pytest.raises(RuntimeSecurityError):
-        HermesRuntimeAdapter(base_url=invalid_url)
+        HermesRuntimeAdapter(base_url=invalid_url, model_gateway=MagicMock())
 
 
 @pytest.mark.parametrize("invalid_url", [
@@ -203,5 +206,66 @@ def test_launcher_scripts_use_centralized_environment_variables():
     assert "$env:ARYN_STUDIO_PORT" in start_studio
 
     # Verify start-aryn.ps1 loads environment and passes ephemeral key
-    assert "$env:API_SERVER_KEY" in start_aryn
-    assert "$env:ARYN_RUNTIME_BASE_URL" in start_aryn
+    for script in (start_aryn, start_runtime, start_studio):
+        assert "Initialize-ArynConfiguration" in script
+        assert "Initialize-ArynRuntimeAuthentication" in script
+        assert "http://127.0.0.1:8642" not in script
+        assert "http://127.0.0.1:20128/v1" not in script
+
+
+def test_development_defaults_are_centralized(monkeypatch):
+    for name in ("ARYN_ENV", "ARYN_STUDIO_HOST", "ARYN_STUDIO_PORT",
+                 "ARYN_RUNTIME_BASE_URL", "ARYN_9ROUTER_BASE_URL", "ARYN_9ROUTER_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    settings = get_settings()
+    assert settings == ARYNSettings()
+    assert GatewaySettings() == settings.gateway_settings
+
+
+def test_gateway_uses_centralized_snapshot_without_own_env_reads(monkeypatch):
+    centralized = ARYNSettings(nine_router_base_url="http://localhost:20222/v1",
+                              nine_router_api_key="test-central-key")
+    monkeypatch.setattr("packages.config.get_settings", lambda: centralized)
+    monkeypatch.setenv("ARYN_9ROUTER_BASE_URL", "http://127.0.0.1:20129/v1")
+    assert GatewaySettings.from_env() == centralized.gateway_settings
+    assert GatewaySettings() == centralized.gateway_settings
+    assert "test-central-key" not in repr(GatewaySettings())
+
+
+@pytest.mark.parametrize("factory", [get_settings, GatewaySettings.from_env, GatewaySettings,
+                                    lambda: ARYNSettings(aryn_env="production")])
+def test_every_default_configuration_path_fails_closed_in_production(monkeypatch, factory):
+    monkeypatch.setenv("ARYN_ENV", "production")
+    for name in ("ARYN_STUDIO_HOST", "ARYN_STUDIO_PORT", "ARYN_RUNTIME_BASE_URL", "ARYN_9ROUTER_BASE_URL"):
+        monkeypatch.delenv(name, raising=False)
+    with pytest.raises(ValueError, match="ARYN_STUDIO_HOST is required"):
+        factory()
+
+
+def test_centralized_endpoint_normalization_is_consistent(monkeypatch):
+    monkeypatch.setenv("ARYN_ENV", "development")
+    monkeypatch.setenv("ARYN_RUNTIME_BASE_URL", " http://localhost:8645/ ")
+    monkeypatch.setenv("ARYN_9ROUTER_BASE_URL", " http://localhost:20129/v1/ ")
+    monkeypatch.setenv("ARYN_STUDIO_HOST", " LOCALHOST ")
+    settings = get_settings()
+    assert settings.studio_host == "localhost"
+    assert settings.runtime_base_url == HermesRuntimeAdapter().base_url == "http://localhost:8645"
+    assert settings.nine_router_base_url == GatewaySettings.from_env().base_url == "http://localhost:20129/v1"
+
+
+@pytest.mark.parametrize("invalid", [False, True])
+def test_launcher_config_output_and_errors_never_expose_secrets(monkeypatch, invalid):
+    monkeypatch.setenv("ARYN_ENV", "development")
+    monkeypatch.setenv("ARYN_9ROUTER_API_KEY", "isolated-gateway-output-secret")
+    monkeypatch.setenv("API_SERVER_KEY", "isolated-runtime-output-secret")
+    if invalid:
+        monkeypatch.setenv("ARYN_RUNTIME_BASE_URL", "http://user:isolated-runtime-output-secret@127.0.0.1:8642")
+    result = subprocess.run([sys.executable, "-m", "packages.config"], capture_output=True, text=True, timeout=15)
+    assert "isolated-gateway-output-secret" not in result.stdout + result.stderr
+    assert "isolated-runtime-output-secret" not in result.stdout + result.stderr
+    if invalid:
+        assert result.returncode != 0
+    else:
+        assert result.returncode == 0, result.stderr
+        assert set(json.loads(result.stdout)) == {"ARYN_ENV", "ARYN_STUDIO_HOST", "ARYN_STUDIO_PORT",
+                                               "ARYN_RUNTIME_BASE_URL", "ARYN_9ROUTER_BASE_URL"}

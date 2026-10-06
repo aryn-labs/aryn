@@ -1,12 +1,24 @@
 """Central server-side configuration for ARYN."""
 
 import os
-from typing import Optional
 from urllib.parse import urlsplit
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
 
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+DEVELOPMENT_DEFAULTS = {
+    "ARYN_ENV": "development",
+    "ARYN_STUDIO_HOST": "127.0.0.1",
+    "ARYN_STUDIO_PORT": 8710,
+    "ARYN_RUNTIME_BASE_URL": "http://127.0.0.1:8642",
+    "ARYN_9ROUTER_BASE_URL": "http://127.0.0.1:20128/v1",
+}
+ENDPOINT_FIELDS = {
+    "ARYN_STUDIO_HOST": "studio_host",
+    "ARYN_STUDIO_PORT": "studio_port",
+    "ARYN_RUNTIME_BASE_URL": "runtime_base_url",
+    "ARYN_9ROUTER_BASE_URL": "nine_router_base_url",
+}
 
 
 def _validate_url(
@@ -46,13 +58,27 @@ class ARYNSettings(BaseModel):
 
     model_config = ConfigDict(frozen=True, hide_input_in_errors=True)
 
-    aryn_env: str = "development"
-    studio_host: str = "127.0.0.1"
-    studio_port: int = 8710
-    runtime_base_url: str = "http://127.0.0.1:8642"
-    nine_router_base_url: str = "http://127.0.0.1:20128/v1"
+    aryn_env: str = DEVELOPMENT_DEFAULTS["ARYN_ENV"]
+    studio_host: str = DEVELOPMENT_DEFAULTS["ARYN_STUDIO_HOST"]
+    studio_port: int = DEVELOPMENT_DEFAULTS["ARYN_STUDIO_PORT"]
+    runtime_base_url: str = DEVELOPMENT_DEFAULTS["ARYN_RUNTIME_BASE_URL"]
+    nine_router_base_url: str = DEVELOPMENT_DEFAULTS["ARYN_9ROUTER_BASE_URL"]
     nine_router_api_key: SecretStr = Field(default_factory=lambda: SecretStr(""))
     api_server_key: SecretStr = Field(default_factory=lambda: SecretStr(""))
+
+    @model_validator(mode="before")
+    @classmethod
+    def require_explicit_non_development_endpoints(cls, values):
+        values = dict(values)
+        env = str(values.get("aryn_env", DEVELOPMENT_DEFAULTS["ARYN_ENV"])).strip().lower()
+        if not env:
+            raise ValueError("ARYN_ENV must not be empty")
+        values["aryn_env"] = env
+        if env != "development":
+            for name, field in ENDPOINT_FIELDS.items():
+                if not str(values.get(field, "")).strip():
+                    raise ValueError(f"{name} is required in non-development environment")
+        return values
 
     def model_post_init(self, context) -> None:
         host = self.studio_host.strip().lower()
@@ -61,8 +87,11 @@ class ARYNSettings(BaseModel):
         if not (1024 <= self.studio_port <= 65535):
             raise ValueError(f"ARYN Studio port must be between 1024 and 65535, got {self.studio_port}.")
 
-        _validate_url(self.runtime_base_url, "ARYN_RUNTIME_BASE_URL", enforce_loopback=True)
-        _validate_url(self.nine_router_base_url, "ARYN_9ROUTER_BASE_URL", require_v1=True, enforce_loopback=True)
+        object.__setattr__(self, "studio_host", host)
+        object.__setattr__(self, "runtime_base_url", _validate_url(
+            self.runtime_base_url, "ARYN_RUNTIME_BASE_URL", enforce_loopback=True))
+        object.__setattr__(self, "nine_router_base_url", _validate_url(
+            self.nine_router_base_url, "ARYN_9ROUTER_BASE_URL", require_v1=True, enforce_loopback=True))
 
     @property
     def studio_origin(self) -> str:
@@ -83,42 +112,34 @@ class ARYNSettings(BaseModel):
 
     @classmethod
     def from_env(cls) -> "ARYNSettings":
-        aryn_env = os.getenv("ARYN_ENV", "development")
-        is_dev = aryn_env.strip().lower() == "development"
-
-        studio_host_env = os.getenv("ARYN_STUDIO_HOST", "")
-        studio_port_env = os.getenv("ARYN_STUDIO_PORT", "")
-        runtime_url_env = os.getenv("ARYN_RUNTIME_BASE_URL", "")
-        nine_router_url_env = os.getenv("ARYN_9ROUTER_BASE_URL", "")
-        nine_router_key_env = os.getenv("ARYN_9ROUTER_API_KEY", "")
-        api_server_key_env = os.getenv("API_SERVER_KEY", "")
-
-        if not is_dev:
-            if not studio_host_env:
-                raise ValueError("ARYN_STUDIO_HOST is required in non-development environment")
-            if not studio_port_env:
-                raise ValueError("ARYN_STUDIO_PORT is required in non-development environment")
-            if not runtime_url_env:
-                raise ValueError("ARYN_RUNTIME_BASE_URL is required in non-development environment")
-            if not nine_router_url_env:
-                raise ValueError("ARYN_9ROUTER_BASE_URL is required in non-development environment")
-
-        studio_host = studio_host_env.strip() if studio_host_env else ("127.0.0.1" if is_dev else "")
-        studio_port = int(studio_port_env.strip()) if studio_port_env else (8710 if is_dev else 0)
-        runtime_base_url = runtime_url_env.strip() if runtime_url_env else ("http://127.0.0.1:8642" if is_dev else "")
-        nine_router_base_url = nine_router_url_env.strip() if nine_router_url_env else ("http://127.0.0.1:20128/v1" if is_dev else "")
-
-        return cls(
-            aryn_env=aryn_env,
-            studio_host=studio_host,
-            studio_port=studio_port,
-            runtime_base_url=runtime_base_url,
-            nine_router_base_url=nine_router_base_url,
-            nine_router_api_key=SecretStr(nine_router_key_env),
-            api_server_key=SecretStr(api_server_key_env),
-        )
+        values = {"aryn_env": os.getenv("ARYN_ENV", DEVELOPMENT_DEFAULTS["ARYN_ENV"])}
+        endpoints = {
+            "studio_host": os.getenv("ARYN_STUDIO_HOST", "").strip(),
+            "studio_port": os.getenv("ARYN_STUDIO_PORT", "").strip(),
+            "runtime_base_url": os.getenv("ARYN_RUNTIME_BASE_URL", "").strip(),
+            "nine_router_base_url": os.getenv("ARYN_9ROUTER_BASE_URL", "").strip(),
+        }
+        values.update({field: value for field, value in endpoints.items() if value})
+        values["nine_router_api_key"] = SecretStr(os.getenv("ARYN_9ROUTER_API_KEY", ""))
+        values["api_server_key"] = SecretStr(os.getenv("API_SERVER_KEY", ""))
+        return cls(**values)
 
 
 def get_settings() -> ARYNSettings:
     """Return an ARYNSettings instance initialized from the environment."""
     return ARYNSettings.from_env()
+
+
+if __name__ == "__main__":
+    import json
+    import sys
+
+    try:
+        settings = get_settings()
+    except ValueError:
+        # Validation inputs can include secrets. Never serialize them to launcher logs.
+        sys.exit("Konfigurasi ARYN ditolak; periksa ARYN_ENV dan endpoint wajib.")
+    print(json.dumps({
+        "ARYN_ENV": settings.aryn_env,
+        **{name: getattr(settings, field) for name, field in ENDPOINT_FIELDS.items()},
+    }))

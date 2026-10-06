@@ -673,6 +673,21 @@ def create_app(
             **body.model_dump(),
         )
 
+    def bench_completion(ctx, result):
+        """JSON/SSE completion identifies the persisted, server-verified evaluation."""
+        with db.session() as s:
+            repo = BenchRepository(s, db.evidence_signer)
+            stored = repo.get_evaluation(ctx, result.evaluation_id)
+            evaluation = row(stored)
+            evaluation["verified"] = False
+            try:
+                version = AgentVersion.from_stored(AgentRepository(s).get_version(ctx, result.version_id))
+                repo.validate_stored(ctx, stored, version)
+                evaluation["verified"] = True
+            except (QualityGateFailedError, VersionIntegrityError):
+                pass
+        return {**result.model_dump(mode="json"), "evaluation": evaluation}
+
     @app.post("/api/projects/{project_id}/versions/{version_id}/bench")
     async def bench(project_id: str, version_id: str, body: dict, request: Request):
         if (
@@ -703,7 +718,10 @@ def create_app(
             async def event_generator():
                 queue = asyncio.Queue()
                 async def queue_event(ev_name: str, payload: dict):
-                    await queue.put((ev_name, payload))
+                    # Runner completion precedes persistence. The public completion
+                    # is emitted only after storage and evidence verification below.
+                    if ev_name != "bench.completed":
+                        await queue.put((ev_name, payload))
 
                 async def run_eval():
                     try:
@@ -713,6 +731,7 @@ def create_app(
                             ctx,
                             RunUsage(total_tokens=sum(r.total_tokens for r in res.scenario_results)),
                         )
+                        await queue.put(("bench.completed", bench_completion(ctx, res)))
                     except Exception as err:
                         await queue.put(("bench.error", {"message": str(err)}))
                     finally:
@@ -736,7 +755,7 @@ def create_app(
             ctx,
             RunUsage(total_tokens=sum(r.total_tokens for r in result.scenario_results)),
         )
-        return result
+        return bench_completion(ctx, result)
 
     @app.post("/api/projects/{project_id}/versions/{version_id}/approve")
     async def approve(project_id: str, version_id: str, body: ApprovalInput):

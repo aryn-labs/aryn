@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Beaker, Check, ChevronDown, ChevronRight, X } from "lucide-react";
 import type { Evaluation, Shared } from "../lib/types";
+import { readBenchCompletion } from "../lib/api";
 import { date, number } from "../lib/utils";
 import { Button } from "../components/ui/button";
 import {
@@ -149,11 +150,14 @@ export function BenchPage({
   const [benchRunning, setBenchRunning] = useState(false);
   const [benchError, setBenchError] = useState<string | null>(null);
   const [consent, setConsent] = useState(false);
+  const [completedEvaluation, setCompletedEvaluation] =
+    useState<Evaluation | null>(null);
 
   // Active version ID from params or first available version
   const activeVersionId = useMemo(() => {
     const fromParam = params.get("versi");
-    if (fromParam && data.versions.some((v) => v.id === fromParam)) return fromParam;
+    if (fromParam && data.versions.some((v) => v.id === fromParam))
+      return fromParam;
     const evalId = params.get("evaluasi");
     if (evalId) {
       const match = data.evaluations.find((e) => e.id === evalId);
@@ -174,12 +178,17 @@ export function BenchPage({
   const selectedEvaluation = useMemo(() => {
     const evalId = params.get("evaluasi");
     if (evalId) {
-      const match = versionEvaluations.find((e) => e.id === evalId);
-      if (match) return match;
+      return (
+        versionEvaluations.find((e) => e.id === evalId) ||
+        (completedEvaluation?.id === evalId &&
+        completedEvaluation.version_id === activeVersionId
+          ? completedEvaluation
+          : null)
+      );
     }
     // Default to the first evaluation OF THIS VERSION ONLY (never another version)
     return versionEvaluations[0] || null;
-  }, [versionEvaluations, params]);
+  }, [versionEvaluations, params, completedEvaluation, activeVersionId]);
 
   const [liveBenchEvent, setLiveBenchEvent] = useState<{
     step: string;
@@ -201,7 +210,18 @@ export function BenchPage({
     if (!activeVersionId || !act) return;
     setBenchError(null);
     setBenchRunning(true);
-    const scenarioStatuses: Record<number, { passed?: boolean; status: NodeStatus }> = {};
+    const selectCompletion = (value: unknown) => {
+      const result = readBenchCompletion(value);
+      if (result.version_id !== activeVersionId) {
+        throw new Error("Hasil Bench tidak sesuai versi yang dievaluasi.");
+      }
+      setCompletedEvaluation(result.evaluation);
+      setParams({ versi: result.version_id, evaluasi: result.evaluation_id });
+    };
+    const scenarioStatuses: Record<
+      number,
+      { passed?: boolean; status: NodeStatus }
+    > = {};
     const scenarioIndexMap: Record<string, number> = {
       scen_safety_injection_defense: 0,
       scen_tool_confinement_defense: 1,
@@ -261,6 +281,7 @@ export function BenchPage({
               });
             }
           } else if (evt.type === "bench.completed") {
+            selectCompletion(evt.data);
             setLiveBenchEvent({
               step: "bench.completed",
               scenarioStatuses: { ...scenarioStatuses },
@@ -269,13 +290,12 @@ export function BenchPage({
           }
         },
       );
-      if (res && (res as any).id) {
-        setParams({ versi: activeVersionId, evaluasi: (res as any).id });
-      }
+      selectCompletion(res);
     } catch (err: any) {
       setBenchError(err.message || "Gagal menjalankan evaluasi Bench");
     } finally {
       setBenchRunning(false);
+      setLiveBenchEvent(null);
     }
   };
 
@@ -308,6 +328,7 @@ export function BenchPage({
             onChange={(e) => {
               // Clearing evaluasi ensures switching versions never displays another version's evaluation
               setParams({ versi: e.target.value });
+              setLiveBenchEvent(null);
             }}
             disabled={benchRunning || pending}
           >
@@ -335,11 +356,7 @@ export function BenchPage({
             />
             Persetujuan model
           </label>
-          <Button
-            onClick={runBench}
-            disabled={!canRun}
-            variant="default"
-          >
+          <Button onClick={runBench} disabled={!canRun} variant="default">
             <Beaker size={15} />
             {benchRunning ? "Mengevaluasi…" : "Jalankan Bench"}
           </Button>
@@ -349,17 +366,21 @@ export function BenchPage({
       {benchError && <Notice tone="error">{benchError}</Notice>}
       {benchRunning && (
         <Notice tone="info">
-          Uji kepatuhan Bench sedang berlangsung… Memvalidasi 4 skenario keamanan dan akurasi.
+          Uji kepatuhan Bench sedang berlangsung… Memvalidasi 4 skenario
+          keamanan dan akurasi.
         </Notice>
       )}
       {!selectedEvaluation && selectedVersion && !benchRunning && (
         <Notice tone="info">
-          Versi ini belum pernah dievaluasi di Bench Laboratory. Klik 'Jalankan Bench' di atas untuk memulai uji keamanan dan akurasi 4 skenario standar.
+          Versi ini belum pernah dievaluasi di Bench Laboratory. Klik 'Jalankan
+          Bench' di atas untuk memulai uji keamanan dan akurasi 4 skenario
+          standar.
         </Notice>
       )}
       {selectedEvaluation && !selectedEvaluation.verified && (
         <Notice tone="warning">
-          Hasil evaluasi tidak terverifikasi (HMAC attestation tidak valid). Evidence tidak dapat digunakan untuk pengajuan persetujuan Core.
+          Hasil evaluasi tidak terverifikasi (HMAC attestation tidak valid).
+          Evidence tidak dapat digunakan untuk pengajuan persetujuan Core.
         </Notice>
       )}
 

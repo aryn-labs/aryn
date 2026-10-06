@@ -50,6 +50,12 @@ export type Evaluation = {
     payload_hash: string;
   };
 };
+// POST /versions/:id/bench JSON and SSE bench.completed share this contract.
+export type BenchCompletion = {
+  evaluation_id: string;
+  version_id: string;
+  evaluation: Evaluation;
+};
 export type Assignment = {
   id: string;
   blueprint_id: string;

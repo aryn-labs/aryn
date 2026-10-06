@@ -4,30 +4,18 @@ param(
     [switch]$NoBrowser,
     [switch]$SkipInstall,
     [switch]$SkipBuild,
-    [switch]$UseSystemPython
+    [switch]$UseSystemPython,
+    [switch]$CheckOnly
 )
 $ErrorActionPreference = 'Stop'
 $studioRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $studioLocal = Join-Path $studioRoot '.local'
+. (Join-Path $PSScriptRoot 'aryn-config.ps1')
+if ($Port -ne 0) { $env:ARYN_STUDIO_PORT = "$Port" }
+Initialize-ArynConfiguration -Root $studioRoot
+Initialize-ArynRuntimeAuthentication
+if ($CheckOnly) { Write-Host 'Konfigurasi Studio valid.'; return }
 New-Item -ItemType Directory -Path $studioLocal -Force | Out-Null
-
-# Load .env if present
-$envFile = Join-Path $studioRoot '.env'
-if (Test-Path -LiteralPath $envFile) {
-    Get-Content -LiteralPath $envFile | ForEach-Object {
-        $line = $_.Trim()
-        if ($line -and -not $line.StartsWith('#') -and $line -match '^([A-Za-z_][A-Za-z0-9_]*)=(.*)$') {
-            $k = $matches[1]
-            $v = $matches[2]
-            if (-not (Get-Item "env:$k" -ErrorAction SilentlyContinue)) {
-                Set-Item "env:$k" $v
-            }
-        }
-    }
-}
-if (-not $env:ARYN_ENV) { $env:ARYN_ENV = 'development' }
-if (-not $env:ARYN_STUDIO_HOST) { $env:ARYN_STUDIO_HOST = '127.0.0.1' }
-if (-not $env:ARYN_STUDIO_PORT) { $env:ARYN_STUDIO_PORT = '8710' }
 
 $studioHost = $env:ARYN_STUDIO_HOST.ToLowerInvariant()
 if ($studioHost -notin @('127.0.0.1', 'localhost', '::1')) {

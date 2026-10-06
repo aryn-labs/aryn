@@ -76,7 +76,30 @@ membuka draft lokal; Save memakai API create-version existing dan tidak menimpa
 versi sumber. Execution/Bench adalah canvas hanya baca dengan pan, zoom,
 selection dan inspector. Run historis memakai assignment/version miliknya;
 pilihan form eksekusi baru dan status pending dipisahkan dari histori.
+`/runs` tanpa `hasil` membuka **NEW EXECUTION**: canvas mengikuti published
+agent/version yang dipilih, Inspector berisi assignment/inline assignment,
+prompt, consent, dan Run. Tidak ada output historis; node/edge idle sampai
+event aktual diterima. `?hasil=<run_id>` membuka **HISTORICAL RUN** dengan
+Inspector DETAIL / OUTPUT / TRACE dan konfigurasi historis hanya baca.
+Gunakan **Eksekusi baru** untuk kembali ke form. Run selesai mengarahkan URL
+ke `?hasil=<new_run_id>`.
 Tidak ada trace per-node atau animasi tahap eksekusi yang direka.
+
+Completion Bench JSON dan SSE memakai `evaluation_id`, `version_id`, dan
+`evaluation` tersimpan dengan `verified` dari verifikasi server. Event
+`bench.completed` baru diterbitkan setelah penyimpanan; frontend memilih
+hasil tersebut langsung dan menyelaraskan `/bench?versi=...&evaluasi=...`
+tanpa harus menunggu snapshot refresh.
+
+`packages/config.py` menjadi source of truth environment, endpoint Studio,
+runtime, dan gateway beserta auth gateway. Semua launcher memakai resolver
+ini melalui `scripts/aryn-config.ps1`. Default loopback hanya untuk development;
+environment lain wajib mengisi seluruh endpoint. `API_SERVER_KEY` diwariskan
+melalui environment proses, dibuat acak jika belum ada, dan tidak dibaca dari
+atau ditulis ke `.env`. Ketiga launcher menyediakan `-CheckOnly`; launcher
+gabungan memeriksa kompatibilitas Hermes dan konfigurasi Studio tanpa start
+layanan atau inference. Dependency Python konfigurasi harus tersedia agar
+resolver dapat berjalan. Lihat [validasi residual pre-Batch-2](pre-batch2-residual-validation.md).
 
 Jumlah “Perlu ditinjau” hanya menghitung draft dengan integrity valid dan
 Bench eligible. Approved mempunyai state sudah disetujui/siap publikasi;

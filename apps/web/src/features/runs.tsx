@@ -22,9 +22,7 @@ export function Runs({ data, workspace, pending, act, actStream }: Shared) {
     const list: PublishedAgentItem[] = [];
     const publishedVersions = data.versions.filter(
       (v) =>
-        v.status === "published" &&
-        v.integrity_valid &&
-        v.governance_valid,
+        v.status === "published" && v.integrity_valid && v.governance_valid,
     );
 
     for (const v of publishedVersions) {
@@ -61,7 +59,10 @@ export function Runs({ data, workspace, pending, act, actStream }: Shared) {
       if (match) return match.version_id;
     }
     const firstValidAssigned = publishedAgents.find(
-      (a) => a.isAssigned && a.integrityValid !== false && a.governanceValid !== false,
+      (a) =>
+        a.isAssigned &&
+        a.integrityValid !== false &&
+        a.governanceValid !== false,
     );
     if (firstValidAssigned) return firstValidAssigned.versionId;
     const firstAssigned = publishedAgents.find((a) => a.isAssigned);
@@ -69,14 +70,23 @@ export function Runs({ data, workspace, pending, act, actStream }: Shared) {
     return publishedAgents[0]?.versionId || "";
   });
 
-  const activeVersionId =
-    publishedAgents.some((a) => a.versionId === selectedVersionId)
-      ? selectedVersionId
-      : (publishedAgents.find((a) => a.isAssigned && a.integrityValid !== false && a.governanceValid !== false)?.versionId ||
-         publishedAgents.find((a) => a.isAssigned)?.versionId ||
-         publishedAgents[0]?.versionId || "");
+  const activeVersionId = publishedAgents.some(
+    (a) => a.versionId === selectedVersionId,
+  )
+    ? selectedVersionId
+    : publishedAgents.find(
+        (a) =>
+          a.isAssigned &&
+          a.integrityValid !== false &&
+          a.governanceValid !== false,
+      )?.versionId ||
+      publishedAgents.find((a) => a.isAssigned)?.versionId ||
+      publishedAgents[0]?.versionId ||
+      "";
 
-  const selectedAgent = publishedAgents.find((a) => a.versionId === activeVersionId);
+  const selectedAgent = publishedAgents.find(
+    (a) => a.versionId === activeVersionId,
+  );
 
   // Form states
   const [prompt, setPrompt] = useState("");
@@ -84,17 +94,19 @@ export function Runs({ data, workspace, pending, act, actStream }: Shared) {
   const [runKey, setRunKey] = useState(() => crypto.randomUUID());
   const [validation, setValidation] = useState("");
   const [executing, setExecuting] = useState(false);
-  const [liveEvent, setLiveEvent] = useState<{ step: string; message?: string } | null>(
-    null,
-  );
+  const [liveEvent, setLiveEvent] = useState<{
+    step: string;
+    message?: string;
+  } | null>(null);
 
   // Inline assignment creation states
   const [roleInput, setRoleInput] = useState("Peneliti riset");
   const [creatingAssignment, setCreatingAssignment] = useState(false);
 
-  const selectedRun = params.has("hasil")
+  const isHistorical = params.has("hasil");
+  const selectedRun = isHistorical
     ? data.runs.find((r) => r.id === params.get("hasil"))
-    : data.runs[0];
+    : undefined;
   const historical = historicalRunContext(data, selectedRun?.id);
 
   const assigned = selectedAgent?.assignmentId
@@ -150,7 +162,7 @@ export function Runs({ data, workspace, pending, act, actStream }: Shared) {
     }
     setValidation("");
     setExecuting(true);
-    setLiveEvent({ step: "run.requested" });
+    setLiveEvent(null);
 
     try {
       const runner = actStream || act;
@@ -168,10 +180,15 @@ export function Runs({ data, workspace, pending, act, actStream }: Shared) {
           setLiveEvent({ step: evt.type, message: evt.data?.message });
         },
       );
-      const newRunId = String((r as any).run_id || (r as any).id);
+      // Fresh runs return run_id; idempotency replay returns the persisted row id.
+      const newRunId = (r as any)?.run_id || (r as any)?.id;
+      if (typeof newRunId !== "string" || !newRunId) {
+        throw new Error("Respons eksekusi belum menyertakan ID run.");
+      }
       setRunKey(crypto.randomUUID());
       viewResult(newRunId);
-    } catch {
+    } catch (err: any) {
+      setValidation(err.message || "Eksekusi belum dapat diselesaikan.");
       /* Retry preserves idempotency key; edits create a new key. */
     } finally {
       setExecuting(false);
@@ -179,14 +196,19 @@ export function Runs({ data, workspace, pending, act, actStream }: Shared) {
     }
   };
 
+  const canvasVersion = isHistorical ? historical.version : version;
+  const canvasAgentName = isHistorical
+    ? historical.blueprint?.name
+    : selectedAgent?.blueprintName;
   const { nodes: execNodes, edges: execEdges } = useMemo(() => {
     return buildExecutionNodesAndEdges(
       selectedRun,
-      historical.version,
-      historical.blueprint?.name,
-      liveEvent,
+      canvasVersion,
+      canvasAgentName,
+      isHistorical ? null : liveEvent,
+      isHistorical ? "historical" : "new",
     );
-  }, [selectedRun, historical.version, historical.blueprint?.name, liveEvent]);
+  }, [selectedRun, canvasVersion, canvasAgentName, isHistorical, liveEvent]);
 
   const executionFormConfig = useMemo(
     () => ({
@@ -249,8 +271,19 @@ export function Runs({ data, workspace, pending, act, actStream }: Shared) {
         description="Jalankan Research Agent melalui ARYN Core, lalu telusuri hasilnya."
       />
 
+      <div className="detail-toolbar mb-4">
+        <span className="mono">
+          {isHistorical ? "HISTORICAL RUN" : "NEW EXECUTION"}
+        </span>
+        {isHistorical && (
+          <Button variant="secondary" onClick={() => setParams({})}>
+            Eksekusi baru
+          </Button>
+        )}
+      </div>
+
       {executing && (
-        <Busy label="Core/ARYN Runtime sedang memproses eksekusi baru. Trace per-node belum tersedia; hasil historis tetap ditampilkan." />
+        <Busy label="Core/ARYN Runtime sedang memproses eksekusi baru. Canvas mengikuti event run; trace per-node belum tersedia." />
       )}
       {selectedRun && !historical.version && (
         <Notice tone="warning">
@@ -268,15 +301,22 @@ export function Runs({ data, workspace, pending, act, actStream }: Shared) {
       {/* Primary Interaction Surface: Execution Canvas & Inspector */}
       <div className="execution-canvas-workspace mb-6">
         <ArynCanvas
+          key={
+            isHistorical
+              ? `historical:${params.get("hasil")}`
+              : `new:${activeVersionId}`
+          }
           mode="execution"
           initialNodes={execNodes}
           initialEdges={execEdges}
           run={selectedRun}
-          version={historical.version}
-          assignment={historical.assignment}
-          auditEvents={data.audit.filter((e) => e.resource_id === selectedRun?.id)}
+          version={canvasVersion}
+          assignment={isHistorical ? historical.assignment : assigned}
+          auditEvents={data.audit.filter(
+            (e) => e.resource_id === selectedRun?.id,
+          )}
           showInspectorByDefault={!params.has("hasil") || Boolean(selectedRun)}
-          executionForm={executionFormConfig}
+          executionForm={isHistorical ? undefined : executionFormConfig}
         />
       </div>
 
@@ -330,6 +370,7 @@ export function Runs({ data, workspace, pending, act, actStream }: Shared) {
                           size="sm"
                           variant={isCurrent ? "secondary" : "ghost"}
                           onClick={() => viewResult(r.id)}
+                          disabled={executing}
                           aria-label={`Lihat hasil eksekusi ${r.id}`}
                         >
                           Lihat hasil

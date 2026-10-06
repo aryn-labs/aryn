@@ -66,15 +66,37 @@ def test_gateway_endpoint_cannot_embed_credentials_or_target_provider(url):
         GatewaySettings(base_url=url)
 
 
-def test_env_configuration_reads_only_gateway_variables(monkeypatch):
+def test_env_configuration_reads_only_centralized_allowlisted_variables(monkeypatch):
     import os
     reads = []
     original = os.getenv
     def read(name, *args):
         reads.append(name)
-        assert name in {"ARYN_9ROUTER_BASE_URL", "ARYN_9ROUTER_API_KEY"}
+        assert name in {"ARYN_ENV", "ARYN_STUDIO_HOST", "ARYN_STUDIO_PORT", "ARYN_RUNTIME_BASE_URL",
+                        "ARYN_9ROUTER_BASE_URL", "ARYN_9ROUTER_API_KEY", "API_SERVER_KEY"}
         return original(name, *args)
     monkeypatch.setattr(os, "getenv", read)
     settings = GatewaySettings.from_env()
-    assert reads == ["ARYN_9ROUTER_BASE_URL", "ARYN_9ROUTER_API_KEY"]
+    assert len(reads) == 7
     assert settings.base_url.endswith("/v1")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("verified,source,age,expected", [
+    (False, "provider_discovery", 0, "unknown"),
+    (True, "internal_provider_state", 0, "unknown"),
+    (True, "provider_discovery", 120, "unknown"),
+    (True, "runtime_probe", -120, "unknown"),
+    (True, "provider_discovery", 0, "available"),
+])
+async def test_only_fresh_public_availability_evidence_is_authoritative(monkeypatch, verified, source, age, expected):
+    import time
+    def forbid_database(*args, **kwargs):
+        pytest.fail("Discovery must never consult the internal 9Router database")
+    monkeypatch.setattr("sqlite3.connect", forbid_database)
+    payload = {"object": "list", "data": [{"id": "cx/model-a", "owned_by": "codex",
+        "availability": "available", "availability_verified": verified,
+        "availability_source": source, "availability_checked_at": time.time() - age}]}
+    async with httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(200, json=payload))) as client:
+        gateway = NineRouterGateway(http_client=client)
+        assert (await gateway.availability("cx/model-a")).status == expected

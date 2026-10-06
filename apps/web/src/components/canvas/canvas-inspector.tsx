@@ -706,12 +706,6 @@ export function CanvasInspector({
                           subtitle="Output yang dilaporkan oleh runtime untuk eksekusi ini."
                         />
                       )}
-                      {executionForm && (
-                        <div className="inspector-execution-form-section mt-5 pt-4 border-t">
-                          <h3 className="text-sm font-semibold mb-3">Eksekusi Baru</h3>
-                          <RenderExecutionForm executionForm={executionForm} />
-                        </div>
-                      )}
                     </>
                   )}
                   {activeTab === "output" && (

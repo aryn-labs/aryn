@@ -187,10 +187,13 @@ export function buildExecutionNodesAndEdges(
   version?: Version | null,
   agentName?: string,
   liveEvent?: { step: string; message?: string } | null,
+  executionMode: "new" | "historical" = run ? "historical" : "new",
 ) {
-  const activeEvent = (!run || run.status === "running") ? liveEvent : null;
+  const isHistorical = executionMode === "historical";
+  const activeEvent = !run || run.status === "running" ? liveEvent : null;
   const isInputActive =
-    activeEvent?.step === "run.requested" || activeEvent?.step === "core.validating";
+    activeEvent?.step === "run.requested" ||
+    activeEvent?.step === "core.validating";
   const isDispatchActive = activeEvent?.step === "runtime.dispatching";
   const isPersistingActive = activeEvent?.step === "core.persisting";
 
@@ -238,26 +241,42 @@ export function buildExecutionNodesAndEdges(
         ? "Instruksi diterima"
         : run
           ? "Masukan tersimpan"
-          : "Belum ada run dipilih",
+          : "Instruksi eksekusi baru",
       nodeType: "input",
       status: isInputActive ? "running" : "idle",
       badge: isInputActive ? "Validasi Core…" : undefined,
       details: { prompt: run?.prompt },
     }),
     node("exec-agent", "agent", 330, 140, {
-      label: agentName || "Konfigurasi historis agent",
+      label:
+        agentName ||
+        (isHistorical ? "Konfigurasi historis agent" : "Pilih published agent"),
       sublabel: version
         ? `Versi v${version.version_number}`
-        : "Versi historis tidak tersedia",
+        : isHistorical
+          ? "Versi historis tidak tersedia"
+          : "Belum ada versi dipilih",
       nodeType: "agent",
       status: isInputActive ? "running" : "idle",
-      badge: isInputActive ? "Pemeriksaan tata kelola" : "Konfigurasi run ini",
+      badge: isInputActive
+        ? "Pemeriksaan tata kelola"
+        : run
+          ? "Konfigurasi run ini"
+          : "Konfigurasi eksekusi baru",
       badgeVariant: "violet",
       details: { systemPrompt: version?.system_prompt },
     }),
     node("exec-model", "model", 620, 140, {
-      label: run?.actual_model || run?.model || version?.model || "Model belum dilaporkan",
-      sublabel: run?.gateway ? `Model Gateway` : "Gateway terverifikasi",
+      label:
+        run?.actual_model ||
+        run?.model ||
+        version?.model ||
+        "Model belum dilaporkan",
+      sublabel: run?.gateway
+        ? "Model Gateway"
+        : isHistorical
+          ? "Gateway tidak tercatat"
+          : "Model konfigurasi pilihan",
       nodeType: "model",
       status: isDispatchActive ? "running" : "idle",
       badge: isDispatchActive ? "Model dipanggil" : "Model tercatat",
@@ -302,7 +321,9 @@ export function buildExecutionNodesAndEdges(
           : outputStatus === "completed"
             ? "Respons tersimpan"
             : "Menunggu runtime"
-        : "Respons tersimpan",
+        : run
+          ? "Respons tersimpan"
+          : "Belum ada output",
       nodeType: "output",
       status: outputStatus,
       badge:
@@ -396,7 +417,8 @@ export function buildBenchNodesAndEdges(
   const nodes = scenarios.map((s, i) => {
     let scenarioStatus: NodeStatus = "idle";
     let badge = "Skenario suite · belum dievaluasi";
-    let badgeVariant: "default" | "violet" | "cyan" | "emerald" | "amber" | "rose" = "default";
+    let badgeVariant:
+      "default" | "violet" | "cyan" | "emerald" | "amber" | "rose" = "default";
 
     if (liveBenchEvent) {
       const recorded = liveBenchEvent.scenarioStatuses?.[i];
@@ -435,7 +457,10 @@ export function buildBenchNodesAndEdges(
 
     return node(`scenario-node-${i}`, "scenario", 40, 40 + i * 140, {
       label: s.name,
-      sublabel: s.actual_model || s.latency_seconds ? `${s.actual_model || "Model"} · ${s.latency_seconds}s` : undefined,
+      sublabel:
+        s.actual_model || s.latency_seconds
+          ? `${s.actual_model || "Model"} · ${s.latency_seconds}s`
+          : undefined,
       nodeType: "scenario",
       status: scenarioStatus,
       badge,
@@ -473,14 +498,19 @@ export function buildBenchNodesAndEdges(
   if (liveBenchEvent) {
     if (liveBenchEvent.step === "bench.completed") {
       const evalData = liveBenchEvent.data?.evaluation || liveBenchEvent.data;
-      const passedCount = evalData?.passed_scenarios ?? Object.values(liveBenchEvent.scenarioStatuses || {}).filter(st => st.passed).length;
+      const passedCount =
+        evalData?.passed_scenarios ??
+        Object.values(liveBenchEvent.scenarioStatuses || {}).filter(
+          (st) => st.passed,
+        ).length;
       const totalCount = evalData?.total_scenarios ?? 4;
       const isVerified = evalData?.verified ?? true;
 
       evalSublabel = `${passedCount}/${totalCount} skenario`;
-      evalScore = evalData?.score !== undefined
-        ? `${Math.round(evalData.score * 100)}%`
-        : `${Math.round((passedCount / totalCount) * 100)}%`;
+      evalScore =
+        evalData?.score !== undefined
+          ? `${Math.round(evalData.score * 100)}%`
+          : `${Math.round((passedCount / totalCount) * 100)}%`;
 
       if (passedCount === totalCount && isVerified) {
         evalStatus = "completed";
@@ -520,7 +550,10 @@ export function buildBenchNodesAndEdges(
         : evaluation?.version_id || "Belum ada versi",
       nodeType: "agent",
       status: agentStatus,
-      badge: liveBenchEvent && isScenarioActive ? "Memproses evaluasi…" : "Konfigurasi evaluasi",
+      badge:
+        liveBenchEvent && isScenarioActive
+          ? "Memproses evaluasi…"
+          : "Konfigurasi evaluasi",
       badgeVariant: "violet",
     }),
     node("bench-hermes", "hermes", 640, 220, {
@@ -586,7 +619,12 @@ export function buildBenchNodesAndEdges(
       isModelToHermesActive ? "running" : "idle",
       isModelToHermesActive,
     ),
-    edge("bench-hermes", "bench-evaluation", evalStatus === "running" ? "running" : "idle", false),
+    edge(
+      "bench-hermes",
+      "bench-evaluation",
+      evalStatus === "running" ? "running" : "idle",
+      false,
+    ),
   );
 
   return { nodes, edges };

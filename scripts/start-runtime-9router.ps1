@@ -6,30 +6,14 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $arynRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+. (Join-Path $PSScriptRoot 'aryn-config.ps1')
+Initialize-ArynConfiguration -Root $arynRoot
 $arynHermesSource = (Resolve-Path -LiteralPath $HermesSource).Path
 $arynHermesCommand = (Get-Command hermes.exe -ErrorAction Stop).Source
 $arynRuntimeCommand = (& $arynHermesCommand --print-runtime-command | ConvertFrom-Json)
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $arynRuntimeCommand[0])) {
     throw 'Interpreter instalasi Hermes belum tersedia.'
 }
-
-# Load .env if present
-$envFile = Join-Path $arynRoot '.env'
-if (Test-Path -LiteralPath $envFile) {
-    Get-Content -LiteralPath $envFile | ForEach-Object {
-        $line = $_.Trim()
-        if ($line -and -not $line.StartsWith('#') -and $line -match '^([A-Za-z_][A-Za-z0-9_]*)=(.*)$') {
-            $k = $matches[1]
-            $v = $matches[2]
-            if (-not (Get-Item "env:$k" -ErrorAction SilentlyContinue)) {
-                Set-Item "env:$k" $v
-            }
-        }
-    }
-}
-if (-not $env:ARYN_ENV) { $env:ARYN_ENV = 'development' }
-if (-not $env:ARYN_RUNTIME_BASE_URL) { $env:ARYN_RUNTIME_BASE_URL = 'http://127.0.0.1:8642' }
-if (-not $env:ARYN_9ROUTER_BASE_URL) { $env:ARYN_9ROUTER_BASE_URL = 'http://127.0.0.1:20128/v1' }
 
 # Determine runtime host and port from ARYN_RUNTIME_BASE_URL or -Port
 $runtimeUri = [System.Uri]$env:ARYN_RUNTIME_BASE_URL
@@ -47,19 +31,18 @@ if ($runtimeUri.Query -or ($env:ARYN_RUNTIME_BASE_URL -match '\?')) {
     throw "Query parameters dalam runtime URL ditolak."
 }
 
-$configuredPort = if ($runtimeUri.Port -gt 0) { $runtimeUri.Port } else { 8642 }
+$configuredPort = $runtimeUri.Port
 if ($Port -eq 0) {
     $Port = $configuredPort
 } elseif ($Port -ne $configuredPort) {
-    $env:ARYN_RUNTIME_BASE_URL = "$($runtimeUri.Scheme)://${runtimeHost}:$Port"
+    $runtimeOverride = New-Object System.UriBuilder($runtimeUri)
+    $runtimeOverride.Port = $Port
+    $env:ARYN_RUNTIME_BASE_URL = $runtimeOverride.Uri.AbsoluteUri.TrimEnd('/')
+    Initialize-ArynConfiguration -Root $arynRoot
 }
 
-if (-not $env:API_SERVER_KEY) {
-    # Runtime authentication only. No provider key, file persistence or secret output.
-    $arynKeyBytes = New-Object byte[] 32
-    [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($arynKeyBytes)
-    $env:API_SERVER_KEY = [Convert]::ToBase64String($arynKeyBytes)
-}
+# API_SERVER_KEY remains process-only authentication.
+Initialize-ArynRuntimeAuthentication
 $arynEntry = Join-Path $PSScriptRoot 'hermes-9router.py'
 & $arynRuntimeCommand[0] -I $arynEntry --hermes-source $arynHermesSource --port $Port --check
 if ($LASTEXITCODE -ne 0) { throw 'Integrasi Hermes belum kompatibel atau confinement belum valid.' }

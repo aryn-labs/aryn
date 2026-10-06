@@ -397,13 +397,30 @@ test("vertical slice HTTP nyata ke Core dengan runtime pengujian terisolasi", as
     page.getByRole("button", { name: "Jalankan Bench" }),
   ).toBeDisabled();
   await page.getByRole("checkbox").check();
+  const benchTerminalResponse = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/bench") &&
+      response.request().method() === "POST",
+  );
   await page.getByRole("button", { name: "Jalankan Bench" }).click();
+  const benchFrames = (await (await benchTerminalResponse).text()).split(
+    "\n\n",
+  );
+  const benchTerminalFrame = benchFrames.find((frame) =>
+    frame.startsWith("event: bench.completed\n"),
+  )!;
+  const benchTerminalResult = JSON.parse(
+    benchTerminalFrame.split("\ndata: ")[1],
+  );
+  await expect(page).toHaveURL(
+    new RegExp(
+      `/bench\\?versi=${benchTerminalResult.version_id}&evaluasi=${benchTerminalResult.evaluation_id}$`,
+    ),
+  );
   await expect(
     page.getByRole("heading", { name: "Evaluasi lulus", exact: true }),
   ).toBeVisible();
-  await page
-    .locator('.react-flow__node[data-id="scenario-node-0"]')
-    .click();
+  await page.locator('.react-flow__node[data-id="scenario-node-0"]').click();
   await expect(
     page.getByText("I cannot ignore research safety guidelines."),
   ).toBeVisible();
@@ -665,7 +682,7 @@ test("validasi versi dan penolakan Core terlihat di dalam dialog", async ({
   await expect(dialog).not.toBeVisible();
 });
 
-test("canvas: historis A tetap terikat A saat form B dan request baru pending", async ({
+test("canvas: New Execution B, Historical A, pending idle dan completion run baru", async ({
   page,
 }) => {
   test.setTimeout(90000);
@@ -685,7 +702,9 @@ test("canvas: historis A tetap terikat A saat form B dan request baru pending", 
   await page.goto(`/runs?hasil=${runA}`);
   const inspector = page.getByRole("region", { name: "Inspector Node" });
   await expect(inspector).toContainText(a.version.id);
-  await page.getByLabel("Penugasan agent").selectOption(b.assignment.id);
+  await expect(page.getByText("HISTORICAL RUN", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Penugasan agent")).toHaveCount(0);
+  await page.goto(`/runs?hasil=${runA}&penugasan=${b.assignment.id}`);
   await expect(inspector).toContainText(a.version.id);
   await expect(inspector).not.toContainText(b.version.id);
   await expect(
@@ -710,6 +729,21 @@ test("canvas: historis A tetap terikat A saat form B dan request baru pending", 
   await expect(inspector).toContainText("Trace runtime tidak tersedia.");
   await inspector.getByRole("tab", { name: "DETAIL", exact: true }).click();
   await page
+    .getByRole("button", { name: "Eksekusi baru", exact: true })
+    .click();
+  await expect(page.getByText("NEW EXECUTION", { exact: true })).toBeVisible();
+  await page.getByLabel("Penugasan agent").selectOption(b.assignment.id);
+  await expect(
+    page.locator('.react-flow__node[data-id="exec-agent"]'),
+  ).toContainText(b.bp.name);
+  await expect(
+    page.locator('.react-flow__node[data-id="exec-model"]'),
+  ).toContainText(b.version.model);
+  await expect(inspector.getByRole("tab", { name: "OUTPUT" })).toHaveCount(0);
+  await expect(
+    page.locator('.react-flow__node[data-id="exec-output"]'),
+  ).toContainText("Belum ada output");
+  await page
     .getByLabel("Instruksi riset")
     .fill("Riset baru dengan penugasan B.");
   await page.getByRole("checkbox").check();
@@ -728,12 +762,15 @@ test("canvas: historis A tetap terikat A saat form B dan request baru pending", 
     await expect(
       page.getByText(/Core\/ARYN Runtime sedang memproses eksekusi baru/),
     ).toBeVisible();
-    await expect(inspector).toContainText(a.version.id);
+    await expect(
+      page.locator('.react-flow__node[data-id="exec-agent"]'),
+    ).toContainText(b.bp.name);
     await expect(page.locator(".aryn-node.status-running")).toHaveCount(0);
     await expect(page.locator(".aryn-edge-animated")).toHaveCount(0);
   } finally {
     release();
   }
+  await expect(page).toHaveURL(/\/runs\?hasil=/);
   await expect(page).not.toHaveURL(new RegExp(`hasil=${runA}`));
   await expect(
     page.getByRole("region", { name: "Inspector Node" }),
@@ -744,6 +781,10 @@ test("canvas: historis A tetap terikat A saat form B dan request baru pending", 
   const snapshot = await (
     await page.request.get(`${a.prefix}/snapshot`)
   ).json();
+  const newRunId = new URL(page.url()).searchParams.get("hasil");
+  expect(
+    snapshot.runs.find((r: { id: string }) => r.id === newRunId).session_id,
+  ).toBe(b.assignment.id);
   expect(
     snapshot.runs.find((r: { id: string }) => r.id === runA).session_id,
   ).toBe(a.assignment.id);

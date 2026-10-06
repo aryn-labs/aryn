@@ -1,13 +1,11 @@
 """Read-only server-side 9Router discovery. No model/provider API invocation."""
 
 import asyncio
-import os
 import re
 import time
-from urllib.parse import urlsplit
 
 import httpx
-from pydantic import BaseModel, ConfigDict, SecretStr
+from pydantic import BaseModel, ConfigDict, SecretStr, model_validator
 
 from packages.contracts.runtime import GatewayDiscovery, RuntimeModelAvailability
 
@@ -16,20 +14,29 @@ MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_./:@+-]{0,127}$")
 
 class GatewaySettings(BaseModel):
     model_config = ConfigDict(frozen=True, hide_input_in_errors=True)
-    base_url: str = "http://127.0.0.1:20128/v1"
-    api_key: SecretStr = SecretStr("")
+    base_url: str
+    api_key: SecretStr
+
+    @model_validator(mode="before")
+    @classmethod
+    def centralized_defaults(cls, values):
+        from packages.config import get_settings
+        values = dict(values)
+        if "base_url" not in values or "api_key" not in values:
+            settings = get_settings()
+            values.setdefault("base_url", settings.nine_router_base_url)
+            values.setdefault("api_key", settings.nine_router_api_key)
+        return values
 
     def model_post_init(self, context):
-        url = urlsplit(self.base_url)
-        if (url.scheme not in {"http", "https"} or url.hostname not in {"127.0.0.1", "localhost", "::1"}
-                or url.username or url.password or url.query or url.fragment or url.path.rstrip("/") != "/v1"):
-            raise ValueError("9Router must use a loopback /v1 endpoint without URL credentials.")
+        from packages.config import _validate_url
+        object.__setattr__(self, "base_url", _validate_url(
+            self.base_url, "ARYN_9ROUTER_BASE_URL", require_v1=True))
 
     @classmethod
     def from_env(cls):
-        base_url = os.getenv("ARYN_9ROUTER_BASE_URL", "http://127.0.0.1:20128/v1").rstrip("/")
-        api_key = os.getenv("ARYN_9ROUTER_API_KEY", "")
-        return cls(base_url=base_url, api_key=SecretStr(api_key))
+        from packages.config import get_settings
+        return get_settings().gateway_settings
 
 
 class NineRouterGateway:
@@ -44,36 +51,6 @@ class NineRouterGateway:
 
     def reject(self, model):
         self._rejected.add(model)
-
-    @staticmethod
-    def _active_gateway_providers() -> set[str]:
-        from pathlib import Path
-        import sqlite3
-        candidate = Path.home() / "AppData" / "Roaming" / "9router" / "db" / "data.sqlite"
-        if not candidate.is_file():
-            candidate = Path.home() / ".9router" / "db" / "data.sqlite"
-        if not candidate.is_file():
-            return set()
-        try:
-            conn = sqlite3.connect(f"file:{candidate.as_posix()}?mode=ro", uri=True)
-            try:
-                cur = conn.cursor()
-                rows = cur.execute("SELECT provider, isActive FROM providerConnections WHERE isActive = 1").fetchall()
-                active = {r[0].lower() for r in rows if r and r[0]}
-                aliases = {
-                    "deepseek": {"ds", "deepseek"},
-                    "gemini": {"gemini", "google"},
-                    "codex": {"cx", "codex", "openai"},
-                    "antigravity": {"ag", "antigravity"},
-                }
-                expanded = set(active)
-                for p in active:
-                    expanded.update(aliases.get(p, ()))
-                return expanded
-            finally:
-                conn.close()
-        except Exception:
-            return set()
 
     async def discover(self, *, refresh=False):
         async with self._lock:
@@ -93,7 +70,6 @@ class NineRouterGateway:
                     body = response.json()
                     if not isinstance(body, dict) or body.get("object") != "list" or not isinstance(body.get("data"), list):
                         raise ValueError("Invalid discovery")
-                    active_providers = self._active_gateway_providers()
                     rows, seen = [], set()
                     for model in body["data"]:
                         if not isinstance(model, dict) or not isinstance(model.get("id"), str) or not MODEL_ID.fullmatch(model["id"]):
@@ -113,14 +89,6 @@ class NineRouterGateway:
                                 or model.get("availability_source") not in {"provider_discovery", "runtime_probe"}
                                 or type(observed) not in {int, float} or not 0 <= time.time() - observed <= 60):
                             status = "unknown"
-                        
-                        # Verify availability against active gateway provider connections when loopback gateway has active connections
-                        if status == "unknown" and active_providers and model.get("owned_by") != "combo" and model.get("kind", "llm") == "llm":
-                            owner = (model.get("owned_by") or "").lower()
-                            prefix = mid.split("/")[0].lower() if "/" in mid else ""
-                            if owner in active_providers or prefix in active_providers:
-                                status = "available"
-
                         reason = "gateway_verified_availability" if status == "available" else "gateway_catalog_only"
                         if model.get("owned_by") == "combo" or model.get("kind", "llm") != "llm":
                             status, reason = "unavailable", "non_exact_route"
