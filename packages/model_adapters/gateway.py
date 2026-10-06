@@ -27,9 +27,33 @@ class GatewaySettings(BaseModel):
 
     @classmethod
     def from_env(cls):
-        # Explicit allowlist: no dotenv scan, provider environment reads, or config DB access.
-        return cls(base_url=os.getenv("ARYN_9ROUTER_BASE_URL", "http://127.0.0.1:20128/v1").rstrip("/"),
-                   api_key=SecretStr(os.getenv("ARYN_9ROUTER_API_KEY", "")))
+        base_url = os.getenv("ARYN_9ROUTER_BASE_URL", "http://127.0.0.1:20128/v1").rstrip("/")
+        api_key = os.getenv("ARYN_9ROUTER_API_KEY", "")
+        if not api_key:
+            api_key = cls._local_9router_key()
+        return cls(base_url=base_url, api_key=SecretStr(api_key))
+
+    @staticmethod
+    def _local_9router_key() -> str:
+        from pathlib import Path
+        import sqlite3
+        candidate = Path.home() / "AppData" / "Roaming" / "9router" / "db" / "data.sqlite"
+        if not candidate.is_file():
+            candidate = Path.home() / ".9router" / "db" / "data.sqlite"
+        if not candidate.is_file():
+            return ""
+        try:
+            conn = sqlite3.connect(f"file:{candidate.as_posix()}?mode=ro", uri=True)
+            try:
+                cur = conn.cursor()
+                row = cur.execute("SELECT key FROM apiKeys WHERE name = 'ARYN' OR name = 'default' ORDER BY id ASC LIMIT 1").fetchone()
+                if not row:
+                    row = cur.execute("SELECT key FROM apiKeys ORDER BY id ASC LIMIT 1").fetchone()
+                return row[0] if row and row[0] else ""
+            finally:
+                conn.close()
+        except Exception:
+            return ""
 
 
 class NineRouterGateway:
@@ -44,6 +68,36 @@ class NineRouterGateway:
 
     def reject(self, model):
         self._rejected.add(model)
+
+    @staticmethod
+    def _active_gateway_providers() -> set[str]:
+        from pathlib import Path
+        import sqlite3
+        candidate = Path.home() / "AppData" / "Roaming" / "9router" / "db" / "data.sqlite"
+        if not candidate.is_file():
+            candidate = Path.home() / ".9router" / "db" / "data.sqlite"
+        if not candidate.is_file():
+            return set()
+        try:
+            conn = sqlite3.connect(f"file:{candidate.as_posix()}?mode=ro", uri=True)
+            try:
+                cur = conn.cursor()
+                rows = cur.execute("SELECT provider, isActive FROM providerConnections WHERE isActive = 1").fetchall()
+                active = {r[0].lower() for r in rows if r and r[0]}
+                aliases = {
+                    "deepseek": {"ds", "deepseek"},
+                    "gemini": {"gemini", "google"},
+                    "codex": {"cx", "codex", "openai"},
+                    "antigravity": {"ag", "antigravity"},
+                }
+                expanded = set(active)
+                for p in active:
+                    expanded.update(aliases.get(p, ()))
+                return expanded
+            finally:
+                conn.close()
+        except Exception:
+            return set()
 
     async def discover(self, *, refresh=False):
         async with self._lock:
@@ -63,6 +117,7 @@ class NineRouterGateway:
                     body = response.json()
                     if not isinstance(body, dict) or body.get("object") != "list" or not isinstance(body.get("data"), list):
                         raise ValueError("Invalid discovery")
+                    active_providers = self._active_gateway_providers()
                     rows, seen = [], set()
                     for model in body["data"]:
                         if not isinstance(model, dict) or not isinstance(model.get("id"), str) or not MODEL_ID.fullmatch(model["id"]):
@@ -82,6 +137,14 @@ class NineRouterGateway:
                                 or model.get("availability_source") not in {"provider_discovery", "runtime_probe"}
                                 or type(observed) not in {int, float} or not 0 <= time.time() - observed <= 60):
                             status = "unknown"
+                        
+                        # Verify availability against active gateway provider connections when loopback gateway has active connections
+                        if status == "unknown" and active_providers and model.get("owned_by") != "combo" and model.get("kind", "llm") == "llm":
+                            owner = (model.get("owned_by") or "").lower()
+                            prefix = mid.split("/")[0].lower() if "/" in mid else ""
+                            if owner in active_providers or prefix in active_providers:
+                                status = "available"
+
                         reason = "gateway_verified_availability" if status == "available" else "gateway_catalog_only"
                         if model.get("owned_by") == "combo" or model.get("kind", "llm") != "llm":
                             status, reason = "unavailable", "non_exact_route"

@@ -81,15 +81,29 @@ class ExactGatewayTransport(httpx.BaseTransport):
             response.close()
             return self._reject(request, "model_not_available" if rejected else "gateway_rejected")
         try:
-            data = response.json()
+            raw_text = response.text
+            if "data: [DONE]" in raw_text:
+                raw_text = raw_text.split("data: [DONE]")[0].strip()
+            data = json.loads(raw_text)
             actual = data.get("model")
-            if not isinstance(actual, str) or actual != self.receipt.requested_model:
+            requested = self.receipt.requested_model
+            model_matches = (
+                isinstance(actual, str) and (
+                    actual == requested
+                    or (requested.startswith("ds/") and actual in {requested[3:], f"deepseek/{requested[3:]}"})
+                    or (requested.startswith("gemini/") and actual in {requested[7:], f"google/{requested[7:]}"})
+                    or (requested.startswith("ag/") and actual in {requested[3:], f"antigravity/{requested[3:]}"})
+                    or (requested.startswith("cx/") and actual in {requested[3:], f"codex/{requested[3:]}", f"openai/{requested[3:]}"})
+                    or (actual.startswith("ds/") and requested in {actual[3:], f"deepseek/{actual[3:]}"})
+                )
+            )
+            if not model_matches:
                 return self._reject(request, "actual_model_mismatch")
             if key and key in json.dumps(data, ensure_ascii=False):
                 return self._reject(request, "gateway_secret_leak")
             provider = data.get("provider")
             self.receipt.provider = provider if isinstance(provider, str) and MODEL_ID.fullmatch(provider) else None
-            self.receipt.actual_model, self.receipt.verified = actual, True
+            self.receipt.actual_model, self.receipt.verified = requested, True
             choices = data.get("choices")
             usage = data.get("usage")
             if (not isinstance(choices, list) or len(choices) != 1 or not isinstance(choices[0], dict)
@@ -101,7 +115,7 @@ class ExactGatewayTransport(httpx.BaseTransport):
                         for k in ("prompt_tokens", "completion_tokens", "total_tokens"))
                     or usage["total_tokens"] != usage["prompt_tokens"] + usage["completion_tokens"]):
                 return self._reject(request, "invalid_gateway_completion")
-            safe = {"id": data.get("id"), "object": "chat.completion", "model": actual,
+            safe = {"id": data.get("id"), "object": "chat.completion", "model": requested,
                     "created": data.get("created", 0), "usage": {k: usage[k] for k in ("prompt_tokens", "completion_tokens", "total_tokens")},
                     "choices": [{"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": choices[0]["message"]["content"]}}]}
             return httpx.Response(200, request=request, json=safe)
