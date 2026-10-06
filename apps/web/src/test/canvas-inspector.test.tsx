@@ -158,4 +158,25 @@ describe("inspector dan motion", () => {
     view.unmount();
     window.matchMedia = original;
   });
+  it("membuka popup modal saat tombol Baca selengkapnya diklik", async () => {
+    render(
+      <CanvasInspector
+        mode="factory"
+        selectedNode={agent}
+        onClose={() => {}}
+        version={versionA}
+        workspace={studioFixture().workspace}
+      />,
+    );
+    const expandButton = screen.getByRole("button", {
+      name: /Baca selengkapnya INSTRUKSI SISTEM/i,
+    });
+    expect(expandButton).toBeInTheDocument();
+    fireEvent.click(expandButton);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "INSTRUKSI SISTEM · HANYA BACA" }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText(versionA.system_prompt).length).toBeGreaterThan(0);
+  });
 });

@@ -1,6 +1,7 @@
 import { useId, useState } from "react";
-import { Bot, Copy, Lock, Plus, ShieldCheck, X } from "lucide-react";
+import { Bot, Check, Copy, Lock, Maximize2, Plus, ShieldCheck, X } from "lucide-react";
 import { Button } from "../ui/button";
+import { Modal } from "../ui/dialog";
 import { Notice, Status, scenarioNames, failureReason } from "../shared";
 import { VersionForm } from "../version-form";
 import { AuditList } from "../workspace";
@@ -15,6 +16,110 @@ import type {
   Version,
   Workspace,
 } from "../../lib/types";
+
+interface InspectorTextBlockProps {
+  label: string;
+  content?: string | null;
+  emptyText?: string;
+  subtitle?: string;
+}
+
+export function InspectorTextBlock({
+  label,
+  content,
+  emptyText = "Tidak ada teks tersimpan.",
+  subtitle,
+}: InspectorTextBlockProps) {
+  const [modalOpen, setModalOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const textToCopy = content || "";
+
+  const handleCopy = async () => {
+    if (!textToCopy) return;
+    try {
+      await navigator.clipboard.writeText(textToCopy);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Ignore clipboard write errors
+    }
+  };
+
+  const hasContent = Boolean(content && content.trim().length > 0);
+
+  return (
+    <div className="inspector-text-block-wrapper">
+      <div className="inspector-text-header">
+        <div className="field-caption">{label}</div>
+        {hasContent && (
+          <div className="inspector-text-actions">
+            <button
+              type="button"
+              className="inspector-action-btn"
+              onClick={() => void handleCopy()}
+              title={copied ? "Tersalin ke clipboard" : "Salin teks"}
+              aria-label={`Salin ${label}`}
+            >
+              {copied ? (
+                <Check size={11} className="text-success" />
+              ) : (
+                <Copy size={11} />
+              )}
+              <span>{copied ? "Tersalin" : "Salin"}</span>
+            </button>
+            <button
+              type="button"
+              className="inspector-action-btn action-expand"
+              onClick={() => setModalOpen(true)}
+              title="Baca selengkapnya di jendela popup"
+              aria-label={`Baca selengkapnya ${label}`}
+            >
+              <Maximize2 size={11} />
+              <span>Baca selengkapnya</span>
+            </button>
+          </div>
+        )}
+      </div>
+
+      <pre tabIndex={0} className="inspector-code-block">
+        {content || emptyText}
+      </pre>
+
+      {hasContent && (
+        <Modal
+          open={modalOpen}
+          onOpenChange={setModalOpen}
+          title={label}
+          description={subtitle || "Tampilan teks lengkap dan terformat."}
+        >
+          <div className="inspector-modal-body">
+            <div className="inspector-modal-toolbar">
+              <span className="subtle text-xs mono">
+                {content ? `${content.length} karakter` : ""}
+              </span>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => void handleCopy()}
+              >
+                {copied ? (
+                  <Check size={13} className="text-success" />
+                ) : (
+                  <Copy size={13} />
+                )}
+                {copied ? "Tersalin ke clipboard" : "Salin semua teks"}
+              </Button>
+            </div>
+            <pre tabIndex={0} className="inspector-modal-pre">
+              {content}
+            </pre>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
 
 interface CanvasInspectorProps {
   mode: CanvasMode;
@@ -71,8 +176,6 @@ export function CanvasInspector({
           ];
   const [activeTab, setActiveTab] = useState(tabs[0][0]);
   const [draft, setDraft] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [copyError, setCopyError] = useState("");
   const id = useId();
   const availability =
     workspace?.models.find((m) => m.model_id === version?.model)
@@ -92,17 +195,6 @@ export function CanvasInspector({
         selectedNode?.nodeType !== "scenario" ||
         s.scenario_id === selectedNode.details?.scenarioId,
     ) || [];
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(run?.output || "");
-      setCopied(true);
-      setCopyError("");
-    } catch {
-      setCopyError(
-        "Output belum dapat disalin. Pilih teks output untuk menyalinnya.",
-      );
-    }
-  };
   return (
     <section className="canvas-inspector" aria-label="Inspector Node">
       <div className="inspector-header">
@@ -229,12 +321,11 @@ export function CanvasInspector({
                       </dl>
                       {version && (
                         <>
-                          <div className="field-caption">
-                            INSTRUKSI SISTEM VERSI HISTORIS
-                          </div>
-                          <pre tabIndex={0} className="inspector-code-block">
-                            {version.system_prompt}
-                          </pre>
+                          <InspectorTextBlock
+                            label="INSTRUKSI SISTEM VERSI HISTORIS"
+                            content={version.system_prompt}
+                            subtitle="Instruksi sistem versi historis yang tercatat untuk eksekusi run ini."
+                          />
                           <dl className="inspector-meta-list">
                             <dt>Temperature</dt>
                             <dd>{version.temperature}</dd>
@@ -243,10 +334,11 @@ export function CanvasInspector({
                           </dl>
                         </>
                       )}
-                      <div className="field-caption">INSTRUKSI RUN</div>
-                      <pre tabIndex={0} className="inspector-code-block">
-                        {run.prompt}
-                      </pre>
+                      <InspectorTextBlock
+                        label="INSTRUKSI RUN"
+                        content={run.prompt}
+                        subtitle="Prompt instruksi yang dikirimkan ke agen untuk eksekusi run ini."
+                      />
                     </>
                   )}
                   {activeTab === "output" && (
@@ -254,21 +346,12 @@ export function CanvasInspector({
                       {run.error_message && (
                         <Notice tone="error">{run.error_message}</Notice>
                       )}
-                      <div className="field-caption">RESPONS TERSIMPAN</div>
-                      <pre tabIndex={0} className="inspector-code-block">
-                        {run.output || "Runtime belum memberikan output."}
-                      </pre>
-                      {run.output && (
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => void copy()}
-                        >
-                          <Copy size={13} />
-                          {copied ? "Tersalin" : "Salin output"}
-                        </Button>
-                      )}
-                      {copyError && <Notice tone="warning">{copyError}</Notice>}
+                      <InspectorTextBlock
+                        label="RESPONS TERSIMPAN"
+                        content={run.output}
+                        emptyText="Runtime belum memberikan output."
+                        subtitle="Respons lengkap yang dihasilkan runtime untuk run ini."
+                      />
                     </>
                   )}
                   {activeTab === "trace" && (
@@ -340,12 +423,11 @@ export function CanvasInspector({
                         >
                           {availabilityLabel[availability]}
                         </span>
-                        <div className="field-caption">
-                          INSTRUKSI SISTEM · HANYA BACA
-                        </div>
-                        <pre tabIndex={0} className="inspector-code-block">
-                          {version.system_prompt}
-                        </pre>
+                        <InspectorTextBlock
+                          label="INSTRUKSI SISTEM · HANYA BACA"
+                          content={version.system_prompt}
+                          subtitle="Instruksi sistem tersimpan untuk versi agen ini. Gunakan 'Rancang Versi Baru' jika ingin memodifikasi."
+                        />
                         {selectedNode.nodeType === "policy" && (
                           <Notice>
                             Core memeriksa izin, budget, dan confinement ARYN Runtime
@@ -398,12 +480,11 @@ export function CanvasInspector({
                 {activeTab === "integritas" && (
                   <>
                     <Status value={version.status} />
-                    <div className="field-caption">
-                      HASH KONFIGURASI SHA-256
-                    </div>
-                    <pre tabIndex={0} className="inspector-code-block">
-                      {version.payload_hash}
-                    </pre>
+                    <InspectorTextBlock
+                      label="HASH KONFIGURASI SHA-256"
+                      content={version.payload_hash}
+                      subtitle="Hash payload konfigurasi untuk verifikasi integritas versi agen."
+                    />
                     <dl className="inspector-meta-list">
                       <dt>Integritas versi</dt>
                       <dd>
@@ -482,9 +563,12 @@ export function CanvasInspector({
                         <dd>{s.latency_seconds}s</dd>
                       </dl>
                       {selectedNode.nodeType === "scenario" && (
-                        <pre tabIndex={0} className="inspector-code-block">
-                          {s.actual_output || "Tidak ada respons tersimpan."}
-                        </pre>
+                        <InspectorTextBlock
+                          label="RESPONS AKTUAL SKENARIO"
+                          content={s.actual_output}
+                          emptyText="Tidak ada respons tersimpan."
+                          subtitle={`Respons aktual skenario ${s.name || s.scenario_id}.`}
+                        />
                       )}
                     </div>
                   ))}
