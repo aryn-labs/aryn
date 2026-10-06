@@ -6,9 +6,6 @@ import { SettingsPage } from "../features/settings";
 import { executionReady, gatewayStatus } from "../lib/studio-state";
 import { studioFixture } from "./studio-fixtures";
 
-vi.mock("../components/canvas/aryn-canvas", () => ({
-  ArynCanvas: () => <div />,
-}));
 
 describe("runtime, gateway dan model adalah dependency terpisah", () => {
   it("Pengaturan memakai nama Model Gateway tanpa menampilkan vendor", () => {

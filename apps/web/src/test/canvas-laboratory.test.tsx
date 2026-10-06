@@ -105,6 +105,9 @@ describe("Regression Refactor: Canvas-First Laboratory & Truthful Events", () =>
       </MemoryRouter>,
     );
 
+    const consentCheckbox = screen.getByRole("checkbox");
+    fireEvent.click(consentCheckbox);
+
     const runBtn = screen.getByRole("button", { name: /Jalankan Bench/i });
     expect(runBtn).not.toBeDisabled();
     fireEvent.click(runBtn);

@@ -6,16 +6,23 @@ import { Runs } from "../features/runs";
 import { Approvals } from "../features/approvals";
 import { studioFixture, versionA } from "./studio-fixtures";
 
-vi.mock("../components/canvas/aryn-canvas", () => ({
-  ArynCanvas: (props: { version?: { id: string }; initialNodes: unknown }) => (
-    <div data-testid="bound-canvas">
-      {JSON.stringify({
-        version: props.version?.id,
-        nodes: props.initialNodes,
-      })}
-    </div>
-  ),
-}));
+vi.mock("../components/canvas/aryn-canvas", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../components/canvas/aryn-canvas")>();
+  return {
+    ...actual,
+    ArynCanvas: (props: any) => (
+      <div>
+        <div data-testid="bound-canvas">
+          {JSON.stringify({
+            version: props.version?.id,
+            nodes: props.initialNodes,
+          })}
+        </div>
+        <actual.ArynCanvas {...props} />
+      </div>
+    ),
+  };
+});
 
 describe("konteks Studio", () => {
   it("Ringkasan menampilkan project aktif, bukan proyek pertama/organization", () => {

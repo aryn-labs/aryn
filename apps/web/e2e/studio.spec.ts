@@ -390,20 +390,25 @@ test("vertical slice HTTP nyata ke Core dengan runtime pengujian terisolasi", as
   await expect(
     page.getByRole("button", { name: "Publikasikan versi" }),
   ).toBeDisabled();
+  const factoryUrl = page.url();
   await page.getByRole("button", { name: "Jalankan Bench" }).click();
+  await expect(page).toHaveURL(/\/bench\?versi=/);
   await expect(
-    dialog.getByRole("button", { name: "Mulai evaluasi" }),
+    page.getByRole("button", { name: "Jalankan Bench" }),
   ).toBeDisabled();
-  await dialog.getByRole("checkbox").check();
-  await dialog.getByRole("button", { name: "Mulai evaluasi" }).click();
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Jalankan Bench" }).click();
   await expect(
     page.getByRole("heading", { name: "Evaluasi lulus", exact: true }),
   ).toBeVisible();
-  await page.locator(".scenario-result").first().locator("summary").click();
+  await page
+    .locator('.react-flow__node[data-id="scenario-node-0"]')
+    .click();
   await expect(
     page.getByText("I cannot ignore research safety guidelines."),
   ).toBeVisible();
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  await page.goto(factoryUrl);
   await page.getByRole("tab", { name: "Konfigurasi" }).click();
   await page.getByRole("button", { name: "Tinjau dan setujui" }).click();
   await dialog
@@ -419,7 +424,6 @@ test("vertical slice HTTP nyata ke Core dengan runtime pengujian terisolasi", as
       exact: false,
     }),
   ).toBeVisible();
-  await page.getByRole("tab", { name: "Penugasan" }).click();
   await page
     .getByRole("button", { name: "Buat penugasan", exact: true })
     .first()
@@ -428,7 +432,7 @@ test("vertical slice HTTP nyata ke Core dengan runtime pengujian terisolasi", as
   await dialog
     .getByRole("button", { name: "Buat penugasan", exact: true })
     .click();
-  await page.getByRole("button", { name: "Buka Eksekusi" }).click();
+  await page.getByRole("button", { name: "Buka Eksekusi" }).first().click();
   await page
     .getByLabel("Instruksi riset")
     .fill("Jelaskan perbedaan likuiditas dan solvabilitas.");

@@ -139,11 +139,29 @@ export function InspectorTextBlock({
   );
 }
 
+export interface PublishedAgentItem {
+  versionId: string;
+  blueprintId: string;
+  blueprintName: string;
+  versionNumber: string;
+  model: string;
+  assignmentId?: string;
+  roleName?: string;
+  isAssigned: boolean;
+  integrityValid?: boolean;
+  governanceValid?: boolean;
+}
+
 export interface ExecutionFormConfig {
-  assignments: Assignment[];
-  blueprints: Blueprint[];
-  selectedAssignmentId: string;
-  onSelectAssignment: (id: string) => void;
+  publishedAgents: PublishedAgentItem[];
+  selectedVersionId: string;
+  onSelectVersion: (versionId: string) => void;
+  // Inline assignment creation
+  roleInput: string;
+  onRoleInputChange: (role: string) => void;
+  onCreateAssignment: () => Promise<void>;
+  creatingAssignment: boolean;
+  // Execution inputs
   prompt: string;
   onPromptChange: (p: string) => void;
   consent: boolean;
@@ -154,6 +172,13 @@ export interface ExecutionFormConfig {
   canSubmit: boolean;
   workspace: Workspace;
   permissionCanRun: boolean;
+  permissionCanAssign?: boolean;
+  modelAvailability?: string;
+  // Backwards compatibility
+  assignments?: Assignment[];
+  blueprints?: Blueprint[];
+  selectedAssignmentId?: string;
+  onSelectAssignment?: (id: string) => void;
 }
 
 interface CanvasInspectorProps {
@@ -169,6 +194,8 @@ interface CanvasInspectorProps {
   onRunBench?: () => void;
   onApproveVersion?: () => void;
   onPublishVersion?: () => void;
+  onCreateAssignment?: () => void;
+  onOpenExecution?: () => void;
   canBench?: boolean;
   canApprove?: boolean;
   canPublish?: boolean;
@@ -177,6 +204,214 @@ interface CanvasInspectorProps {
   auditEvents?: Audit[];
   evaluation?: Evaluation | null;
   executionForm?: ExecutionFormConfig;
+}
+
+function RenderExecutionForm({
+  executionForm,
+}: {
+  executionForm: ExecutionFormConfig;
+}) {
+  return (
+    <div className="run-form-wrapper">
+      {executionForm.publishedAgents?.length ? (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            executionForm.onSubmit(e);
+          }}
+          className="run-form"
+          noValidate
+        >
+          <div className="form-fields">
+            <label>
+              Penugasan agent
+              <select
+                aria-label="Penugasan agent"
+                value={
+                  executionForm.publishedAgents.find(
+                    (a) => a.versionId === executionForm.selectedVersionId,
+                  )?.assignmentId ||
+                  executionForm.selectedVersionId ||
+                  ""
+                }
+                onChange={(e) => {
+                  const val = e.target.value;
+                  const matched = executionForm.publishedAgents.find(
+                    (a) => a.assignmentId === val || a.versionId === val,
+                  );
+                  if (matched) {
+                    executionForm.onSelectVersion(matched.versionId);
+                  } else {
+                    executionForm.onSelectVersion(val);
+                  }
+                }}
+                disabled={executionForm.executing || executionForm.creatingAssignment}
+              >
+                <option value="">Pilih penugasan aktif atau agent</option>
+                {executionForm.publishedAgents.map((agent) => (
+                  <option
+                    key={agent.versionId}
+                    value={agent.assignmentId || agent.versionId}
+                  >
+                    {agent.blueprintName} (v{agent.versionNumber}) ·{" "}
+                    {agent.isAssigned
+                      ? `Siap dijalankan (${agent.roleName})`
+                      : "Belum ditugaskan"}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {(() => {
+              const currentAgent = executionForm.publishedAgents.find(
+                (a) => a.versionId === executionForm.selectedVersionId,
+              );
+
+              if (!currentAgent) {
+                return (
+                  <Notice tone="info">
+                    Pilih salah satu agent yang telah dipublikasikan di atas untuk memulai eksekusi.
+                  </Notice>
+                );
+              }
+
+              if (!currentAgent.isAssigned) {
+                return (
+                  <div className="inline-assignment-panel">
+                    <Notice tone="warning">
+                      Agent ini telah dipublikasikan namun belum memiliki penugasan operasional di proyek ini. Tentukan peran penugasan untuk langsung mengaktifkannya tanpa kembali ke Factory.
+                    </Notice>
+                    <label>
+                      Peran / nama penugasan
+                      <input
+                        aria-label="Peran operasional penugasan"
+                        type="text"
+                        placeholder="Contoh: Peneliti produk, Analis risiko…"
+                        value={executionForm.roleInput}
+                        onChange={(e) => executionForm.onRoleInputChange(e.target.value)}
+                        disabled={executionForm.creatingAssignment}
+                        maxLength={64}
+                      />
+                    </label>
+                    <Button
+                      type="button"
+                      className="w-full mt-2"
+                      onClick={() => void executionForm.onCreateAssignment()}
+                      disabled={
+                        executionForm.creatingAssignment ||
+                        executionForm.roleInput.trim().length < 2 ||
+                        executionForm.permissionCanAssign === false
+                      }
+                    >
+                      <Plus size={14} />
+                      {executionForm.creatingAssignment
+                        ? "Membuat penugasan…"
+                        : "Buat Penugasan"}
+                    </Button>
+                  </div>
+                );
+              }
+
+              return (
+                <>
+                  <div className="agent-assignment-badge">
+                    <Bot size={15} />
+                    <span>
+                      Peran: <strong>{currentAgent.roleName}</strong>
+                    </span>
+                    <span className="mono subtle">({currentAgent.model})</span>
+                  </div>
+
+                  <label>
+                    Instruksi riset
+                    <textarea
+                      aria-label="Instruksi riset"
+                      placeholder="Contoh: Jelaskan perbedaan likuiditas dan solvabilitas, lalu sebutkan risiko yang perlu diperhatikan tim produk."
+                      rows={6}
+                      value={executionForm.prompt}
+                      maxLength={12000}
+                      onChange={(e) => executionForm.onPromptChange(e.target.value)}
+                      disabled={executionForm.executing}
+                    />
+                  </label>
+
+                  <Notice>
+                    Instruksi dan konfigurasi agent dikirim melalui ARYN Runtime ke
+                    penyedia model jarak jauh yang dipilih.
+                  </Notice>
+
+                  <label className="checkbox-field">
+                    <input
+                      type="checkbox"
+                      checked={executionForm.consent}
+                      onChange={(e) => executionForm.onConsentChange(e.target.checked)}
+                      disabled={executionForm.executing}
+                    />
+                    Saya menyetujui pengiriman instruksi ini ke model yang dipilih.
+                  </label>
+
+                  {executionForm.validationError && (
+                    <Notice tone="error">{executionForm.validationError}</Notice>
+                  )}
+                  {!executionForm.workspace.runtime.ready && (
+                    <Notice tone="error">
+                      {executionForm.workspace.runtime.message}
+                    </Notice>
+                  )}
+                  {gatewayStatus(executionForm.workspace).tone !== "success" && (
+                    <Notice tone={gatewayStatus(executionForm.workspace).tone}>
+                      {gatewayStatus(executionForm.workspace).label}
+                    </Notice>
+                  )}
+                  {executionForm.modelAvailability &&
+                    executionForm.modelAvailability !== "available" && (
+                      <Notice tone="warning">
+                        {executionForm.modelAvailability === "unavailable"
+                          ? "Model tidak tersedia melalui Model Gateway. Pilih versi dengan model lain sebelum menjalankan agent."
+                          : "Ketersediaan model belum dapat diverifikasi. Eksekusi diblokir sampai runtime menyediakan bukti ketersediaan yang valid."}
+                      </Notice>
+                    )}
+                </>
+              );
+            })()}
+          </div>
+
+          {(() => {
+            const currentAgent = executionForm.publishedAgents.find(
+              (a) => a.versionId === executionForm.selectedVersionId,
+            );
+            if (!currentAgent || !currentAgent.isAssigned) return null;
+
+            return (
+              <div className="run-submit mt-4">
+                <span className="text-xs subtle flex items-center gap-1">
+                  <ShieldCheck size={13} />
+                  Budget dan izin diperiksa Core
+                </span>
+                <Button
+                  className="w-full mt-2"
+                  disabled={
+                    executionForm.executing ||
+                    !executionReady(executionForm.workspace) ||
+                    !executionForm.permissionCanRun ||
+                    !executionForm.canSubmit
+                  }
+                >
+                  <Workflow size={15} />
+                  {executionForm.executing ? "Menjalankan…" : "Jalankan agent"}
+                </Button>
+              </div>
+            );
+          })()}
+        </form>
+      ) : (
+        <Notice tone="warning">
+          Belum ada agent aktif atau terpublikasi di proyek ini. Selesaikan
+          pembuatan versi, Bench, dan persetujuan di Agent Factory.
+        </Notice>
+      )}
+    </div>
+  );
 }
 
 export function CanvasInspector({
@@ -192,6 +427,8 @@ export function CanvasInspector({
   onRunBench,
   onApproveVersion,
   onPublishVersion,
+  onCreateAssignment,
+  onOpenExecution,
   canBench = true,
   canApprove = true,
   canPublish = true,
@@ -220,7 +457,6 @@ export function CanvasInspector({
 
   const [activeTab, setActiveTab] = useState(tabs[0][0]);
   const [draft, setDraft] = useState(false);
-  const [newRunMode, setNewRunMode] = useState(false);
   const id = useId();
 
   const availability =
@@ -263,10 +499,7 @@ export function CanvasInspector({
           s.scenario_id === selectedNode.details?.scenarioId,
       );
 
-  const showExecutionForm =
-    mode === "execution" &&
-    executionForm &&
-    (newRunMode || !run || selectedNode?.id === "exec-input");
+  const isExecutionStandaloneForm = mode === "execution" && executionForm && !run;
 
   return (
     <section className="canvas-inspector" aria-label="Inspector Node">
@@ -280,7 +513,7 @@ export function CanvasInspector({
                   ? "RANCANGAN LOKAL"
                   : "VERSI TERSIMPAN · HANYA BACA"
               : mode === "execution"
-                ? showExecutionForm
+                ? isExecutionStandaloneForm
                   ? "EKSEKUSI RESEARCH AGENT"
                   : "DATA TERSIMPAN · HANYA BACA"
                 : !evaluation
@@ -292,9 +525,15 @@ export function CanvasInspector({
               ? "Rancang Versi Baru"
               : mode === "factory" && !version
                 ? "Konfigurasikan Versi Pertama"
-                : showExecutionForm
+                : isExecutionStandaloneForm
                   ? "Form Eksekusi Agent"
-                  : selectedNode?.label || "Pilih node"}
+                  : mode === "bench" && evaluation
+                    ? benchState === "bench_passed"
+                      ? "Evaluasi lulus"
+                      : benchState === "bench_unverified"
+                        ? "Evaluasi tidak terverifikasi"
+                        : "Evaluasi belum lulus"
+                    : selectedNode?.label || "Pilih node"}
           </h2>
         </div>
         <Button
@@ -308,124 +547,20 @@ export function CanvasInspector({
         </Button>
       </div>
 
-      {!selectedNode && !showExecutionForm && (
+      {isExecutionStandaloneForm && executionForm && (
+        <div className="inspector-content p-4" tabIndex={0}>
+          <RenderExecutionForm executionForm={executionForm} />
+        </div>
+      )}
+
+      {!isExecutionStandaloneForm && !selectedNode && (
         <div className="inspector-empty-state">
           <Bot size={28} />
           <p>Pilih node menggunakan klik atau keyboard untuk memeriksa data.</p>
         </div>
       )}
 
-      {showExecutionForm && executionForm && (
-        <div className="inspector-content p-4" tabIndex={0}>
-          {executionForm.assignments.length ? (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                executionForm.onSubmit(e);
-              }}
-              className="run-form"
-              noValidate
-            >
-              <div className="form-fields">
-                <label>
-                  Penugasan agent
-                  <select
-                    value={executionForm.selectedAssignmentId}
-                    onChange={(e) => executionForm.onSelectAssignment(e.target.value)}
-                    disabled={executionForm.executing}
-                  >
-                    <option value="">Pilih penugasan aktif</option>
-                    {executionForm.assignments.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {executionForm.blueprints.find((b) => b.id === a.blueprint_id)
-                          ?.name || a.blueprint_id}{" "}
-                        · {a.role_name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label>
-                  Instruksi riset
-                  <textarea
-                    placeholder="Contoh: Jelaskan perbedaan likuiditas dan solvabilitas, lalu sebutkan risiko yang perlu diperhatikan tim produk."
-                    rows={6}
-                    value={executionForm.prompt}
-                    maxLength={12000}
-                    onChange={(e) => executionForm.onPromptChange(e.target.value)}
-                    disabled={executionForm.executing}
-                  />
-                </label>
-
-                <Notice>
-                  Instruksi dan konfigurasi agent dikirim melalui ARYN Runtime ke
-                  penyedia model jarak jauh yang dipilih.
-                </Notice>
-
-                <label className="checkbox-field">
-                  <input
-                    type="checkbox"
-                    checked={executionForm.consent}
-                    onChange={(e) => executionForm.onConsentChange(e.target.checked)}
-                    disabled={executionForm.executing}
-                  />
-                  Saya menyetujui pengiriman instruksi ini ke model yang dipilih.
-                </label>
-
-                {executionForm.validationError && (
-                  <Notice tone="error">{executionForm.validationError}</Notice>
-                )}
-                {!executionForm.workspace.runtime.ready && (
-                  <Notice tone="error">
-                    {executionForm.workspace.runtime.message}
-                  </Notice>
-                )}
-                {gatewayStatus(executionForm.workspace).tone !== "success" && (
-                  <Notice tone={gatewayStatus(executionForm.workspace).tone}>
-                    {gatewayStatus(executionForm.workspace).label}
-                  </Notice>
-                )}
-              </div>
-
-              <div className="run-submit mt-4">
-                <span className="text-xs subtle flex items-center gap-1">
-                  <ShieldCheck size={13} />
-                  Budget dan izin diperiksa Core
-                </span>
-                <Button
-                  className="w-full mt-2"
-                  disabled={
-                    executionForm.executing ||
-                    !executionReady(executionForm.workspace) ||
-                    !executionForm.permissionCanRun ||
-                    !executionForm.canSubmit
-                  }
-                >
-                  <Workflow size={15} />
-                  {executionForm.executing ? "Menjalankan…" : "Jalankan agent"}
-                </Button>
-                {run && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="w-full mt-2"
-                    onClick={() => setNewRunMode(false)}
-                  >
-                    Kembali ke hasil run yang dipilih
-                  </Button>
-                )}
-              </div>
-            </form>
-          ) : (
-            <Notice tone="warning">
-              Belum ada agent aktif yang ditugaskan di proyek ini. Selesaikan
-              Bench, persetujuan, dan penugasan di Agent Factory.
-            </Notice>
-          )}
-        </div>
-      )}
-
-      {selectedNode && !showExecutionForm && (
+      {!isExecutionStandaloneForm && selectedNode && (
         <>
           <div
             className="inspector-tabs"
@@ -478,18 +613,31 @@ export function CanvasInspector({
                 <>
                   {activeTab === "detail" && (
                     <>
-                      <Status value={run.status} />
-                      {executionForm && (
+                      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                        <Status value={run.status} />
                         <Button
-                          variant="secondary"
+                          variant="ghost"
                           size="sm"
-                          className="w-full mb-3"
-                          onClick={() => setNewRunMode(true)}
+                          onClick={() => setActiveTab("trace")}
                         >
-                          <Workflow size={14} />
-                          Eksekusi baru
+                          <ShieldCheck size={14} />
+                          Audit ({auditEvents?.length || 0})
                         </Button>
-                      )}
+                      </div>
+                      <div className="usage-row mb-4">
+                        <div>
+                          <small>Token input</small>
+                          <strong className="mono">{number(run.input_tokens)}</strong>
+                        </div>
+                        <div>
+                          <small>Token output</small>
+                          <strong className="mono">{number(run.output_tokens)}</strong>
+                        </div>
+                        <div>
+                          <small>Total token</small>
+                          <strong className="mono">{number(run.total_tokens)}</strong>
+                        </div>
+                      </div>
                       <dl className="inspector-meta-list">
                         <dt>Core Run ID</dt>
                         <dd className="mono">{run.id}</dd>
@@ -551,6 +699,19 @@ export function CanvasInspector({
                         content={run.prompt}
                         subtitle="Prompt instruksi yang dikirimkan ke agen untuk eksekusi run ini."
                       />
+                      {run.output && (
+                        <InspectorTextBlock
+                          label="RESPONS TERAKHIR"
+                          content={run.output}
+                          subtitle="Output yang dilaporkan oleh runtime untuk eksekusi ini."
+                        />
+                      )}
+                      {executionForm && (
+                        <div className="inspector-execution-form-section mt-5 pt-4 border-t">
+                          <h3 className="text-sm font-semibold mb-3">Eksekusi Baru</h3>
+                          <RenderExecutionForm executionForm={executionForm} />
+                        </div>
+                      )}
                     </>
                   )}
                   {activeTab === "output" && (
@@ -558,6 +719,30 @@ export function CanvasInspector({
                       {run.error_message && (
                         <Notice tone="error">{run.error_message}</Notice>
                       )}
+                      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                        <div className="usage-row">
+                          <div>
+                            <small>Token input</small>
+                            <strong className="mono">{number(run.input_tokens)}</strong>
+                          </div>
+                          <div>
+                            <small>Token output</small>
+                            <strong className="mono">{number(run.output_tokens)}</strong>
+                          </div>
+                          <div>
+                            <small>Total token</small>
+                            <strong className="mono">{number(run.total_tokens)}</strong>
+                          </div>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setActiveTab("trace")}
+                        >
+                          <ShieldCheck size={14} />
+                          Audit ({auditEvents?.length || 0})
+                        </Button>
+                      </div>
                       <InspectorTextBlock
                         label="RESPONS TERSIMPAN"
                         content={run.output}
@@ -683,7 +868,7 @@ export function CanvasInspector({
                                 disabled={!canBench}
                               >
                                 <Beaker size={14} />
-                                Jalankan Bench
+                                Uji di Bench
                               </Button>
                             )}
                             {onApproveVersion && (
@@ -710,10 +895,31 @@ export function CanvasInspector({
                           </div>
                         )}
                         {version.status === "published" && version.governance_valid && (
-                          <div className="mt-3">
+                          <div className="published-next-actions mt-3">
                             <Notice tone="success">
-                              Versi ini dipublikasikan dan tidak dapat diubah. Lanjutkan ke penugasan.
+                              Versi ini dipublikasikan dan tidak dapat diubah (immutable). Siap ditugaskan ke proyek.
                             </Notice>
+                            <div className="flex gap-2 mt-2 flex-wrap">
+                              {onCreateAssignment && (
+                                <Button
+                                  size="sm"
+                                  onClick={onCreateAssignment}
+                                >
+                                  <Plus size={14} />
+                                  Buat Penugasan
+                                </Button>
+                              )}
+                              {onOpenExecution && (
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={onOpenExecution}
+                                >
+                                  <Workflow size={14} />
+                                  Buka Eksekusi
+                                </Button>
+                              )}
+                            </div>
                           </div>
                         )}
                       </>
@@ -836,7 +1042,7 @@ export function CanvasInspector({
                         {selectedNode.nodeType === "scenario" && (
                           <InspectorTextBlock
                             label="RESPONS AKTUAL SKENARIO"
-                            content={s.actual_output}
+                            content={s.actual_output || (selectedNode.details?.actual_output as string) || ""}
                             emptyText="Belum ada respons tersimpan."
                             subtitle={`Respons aktual skenario ${s.name || s.scenario_id}.`}
                           />

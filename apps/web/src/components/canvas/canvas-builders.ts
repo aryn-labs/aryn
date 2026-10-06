@@ -7,7 +7,7 @@ import type {
   Workspace,
 } from "../../lib/types";
 import { scenarioNames, statusLabel } from "../shared";
-import { availabilityLabel, evaluationStatus } from "../../lib/studio-state";
+import { availabilityLabel } from "../../lib/studio-state";
 import type { BaseNodeData, NodeStatus } from "./types";
 
 const node = (
@@ -364,27 +364,33 @@ export function buildBenchNodesAndEdges(
     scenarioStatuses?: Record<number, { passed?: boolean; status: NodeStatus }>;
   } | null,
 ) {
-  const state = evaluation ? evaluationStatus(evaluation) : undefined;
-  const status: NodeStatus =
-    state === "failed"
-      ? "failed"
-      : state === "bench_unverified"
-        ? "unverified"
-        : state === "bench_passed"
-          ? "completed"
-          : "idle";
+  const standardScenarioKeys = [
+    "scen_safety_injection_defense",
+    "scen_tool_confinement_defense",
+    "scen_research_accuracy_synthesis",
+    "scen_grounded_abstention",
+  ];
 
-  const standardSuite = Object.entries(scenarioNames).map(
-    ([scenario_id, name]) => ({
-      scenario_id,
-      name,
-      passed: undefined as boolean | undefined,
-    }),
-  );
+  const scenarios = standardScenarioKeys.map((key) => {
+    const detail = evaluation?.details.find((d) => d.scenario_id === key);
+    return {
+      scenario_id: key,
+      name: scenarioNames[key] || key,
+      passed: detail?.passed,
+      actual_output: detail?.actual_output || "",
+      failure_reason: detail?.failure_reason || "",
+      latency_seconds: detail?.latency_seconds || 0,
+      total_tokens: detail?.total_tokens || 0,
+      actual_model: detail?.actual_model || "",
+    };
+  });
 
-  const scenarios = evaluation?.details || standardSuite;
-
-  const activeIdx = liveBenchEvent?.scenarioIndex;
+  const activeIdx =
+    typeof liveBenchEvent?.scenarioIndex === "number"
+      ? liveBenchEvent.scenarioIndex
+      : liveBenchEvent?.scenarioId
+        ? standardScenarioKeys.indexOf(liveBenchEvent.scenarioId)
+        : undefined;
   const isScenarioActive = liveBenchEvent?.step === "scenario.started";
 
   const nodes = scenarios.map((s, i) => {
@@ -428,12 +434,22 @@ export function buildBenchNodesAndEdges(
     }
 
     return node(`scenario-node-${i}`, "scenario", 40, 40 + i * 140, {
-      label: scenarioNames[s.scenario_id] || s.name || s.scenario_id,
+      label: s.name,
+      sublabel: s.actual_model || s.latency_seconds ? `${s.actual_model || "Model"} · ${s.latency_seconds}s` : undefined,
       nodeType: "scenario",
       status: scenarioStatus,
       badge,
       badgeVariant,
-      details: { scenarioId: s.scenario_id },
+      details: {
+        scenarioId: s.scenario_id,
+        name: s.name,
+        passed: s.passed,
+        actual_output: s.actual_output,
+        failure_reason: s.failure_reason,
+        latency_seconds: s.latency_seconds,
+        total_tokens: s.total_tokens,
+        actual_model: s.actual_model,
+      },
     });
   });
 
@@ -449,27 +465,52 @@ export function buildBenchNodesAndEdges(
       : "idle"
     : "idle";
 
-  const evalStatus: NodeStatus = liveBenchEvent
-    ? liveBenchEvent.step === "bench.completed"
-      ? liveBenchEvent.data?.passed
-        ? "completed"
-        : "failed"
-      : "idle"
-    : status;
+  let evalStatus: NodeStatus = "idle";
+  let evalBadge = "Belum dievaluasi";
+  let evalScore: string | undefined = undefined;
+  let evalSublabel = "Belum dievaluasi";
 
-  const evalBadge = liveBenchEvent
-    ? liveBenchEvent.step === "bench.completed"
-      ? liveBenchEvent.data?.passed
-        ? "LULUS"
-        : "GAGAL"
-      : "Menunggu suite selesai"
-    : state === "bench_passed"
-      ? "LULUS"
-      : state === "bench_unverified"
-        ? "TIDAK TERVERIFIKASI"
-        : state === "failed"
-          ? "GAGAL"
-          : "Belum ada hasil";
+  if (liveBenchEvent) {
+    if (liveBenchEvent.step === "bench.completed") {
+      const evalData = liveBenchEvent.data?.evaluation || liveBenchEvent.data;
+      const passedCount = evalData?.passed_scenarios ?? Object.values(liveBenchEvent.scenarioStatuses || {}).filter(st => st.passed).length;
+      const totalCount = evalData?.total_scenarios ?? 4;
+      const isVerified = evalData?.verified ?? true;
+
+      evalSublabel = `${passedCount}/${totalCount} skenario`;
+      evalScore = evalData?.score !== undefined
+        ? `${Math.round(evalData.score * 100)}%`
+        : `${Math.round((passedCount / totalCount) * 100)}%`;
+
+      if (passedCount === totalCount && isVerified) {
+        evalStatus = "completed";
+        evalBadge = "LULUS";
+      } else if (passedCount === totalCount && !isVerified) {
+        evalStatus = "unverified";
+        evalBadge = "TIDAK TERVERIFIKASI";
+      } else {
+        evalStatus = "failed";
+        evalBadge = "GAGAL";
+      }
+    } else {
+      evalStatus = "running";
+      evalBadge = "Sedang mengevaluasi…";
+      evalSublabel = "Bench berlangsung";
+    }
+  } else if (evaluation) {
+    evalSublabel = `${evaluation.passed_scenarios}/${evaluation.total_scenarios} skenario`;
+    evalScore = `${Math.round(evaluation.score * 100)}%`;
+    if (evaluation.passed_scenarios === 4 && evaluation.verified) {
+      evalStatus = "completed";
+      evalBadge = "LULUS";
+    } else if (evaluation.passed_scenarios === 4 && !evaluation.verified) {
+      evalStatus = "unverified";
+      evalBadge = "TIDAK TERVERIFIKASI";
+    } else {
+      evalStatus = "failed";
+      evalBadge = "GAGAL";
+    }
+  }
 
   nodes.push(
     node("bench-agent", "agent", 350, 220, {
@@ -500,11 +541,7 @@ export function buildBenchNodesAndEdges(
     }),
     node("bench-evaluation", "evaluation", 930, 220, {
       label: "Hasil Bench Core",
-      sublabel: evaluation
-        ? `${evaluation.passed_scenarios}/${evaluation.total_scenarios} skenario`
-        : liveBenchEvent?.data
-          ? `${liveBenchEvent.data.passed_scenarios}/${liveBenchEvent.data.total_scenarios} skenario`
-          : "Belum dievaluasi",
+      sublabel: evalSublabel,
       nodeType: "evaluation",
       status: evalStatus,
       badge: evalBadge,
@@ -516,18 +553,14 @@ export function buildBenchNodesAndEdges(
             : evalStatus === "unverified"
               ? "amber"
               : "default",
-      metrics: evaluation
-        ? [{ label: "Skor", value: `${Math.round(evaluation.score * 100)}%` }]
-        : liveBenchEvent?.data?.score !== undefined
-          ? [{ label: "Skor", value: `${Math.round(liveBenchEvent.data.score * 100)}%` }]
-          : undefined,
+      metrics: evalScore ? [{ label: "Skor", value: evalScore }] : undefined,
       details: {
         summary:
-          state === "bench_passed"
+          evalStatus === "completed"
             ? "Lulus dengan evidence terverifikasi"
-            : state === "bench_unverified"
+            : evalStatus === "unverified"
               ? "Histori tidak berlaku untuk approval/publish"
-              : state === "failed"
+              : evalStatus === "failed"
                 ? "Skenario atau skor gagal"
                 : "Metadata suite; belum ada hasil",
       },
@@ -535,7 +568,7 @@ export function buildBenchNodesAndEdges(
   );
 
   const edges = scenarios.map((_, i) => {
-    const isThisScenarioActive = isScenarioActive && activeIdx === i;
+    const isThisScenarioActive = Boolean(isScenarioActive && activeIdx === i);
     return edge(
       `scenario-node-${i}`,
       "bench-agent",
@@ -553,7 +586,7 @@ export function buildBenchNodesAndEdges(
       isModelToHermesActive ? "running" : "idle",
       isModelToHermesActive,
     ),
-    edge("bench-hermes", "bench-evaluation", evalStatus, false),
+    edge("bench-hermes", "bench-evaluation", evalStatus === "running" ? "running" : "idle", false),
   );
 
   return { nodes, edges };

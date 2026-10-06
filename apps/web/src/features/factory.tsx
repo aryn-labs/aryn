@@ -12,7 +12,6 @@ import {
   Layers3,
   Plus,
   Search,
-  ShieldCheck,
 } from "lucide-react";
 import type { Blueprint } from "../lib/types";
 import { date, number } from "../lib/utils";
@@ -24,11 +23,9 @@ import {
   Notice,
   PageHeading,
   Status,
-  scenarioNames,
 } from "../components/shared";
 import type { Shared } from "../lib/types";
 import { Panel, Lifecycle, AuditList } from "../components/workspace";
-import { EvaluationPanel, evaluationStatus } from "./bench";
 import { VersionForm } from "../components/version-form";
 import { ArynCanvas } from "../components/canvas/aryn-canvas";
 import { buildFactoryNodesAndEdges } from "../components/canvas/canvas-builders";
@@ -177,7 +174,6 @@ export function AgentDetail({
   const versions = data.versions.filter((v) => v.blueprint_id === blueprint.id);
   const selected =
     versions.find((v) => v.id === params.get("versi")) || versions[0];
-  const tab = params.get("tab") || "configuration";
   const [dialog, setDialog] = useState("");
   const openDialog = (name: string) => {
     resetError();
@@ -185,7 +181,6 @@ export function AgentDetail({
   };
   const [role, setRole] = useState("Peneliti produk");
   const [comments, setComments] = useState("");
-  const [consent, setConsent] = useState(false);
   const evaluation =
     selected && data.evaluations.find((e) => e.version_id === selected.id);
   const assignment =
@@ -206,11 +201,6 @@ export function AgentDetail({
           : passed
             ? 3
             : 2;
-  const changeTab = (tab: string) => {
-    const p = new URLSearchParams(params);
-    p.set("tab", tab);
-    setParams(p);
-  };
   const { nodes: factoryNodes, edges: factoryEdges } = useMemo(() => {
     return buildFactoryNodesAndEdges(blueprint, selected, workspace, project);
   }, [blueprint, selected, workspace, project]);
@@ -240,26 +230,21 @@ export function AgentDetail({
       "Versi baru tersimpan di database.",
     );
     setDialog("");
-    setParams({ versi: String(v.id), tab: "configuration" });
+    setParams({ versi: String(v.id) });
   };
   const runAction = async (kind: string) => {
     if (!selected) return;
     try {
       await act(
         `/versions/${selected.id}/${kind}`,
-        kind === "bench"
-          ? { allow_remote_model: consent }
-          : kind === "approve"
-            ? { comments, payload_hash: selected.payload_hash }
-            : {},
-        kind === "bench"
-          ? "Bench selesai. Periksa seluruh hasil skenario."
-          : kind === "approve"
-            ? "Persetujuan Core tercatat."
-            : "Versi berhasil dipublikasikan.",
+        kind === "approve"
+          ? { comments, payload_hash: selected.payload_hash }
+          : {},
+        kind === "approve"
+          ? "Persetujuan Core tercatat."
+          : "Versi berhasil dipublikasikan.",
       );
       setDialog("");
-      if (kind === "bench") changeTab("bench");
     } catch {
       /* error is shown above page */
     }
@@ -278,14 +263,26 @@ export function AgentDetail({
           "Agent riset teks dengan evaluasi keselamatan dan tata kelola Core."
         }
       >
-        <Button
-          variant="secondary"
-          disabled={pending || !data.permissions["run:create"]}
-          onClick={() => openDialog("version")}
-        >
-          <Plus size={15} />
-          Versi baru
-        </Button>
+        <div className="flex items-center gap-2">
+          {selected && ["draft", "rejected"].includes(selected.status) && (
+            <Button
+              variant="secondary"
+              disabled={!canBench}
+              onClick={() => navigate(`/bench?versi=${selected.id}`)}
+            >
+              <Beaker size={15} />
+              Jalankan Bench
+            </Button>
+          )}
+          <Button
+            variant="secondary"
+            disabled={pending || !data.permissions["run:create"]}
+            onClick={() => openDialog("version")}
+          >
+            <Plus size={15} />
+            Versi baru
+          </Button>
+        </div>
       </PageHeading>
       <div className="detail-toolbar">
         <div className="version-picker">
@@ -348,208 +345,162 @@ export function AgentDetail({
           {gatewayStatus(workspace).label}
         </Notice>
       )}
-      <div className="tabs" role="tablist" aria-label="Detail agent">
-        {[
-          ["configuration", "Konfigurasi"],
-          ["bench", "Hasil Bench"],
-          ["assignment", "Penugasan"],
-          ["audit", "Audit"],
-        ].map(([id, label]) => (
-          <button
-            key={id}
-            role="tab"
-            id={`tab-${id}`}
-            aria-controls="agent-tab-panel"
-            aria-selected={tab === id}
-            tabIndex={tab === id ? 0 : -1}
-            onClick={() => changeTab(id)}
-            onKeyDown={(e) => {
-              if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
-                e.preventDefault();
-                const ids = [
-                  "configuration",
-                  "bench",
-                  "assignment",
-                  "audit",
-                ];
-                const next =
-                  ids[
-                    (ids.indexOf(tab) + (e.key === "ArrowRight" ? 1 : 3)) %
-                      4
-                  ];
-                changeTab(next);
-                document.getElementById(`tab-${next}`)?.focus();
-              }
-            }}
+
+      {selected && selected.status === "published" && selected.governance_valid && (
+        <div className="published-callout flex items-center justify-between gap-3 p-3 mb-4 rounded border">
+          <div>
+            <strong>Versi dipublikasikan (immutable)</strong>
+            <p className="text-sm subtle">
+              Versi ini dipublikasikan dan tidak dapat diubah. Konfigurasi terkunci dan valid. Lanjutkan dengan menugaskan peran atau jalankan agent.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              size="sm"
+              disabled={pending || !data.permissions["agent:assign"]}
+              onClick={() => openDialog("assign")}
+            >
+              <Plus size={14} />
+              Buat Penugasan
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                const a = data.assignments.find((asg) => asg.version_id === selected.id);
+                if (a) navigate(`/runs?penugasan=${a.id}`);
+                else navigate("/runs");
+              }}
+            >
+              <ArrowRight size={14} />
+              Buka Eksekusi
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Primary Workspace: Laboratory Canvas */}
+      <div className="factory-canvas-workspace mb-6">
+        <ArynCanvas
+          mode="factory"
+          initialNodes={factoryNodes}
+          initialEdges={factoryEdges}
+          version={selected || null}
+          workspace={workspace}
+          showInspectorByDefault
+          versions={versions}
+          pending={pending}
+          error={error}
+          onCreateVersion={
+            data.permissions["run:create"] ? saveVersion : undefined
+          }
+          onRunBench={() => {
+            if (selected) {
+              navigate(`/bench?versi=${selected.id}`);
+            }
+          }}
+          onApproveVersion={() => {
+            setComments("");
+            openDialog("approve");
+          }}
+          onPublishVersion={() => {
+            openDialog("publish");
+          }}
+          onCreateAssignment={() => {
+            openDialog("assign");
+          }}
+          onOpenExecution={() => {
+            const a = data.assignments.find((asg) => asg.version_id === selected?.id);
+            if (a) navigate(`/runs?penugasan=${a.id}`);
+            else navigate("/runs");
+          }}
+          canBench={canBench}
+          canApprove={canApprove}
+          canPublish={canPublish}
+        />
+      </div>
+
+      {/* Secondary Information Panels */}
+      {selected && (
+        <div className="factory-secondary-panels grid grid-cols-1 gap-6">
+          <Panel
+            title="Penugasan operasional"
+            subtitle={`Lingkup: ${workspace.projects.find((p) => p.id === project)?.name || "proyek ini"}`}
+            action={
+              <Button
+                size="sm"
+                disabled={
+                  pending ||
+                  selected.status !== "published" ||
+                  !selected.governance_valid ||
+                  !data.permissions["agent:assign"]
+                }
+                onClick={() => openDialog("assign")}
+              >
+                <Plus size={14} />
+                Buat penugasan
+              </Button>
+            }
           >
-            {label}
-            {id === "bench" && evaluation && (
-              <span
-                className={`tab-dot ${evaluationStatus(evaluation) === "bench_unverified" ? "warning" : evaluationStatus(evaluation) === "bench_passed" ? "success" : "error"}`}
+            {selected.status !== "published" || !selected.governance_valid ? (
+              <Empty
+                title="Publikasikan versi terlebih dahulu"
+                description="Core menolak penugasan versi yang belum dipublikasikan. Selesaikan Bench, persetujuan, dan publikasi pada Inspector canvas."
+              />
+            ) : data.assignments.filter((a) => a.version_id === selected.id).length ? (
+              <div className="assignment-list">
+                {data.assignments
+                  .filter((a) => a.version_id === selected.id)
+                  .map((a) => (
+                    <div key={a.id}>
+                      <div className="agent-icon">
+                        <Folder size={18} />
+                      </div>
+                      <div>
+                        <strong>{a.role_name}</strong>
+                        <small className="mono">{a.id}</small>
+                      </div>
+                      <Status value={a.status} />
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => navigate(`/runs?penugasan=${a.id}`)}
+                      >
+                        Buka Eksekusi
+                        <ArrowRight size={14} />
+                      </Button>
+                    </div>
+                  ))}
+              </div>
+            ) : (
+              <Empty
+                title="Siap ditugaskan ke proyek"
+                description="Berikan peran operasional pada versi yang dipublikasikan. Penugasan hanya berlaku dalam proyek yang diizinkan."
+                action="Buat penugasan"
+                onAction={() => openDialog("assign")}
               />
             )}
-          </button>
-        ))}
-      </div>
-      <div
-        role="tabpanel"
-        id="agent-tab-panel"
-        aria-labelledby={`tab-${tab}`}
-      >
-        {tab === "configuration" ? (
-          <ArynCanvas
-            mode="factory"
-            initialNodes={factoryNodes}
-            initialEdges={factoryEdges}
-            version={selected || null}
-            workspace={workspace}
-            showInspectorByDefault
-            versions={versions}
-            pending={pending}
-            error={error}
-            onCreateVersion={
-              data.permissions["run:create"] ? saveVersion : undefined
-            }
-            onRunBench={() => {
-              setConsent(false);
-              openDialog("bench");
-            }}
-            onApproveVersion={() => {
-              setComments("");
-              openDialog("approve");
-            }}
-            onPublishVersion={() => {
-              openDialog("publish");
-            }}
-            canBench={canBench}
-            canApprove={canApprove}
-            canPublish={canPublish}
-          />
-        ) : !selected ? (
-          <Panel title="Belum ada versi">
-            <Empty
-              title="Blueprint belum dikonfigurasi"
-              description="Konfigurasikan versi pertama pada tab Konfigurasi untuk membuka data ini."
-              action="Buka Konfigurasi"
-              onAction={() => changeTab("configuration")}
+          </Panel>
+
+          <Panel
+            title="Jejak audit agent"
+            subtitle="Peristiwa aktual dari Core dan Factory."
+          >
+            <AuditList
+              events={data.audit.filter((e) =>
+                [
+                  blueprint.id,
+                  selected.id,
+                  ...data.assignments
+                    .filter((a) => a.blueprint_id === blueprint.id)
+                    .map((a) => a.id),
+                ].includes(e.resource_id),
+              )}
             />
           </Panel>
-        ) : tab === "bench" ? (
-              <>
-                <div className="section-actions">
-                  <p>
-                    Evaluasi untuk{" "}
-                    <span className="mono">v{selected.version_number}</span>
-                  </p>
-                  <Button
-                    disabled={
-                      pending ||
-                      !executionReady(workspace) ||
-                      !modelReady ||
-                      !selected.integrity_valid ||
-                      !["draft", "rejected"].includes(selected.status) ||
-                      !data.permissions["run:create"]
-                    }
-                    onClick={() => {
-                      setConsent(false);
-                      openDialog("bench");
-                    }}
-                  >
-                    <Beaker size={15} />
-                    Jalankan Bench
-                  </Button>
-                </div>
-                {evaluation ? (
-                  <EvaluationPanel evaluation={evaluation} />
-                ) : (
-                  <Panel title="Hasil evaluasi">
-                    <Empty
-                      title="Versi ini belum dievaluasi"
-                      description="Bench menjalankan empat skenario pada model pilihan melalui ARYN Runtime. Tidak ada skor yang dibuat sebelum evaluasi nyata."
-                    />
-                  </Panel>
-                )}
-              </>
-            ) : tab === "assignment" ? (
-              <Panel
-                title="Penugasan operasional"
-                subtitle={`Lingkup: ${workspace.projects.find((p) => p.id === project)?.name || "proyek ini"}`}
-                action={
-                  <Button
-                    disabled={
-                      pending ||
-                      selected.status !== "published" ||
-                      !selected.governance_valid ||
-                      !data.permissions["agent:assign"]
-                    }
-                    onClick={() => openDialog("assign")}
-                  >
-                    <Plus size={15} />
-                    Buat penugasan
-                  </Button>
-                }
-              >
-                {selected.status !== "published" ||
-                !selected.governance_valid ? (
-                  <Empty
-                    title="Publikasikan versi terlebih dahulu"
-                    description="Core menolak penugasan versi yang belum dipublikasikan. Selesaikan Bench, persetujuan, dan publikasi."
-                    action="Buka konfigurasi"
-                    onAction={() => changeTab("configuration")}
-                  />
-                ) : data.assignments.filter((a) => a.version_id === selected.id)
-                    .length ? (
-                  <div className="assignment-list">
-                    {data.assignments
-                      .filter((a) => a.version_id === selected.id)
-                      .map((a) => (
-                        <div key={a.id}>
-                          <div className="agent-icon">
-                            <Folder size={18} />
-                          </div>
-                          <div>
-                            <strong>{a.role_name}</strong>
-                            <small className="mono">{a.id}</small>
-                          </div>
-                          <Status value={a.status} />
-                          <Button
-                            variant="secondary"
-                            onClick={() => navigate(`/runs?penugasan=${a.id}`)}
-                          >
-                            Buka Eksekusi
-                            <ArrowRight size={14} />
-                          </Button>
-                        </div>
-                      ))}
-                  </div>
-                ) : (
-                  <Empty
-                    title="Siap ditugaskan ke proyek"
-                    description="Berikan peran operasional pada versi yang dipublikasikan. Penugasan hanya berlaku dalam proyek yang diizinkan."
-                    action="Buat penugasan"
-                    onAction={() => openDialog("assign")}
-                  />
-                )}
-              </Panel>
-            ) : (
-              <Panel
-                title="Jejak audit agent"
-                subtitle="Peristiwa aktual dari Core dan Factory."
-              >
-                <AuditList
-                  events={data.audit.filter((e) =>
-                    [
-                      blueprint.id,
-                      selected.id,
-                      ...data.assignments
-                        .filter((a) => a.blueprint_id === blueprint.id)
-                        .map((a) => a.id),
-                    ].includes(e.resource_id),
-                  )}
-                />
-              </Panel>
-            )}
-          </div>
+        </div>
+      )}
+
       <Modal
         open={!!dialog}
         busy={pending}
@@ -559,24 +510,20 @@ export function AgentDetail({
         title={
           dialog === "version"
             ? "Simpan versi baru"
-            : dialog === "bench"
-              ? "Evaluasi versi dengan Bench"
-              : dialog === "approve"
-                ? "Tinjau persetujuan versi"
-                : dialog === "publish"
-                  ? "Publikasikan versi agent"
-                  : "Buat penugasan agent"
+            : dialog === "approve"
+              ? "Tinjau persetujuan versi"
+              : dialog === "publish"
+                ? "Publikasikan versi agent"
+                : "Buat penugasan agent"
         }
         description={
           dialog === "version"
             ? "Versi baru memiliki hash konfigurasi sendiri dan harus dievaluasi kembali."
-            : dialog === "bench"
-              ? "Empat skenario tetap, model nyata, dan tanpa tool host."
-              : dialog === "approve"
-                ? "Anda bertindak sebagai admin development lokal."
-                : dialog === "publish"
-                  ? "Publikasi membuat versi tetap dan tersedia untuk penugasan."
-                  : "Penugasan dibuat pada proyek aktif dengan otorisasi Core."
+            : dialog === "approve"
+              ? "Anda bertindak sebagai admin development lokal."
+              : dialog === "publish"
+                ? "Publikasi membuat versi tetap dan tersedia untuk penugasan."
+                : "Penugasan dibuat pada proyek aktif dengan otorisasi Core."
         }
       >
         {error && (
@@ -615,7 +562,6 @@ export function AgentDetail({
                   "Penugasan berhasil dibuat.",
                 );
                 setDialog("");
-                changeTab("assignment");
               } catch {
                 /* visible error */
               }
@@ -666,32 +612,7 @@ export function AgentDetail({
                 <strong>{blueprint.name}</strong>
                 <span className="mono">v{selected?.version_number}</span>
               </div>
-              {dialog === "bench" ? (
-                <>
-                  <ul className="scenario-preview">
-                    {Object.values(scenarioNames).map((n) => (
-                      <li key={n}>
-                        <ShieldCheck size={15} />
-                        {n}
-                      </li>
-                    ))}
-                  </ul>
-                  <Notice>
-                    Instruksi sistem dan empat prompt evaluasi dikirim melalui
-                    ARYN Runtime ke penyedia model jarak jauh. Model:{" "}
-                    <span className="mono">{selected?.model}</span>. Tidak ada
-                    fallback otomatis.
-                  </Notice>
-                  <label className="checkbox-field">
-                    <input
-                      type="checkbox"
-                      checked={consent}
-                      onChange={(e) => setConsent(e.target.checked)}
-                    />
-                    Saya menyetujui penggunaan model ini untuk evaluasi Bench.
-                  </label>
-                </>
-              ) : dialog === "approve" ? (
+              {dialog === "approve" ? (
                 <>
                   <Notice tone="success">
                     Bench terakhir lulus {evaluation?.passed_scenarios}/
@@ -724,13 +645,7 @@ export function AgentDetail({
                 </Notice>
               )}
               {pending && (
-                <Busy
-                  label={
-                    dialog === "bench"
-                      ? "Bench berjalan. Menunggu empat respons model…"
-                      : "Core sedang memproses aksi…"
-                  }
-                />
+                <Busy label="Core sedang memproses aksi…" />
               )}
             </div>
             <div className="dialog-footer">
@@ -744,18 +659,15 @@ export function AgentDetail({
               <Button
                 disabled={
                   pending ||
-                  (dialog === "bench" && (!consent || !modelReady)) ||
                   (dialog === "approve" && comments.trim().length < 5)
                 }
                 onClick={() => void runAction(dialog)}
               >
                 {pending
                   ? "Memproses…"
-                  : dialog === "bench"
-                    ? "Mulai evaluasi"
-                    : dialog === "approve"
-                      ? "Setujui versi"
-                      : "Publikasikan"}
+                  : dialog === "approve"
+                    ? "Setujui versi"
+                    : "Publikasikan"}
               </Button>
             </div>
           </div>

@@ -148,34 +148,38 @@ export function BenchPage({
   const [params, setParams] = useSearchParams();
   const [benchRunning, setBenchRunning] = useState(false);
   const [benchError, setBenchError] = useState<string | null>(null);
-  const [consent, setConsent] = useState(true);
+  const [consent, setConsent] = useState(false);
+
+  // Active version ID from params or first available version
+  const activeVersionId = useMemo(() => {
+    const fromParam = params.get("versi");
+    if (fromParam && data.versions.some((v) => v.id === fromParam)) return fromParam;
+    const evalId = params.get("evaluasi");
+    if (evalId) {
+      const match = data.evaluations.find((e) => e.id === evalId);
+      if (match) return match.version_id;
+    }
+    return data.versions[0]?.id || "";
+  }, [params, data.versions, data.evaluations]);
+
+  const selectedVersion = useMemo(() => {
+    return data.versions.find((v) => v.id === activeVersionId) || null;
+  }, [data.versions, activeVersionId]);
+
+  // STRICT SYNC: Only evaluations for the active version!
+  const versionEvaluations = useMemo(() => {
+    return data.evaluations.filter((e) => e.version_id === activeVersionId);
+  }, [data.evaluations, activeVersionId]);
 
   const selectedEvaluation = useMemo(() => {
     const evalId = params.get("evaluasi");
     if (evalId) {
-      const match = data.evaluations.find((e) => e.id === evalId);
+      const match = versionEvaluations.find((e) => e.id === evalId);
       if (match) return match;
     }
-    return data.evaluations[0] || null;
-  }, [data.evaluations, params]);
-
-  const [selectedVersionId, setSelectedVersionId] = useState<string>(() => {
-    const fromParam = params.get("versi");
-    if (fromParam) return fromParam;
-    if (selectedEvaluation) return selectedEvaluation.version_id;
-    return data.versions[0]?.id || "";
-  });
-
-  const selectedVersion = useMemo(() => {
-    if (selectedVersionId) {
-      const match = data.versions.find((v) => v.id === selectedVersionId);
-      if (match) return match;
-    }
-    if (selectedEvaluation) {
-      return data.versions.find((v) => v.id === selectedEvaluation.version_id) || null;
-    }
-    return data.versions[0] || null;
-  }, [data.versions, selectedVersionId, selectedEvaluation]);
+    // Default to the first evaluation OF THIS VERSION ONLY (never another version)
+    return versionEvaluations[0] || null;
+  }, [versionEvaluations, params]);
 
   const [liveBenchEvent, setLiveBenchEvent] = useState<{
     step: string;
@@ -194,15 +198,15 @@ export function BenchPage({
   }, [selectedEvaluation, selectedVersion, liveBenchEvent]);
 
   const runBench = async () => {
-    if (!selectedVersionId || !act) return;
+    if (!activeVersionId || !act) return;
     setBenchError(null);
     setBenchRunning(true);
     const scenarioStatuses: Record<number, { passed?: boolean; status: NodeStatus }> = {};
     const scenarioIndexMap: Record<string, number> = {
-      safety_boundary: 0,
-      quality_coherence: 1,
-      system_prompt_adherence: 2,
-      confinement_leak_prevention: 3,
+      scen_safety_injection_defense: 0,
+      scen_tool_confinement_defense: 1,
+      scen_research_accuracy_synthesis: 2,
+      scen_grounded_abstention: 3,
     };
 
     setLiveBenchEvent({
@@ -213,7 +217,7 @@ export function BenchPage({
     try {
       const runner = actStream || act;
       const res = await runner(
-        `/versions/${selectedVersionId}/bench`,
+        `/versions/${activeVersionId}/bench`,
         { allow_remote_model: consent },
         "Bench selesai dievaluasi.",
         (evt: any) => {
@@ -228,41 +232,45 @@ export function BenchPage({
             const idx =
               sId !== undefined && scenarioIndexMap[sId] !== undefined
                 ? scenarioIndexMap[sId]
-                : 0;
-            setLiveBenchEvent({
-              step: "scenario.started",
-              scenarioId: sId,
-              scenarioIndex: idx,
-              scenarioStatuses: { ...scenarioStatuses },
-            });
+                : -1;
+            if (idx >= 0) {
+              setLiveBenchEvent({
+                step: "scenario.started",
+                scenarioId: sId,
+                scenarioIndex: idx,
+                scenarioStatuses: { ...scenarioStatuses },
+              });
+            }
           } else if (evt.type === "scenario.completed") {
             const sId = evt.data?.scenario_id;
             const idx =
               sId !== undefined && scenarioIndexMap[sId] !== undefined
                 ? scenarioIndexMap[sId]
-                : 0;
-            scenarioStatuses[idx] = {
-              passed: evt.data?.passed,
-              status: evt.data?.passed ? "completed" : "failed",
-            };
-            setLiveBenchEvent({
-              step: "scenario.completed",
-              scenarioId: sId,
-              scenarioIndex: idx,
-              scenarioStatuses: { ...scenarioStatuses },
-              data: evt.data,
-            });
+                : -1;
+            if (idx >= 0) {
+              scenarioStatuses[idx] = {
+                passed: evt.data?.passed,
+                status: evt.data?.passed ? "completed" : "failed",
+              };
+              setLiveBenchEvent({
+                step: "scenario.completed",
+                scenarioId: sId,
+                scenarioIndex: idx,
+                scenarioStatuses: { ...scenarioStatuses },
+                data: evt.data,
+              });
+            }
           } else if (evt.type === "bench.completed") {
             setLiveBenchEvent({
               step: "bench.completed",
               scenarioStatuses: { ...scenarioStatuses },
-              data: evt.data?.evaluation,
+              data: evt.data?.evaluation || evt.data,
             });
           }
         },
       );
       if (res && (res as any).id) {
-        setParams({ evaluasi: (res as any).id });
+        setParams({ versi: activeVersionId, evaluasi: (res as any).id });
       }
     } catch (err: any) {
       setBenchError(err.message || "Gagal menjalankan evaluasi Bench");
@@ -275,7 +283,7 @@ export function BenchPage({
   const canRun =
     !benchRunning &&
     !pending &&
-    Boolean(selectedVersionId) &&
+    Boolean(activeVersionId) &&
     consent &&
     isReady &&
     (data.permissions ? Boolean(data.permissions["run:create"]) : true);
@@ -296,8 +304,11 @@ export function BenchPage({
           <select
             id="bench-version-select"
             aria-label="Pilih versi untuk dievaluasi"
-            value={selectedVersionId}
-            onChange={(e) => setSelectedVersionId(e.target.value)}
+            value={activeVersionId}
+            onChange={(e) => {
+              // Clearing evaluasi ensures switching versions never displays another version's evaluation
+              setParams({ versi: e.target.value });
+            }}
             disabled={benchRunning || pending}
           >
             {data.versions.length ? (
@@ -336,7 +347,23 @@ export function BenchPage({
       </div>
 
       {benchError && <Notice tone="error">{benchError}</Notice>}
+      {benchRunning && (
+        <Notice tone="info">
+          Uji kepatuhan Bench sedang berlangsung… Memvalidasi 4 skenario keamanan dan akurasi.
+        </Notice>
+      )}
+      {!selectedEvaluation && selectedVersion && !benchRunning && (
+        <Notice tone="info">
+          Versi ini belum pernah dievaluasi di Bench Laboratory. Klik 'Jalankan Bench' di atas untuk memulai uji keamanan dan akurasi 4 skenario standar.
+        </Notice>
+      )}
+      {selectedEvaluation && !selectedEvaluation.verified && (
+        <Notice tone="warning">
+          Hasil evaluasi tidak terverifikasi (HMAC attestation tidak valid). Evidence tidak dapat digunakan untuk pengajuan persetujuan Core.
+        </Notice>
+      )}
 
+      {/* Primary Workspace: Bench Canvas & Inspector */}
       <div className="bench-canvas-workspace mb-6">
         <ArynCanvas
           mode="bench"
@@ -344,17 +371,11 @@ export function BenchPage({
           initialEdges={benchEdges}
           evaluation={selectedEvaluation}
           version={selectedVersion}
-          showInspectorByDefault={false}
+          showInspectorByDefault={Boolean(selectedEvaluation)}
           pending={benchRunning || pending}
           onRunBench={canRun ? runBench : undefined}
         />
       </div>
-
-      {Boolean(params.get("evaluasi")) && selectedEvaluation && (
-        <div className="mt-6 mb-6">
-          <EvaluationPanel evaluation={selectedEvaluation} showCanvas={false} />
-        </div>
-      )}
 
       <Panel
         className="mt-6"
@@ -407,8 +428,7 @@ export function BenchPage({
                           variant={isCurrent ? "secondary" : "ghost"}
                           size="sm"
                           onClick={() => {
-                            setParams({ evaluasi: e.id });
-                            setSelectedVersionId(e.version_id);
+                            setParams({ versi: e.version_id, evaluasi: e.id });
                           }}
                           aria-label={`Lihat hasil evaluasi ${e.id}`}
                         >

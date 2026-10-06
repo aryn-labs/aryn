@@ -52,6 +52,8 @@ interface ArynCanvasProps {
   onRunBench?: () => void;
   onApproveVersion?: () => void;
   onPublishVersion?: () => void;
+  onCreateAssignment?: () => void;
+  onOpenExecution?: () => void;
   canBench?: boolean;
   canApprove?: boolean;
   canPublish?: boolean;
@@ -78,19 +80,26 @@ function CanvasInner({
   onRunBench,
   onApproveVersion,
   onPublishVersion,
+  onCreateAssignment,
+  onOpenExecution,
   canBench,
   canApprove,
   canPublish,
   className = "",
   showInspectorByDefault = false,
+  executionForm,
 }: ArynCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(
     () =>
-      initialNodes.find(
-        (n) => n.type === (mode === "bench" ? "evaluation" : "agent"),
-      )?.id || null,
+      mode === "execution"
+        ? (run
+            ? (initialNodes.find((n) => n.type === "agent")?.id || "exec-agent")
+            : (initialNodes.find((n) => n.id === "exec-input")?.id || "exec-input"))
+        : mode === "bench"
+          ? (initialNodes.find((n) => n.type === "evaluation")?.id || null)
+          : (initialNodes.find((n) => n.type === "agent")?.id || null),
   );
   const [showInspector, setShowInspector] = useState(showInspectorByDefault);
   const [showMinimap, setShowMinimap] = useState(false);
@@ -113,6 +122,13 @@ function CanvasInner({
   useEffect(() => {
     setEdges(initialEdges);
   }, [initialEdges, setEdges]);
+
+  useEffect(() => {
+    setShowInspector(showInspectorByDefault);
+    if (!showInspectorByDefault) {
+      setSelectedNodeId(null);
+    }
+  }, [showInspectorByDefault]);
 
   // Handle node selection
   const handleNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
@@ -275,6 +291,8 @@ function CanvasInner({
             onRunBench={onRunBench}
             onApproveVersion={onApproveVersion}
             onPublishVersion={onPublishVersion}
+            onCreateAssignment={onCreateAssignment}
+            onOpenExecution={onOpenExecution}
             canBench={canBench}
             canApprove={canApprove}
             canPublish={canPublish}
@@ -286,6 +304,7 @@ function CanvasInner({
             onCreateVersion={onCreateVersion}
             auditEvents={auditEvents}
             evaluation={evaluation}
+            executionForm={executionForm}
           />
         )}
       </div>
