@@ -900,6 +900,7 @@ pre {
   padding: 18px 24px;
   border-bottom: 1px solid var(--border-soft);
   min-height: 61px;
+  flex-wrap: wrap;
 }
 .panel-heading h2 {
   font-size: 14px;
@@ -2114,11 +2115,14 @@ tbody tr:hover {
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 20px;
+  flex-wrap: wrap;
 }
 .version-picker {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
+  max-width: 100%;
 }
 .version-picker > svg {
   color: var(--secondary);
@@ -2128,6 +2132,7 @@ tbody tr:hover {
   width: auto;
   background: var(--surface);
   min-width: 120px;
+  max-width: 100%;
 }
 .lifecycle-panel {
   border: 1px solid var(--border);
@@ -2379,6 +2384,7 @@ tbody tr:hover {
   padding: 20px 22px;
   cursor: pointer;
   list-style: none;
+  flex-wrap: wrap;
 }
 .scenario-result > summary::-webkit-details-marker {
   display: none;
@@ -4918,6 +4924,8 @@ tbody tr:hover {
   .canvas-flow-area { flex: none; height: 360px; min-height: 360px; }
   .canvas-inspector { width: 100%; min-height: 360px; max-height: 520px; border-left: 0; border-top: 1px solid var(--border); }
   .aryn-studio-canvas-container { height: auto; min-height: 440px; }
+  .canvas-quick-controls .text-xs, .canvas-sub-tag { display: none; }
+  .bench-canvas-workspace, .execution-canvas-workspace { max-width: 100%; }
 }
 @media (max-width: 640px) {
   .sidebar { visibility: hidden; }

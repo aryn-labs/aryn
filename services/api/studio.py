@@ -15,7 +15,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.exc import IntegrityError
@@ -649,7 +649,7 @@ def create_app(
         )
 
     @app.post("/api/projects/{project_id}/versions/{version_id}/bench")
-    async def bench(project_id: str, version_id: str, body: dict):
+    async def bench(project_id: str, version_id: str, body: dict, request: Request):
         if (
             body.keys() != {"allow_remote_model"}
             or body["allow_remote_model"] is not True
@@ -672,6 +672,38 @@ def create_app(
             selected_model = v.model
         await adapter.require_model_available(selected_model)
         await model_catalog()
+
+        is_stream = request.headers.get("accept") == "text/event-stream" or request.query_params.get("stream") == "true"
+        if is_stream:
+            async def event_generator():
+                queue = asyncio.Queue()
+                async def queue_event(ev_name: str, payload: dict):
+                    await queue.put((ev_name, payload))
+
+                async def run_eval():
+                    try:
+                        res = await factory.evaluate_version_with_bench(ctx, version_id, on_event=queue_event)
+                        from packages.contracts.runtime import RunUsage
+                        coordinator.budget_engine.record_usage(
+                            ctx,
+                            RunUsage(total_tokens=sum(r.total_tokens for r in res.scenario_results)),
+                        )
+                    except Exception as err:
+                        await queue.put(("bench.error", {"message": str(err)}))
+                    finally:
+                        await queue.put(None)
+
+                eval_task = asyncio.create_task(run_eval())
+                while True:
+                    item = await queue.get()
+                    if item is None:
+                        break
+                    ev_name, payload = item
+                    yield f"event: {ev_name}\ndata: {json.dumps(payload)}\n\n"
+                await eval_task
+
+            return StreamingResponse(event_generator(), media_type="text/event-stream")
+
         result = await factory.evaluate_version_with_bench(ctx, version_id)
         from packages.contracts.runtime import RunUsage
 
@@ -703,13 +735,14 @@ def create_app(
         return factory.assign_agent(ctx, **body.model_dump())
 
     @app.post("/api/projects/{project_id}/runs")
-    async def run(project_id: str, body: RunInput):
+    async def run(project_id: str, body: RunInput, request: Request):
         ctx = context(project_id, "run:create")
         if not body.allow_remote_model:
             raise HTTPException(
                 422,
                 "Konfirmasikan pengiriman instruksi riset melalui ARYN Runtime dan Model Gateway.",
             )
+        is_stream = request.headers.get("accept") == "text/event-stream" or request.query_params.get("stream") == "true"
         # Core validates the full fingerprint even for cached results, without runtime dispatch.
         cached = None
         with db.session() as s:
@@ -723,6 +756,12 @@ def create_app(
                 cached = row(existing)
         if cached is not None:
             await coordinator.execute_assigned_agent_turn(body.assignment_id, body.prompt, ctx, body.idempotency_key)
+            if is_stream:
+                async def cached_stream():
+                    yield f"event: run.requested\ndata: {json.dumps({'assignment_id': body.assignment_id, 'cached': True})}\n\n"
+                    yield f"event: core.validating\ndata: {json.dumps({'message': 'Hasil ditemukan dari cache idempotency Core'})}\n\n"
+                    yield f"event: run.completed\ndata: {json.dumps(cached)}\n\n"
+                return StreamingResponse(cached_stream(), media_type="text/event-stream")
             return cached
         with db.session() as s:
             asgn = AgentRepository(s).get_assignment(ctx, body.assignment_id)
@@ -742,6 +781,59 @@ def create_app(
         await require_runtime()
         await adapter.require_model_available(selected_model)
         await model_catalog()
+
+        if is_stream:
+            async def run_stream():
+                try:
+                    yield f"event: run.requested\ndata: {json.dumps({'assignment_id': body.assignment_id, 'version_id': assigned_version_id, 'model': selected_model})}\n\n"
+                    yield f"event: core.validating\ndata: {json.dumps({'message': 'Core memvalidasi budget dan kepatuhan kebijakan'})}\n\n"
+                    yield f"event: runtime.dispatching\ndata: {json.dumps({'message': 'Dispatching ke ARYN Runtime', 'model': selected_model, 'gateway': '9Router'})}\n\n"
+                    result = await coordinator.execute_assigned_agent_turn(
+                        body.assignment_id, body.prompt, ctx, body.idempotency_key
+                    )
+                    yield f"event: runtime.completed\ndata: {json.dumps({'message': 'Runtime selesai', 'status': result.status.value, 'model': result.model})}\n\n"
+                    yield f"event: core.persisting\ndata: {json.dumps({'message': 'Core menyimpan hasil dan jejak audit'})}\n\n"
+                    with db.session() as s:
+                        saved = s.get(RunStateModel, result.run_id)
+                        saved.session_id = body.assignment_id
+                        saved.model = result.model
+                        audit.record(
+                            "studio.run.assignment",
+                            ctx,
+                            result.run_id,
+                            AuditStatus.COMPLETED,
+                            {
+                                "assignment_id": body.assignment_id,
+                                "version_id": assigned_version_id,
+                                "actual_model": result.model,
+                                "requested_model": selected_model,
+                                "gateway": result.gateway,
+                                "provider": result.provider,
+                                "runtime_backend": result.runtime_backend,
+                                "runtime": "Hermes",
+                                "trace_available": False,
+                            },
+                        )
+                    payload = {
+                        "run_id": result.run_id,
+                        "status": result.status.value,
+                        "output": result.output,
+                        "model": result.model,
+                        "provider": result.provider,
+                        "gateway": result.gateway,
+                        "runtime_backend": result.runtime_backend,
+                        "actual_provider": result.provider,
+                        "input_tokens": result.usage.input_tokens,
+                        "output_tokens": result.usage.output_tokens,
+                        "total_tokens": result.usage.total_tokens,
+                        "session_id": body.assignment_id,
+                    }
+                    yield f"event: run.completed\ndata: {json.dumps(payload)}\n\n"
+                except Exception as err:
+                    yield f"event: run.failed\ndata: {json.dumps({'message': str(err)})}\n\n"
+
+            return StreamingResponse(run_stream(), media_type="text/event-stream")
+
         # Core binds all configuration from DB, browser supplies only task input.
         result = await coordinator.execute_assigned_agent_turn(
             body.assignment_id, body.prompt, ctx, body.idempotency_key

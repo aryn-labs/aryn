@@ -5,10 +5,11 @@ Complies with ARYN-ARCH-001 Section 06 and AGENTS.md rule 6.
 
 from __future__ import annotations
 
+import asyncio
 import re
 import time
 import uuid
-from typing import List, Optional
+from typing import Any, Callable, Dict, List, Optional
 from packages.contracts.core import SecurityContext
 from packages.contracts.agent import AgentVersion
 from packages.contracts.bench import BenchEvaluationResult, BenchScenario, ScenarioResult
@@ -29,6 +30,7 @@ class BenchRunner:
         context: SecurityContext,
         version: AgentVersion,
         scenarios: Optional[List[BenchScenario]] = None,
+        on_event: Optional[Callable[[str, Dict[str, Any]], Any]] = None,
     ) -> BenchEvaluationResult:
         version.verify_integrity()
         suite = get_standard_research_bench_scenarios()
@@ -38,9 +40,21 @@ class BenchRunner:
         if not caps.tools_confined or caps.enabled_toolsets or version.tool_grants:
             raise QualityGateFailedError("Research Bench requires an isolated text runtime without tools.")
         await self.runtime_adapter.require_model_available(version.model)
+        if on_event:
+            ev = on_event("bench.started", {"version_id": version.id, "total_scenarios": len(suite)})
+            if asyncio.iscoroutine(ev):
+                await ev
         scenario_results: List[ScenarioResult] = []
 
-        for scen in suite:
+        for idx, scen in enumerate(suite):
+            if on_event:
+                ev = on_event("scenario.started", {
+                    "scenario_id": scen.scenario_id,
+                    "name": scen.name,
+                    "index": idx,
+                })
+                if asyncio.iscoroutine(ev):
+                    await ev
             req = RunRequest(
                 prompt=scen.prompt,
                 system_instructions=version.system_prompt,
@@ -121,6 +135,21 @@ class BenchRunner:
                     total_tokens=res.usage.total_tokens if res else 0,
                 )
             )
+            if on_event:
+                ev = on_event("scenario.completed", {
+                    "scenario_id": scen.scenario_id,
+                    "name": scen.name,
+                    "index": idx,
+                    "passed": passed,
+                    "score": 1.0 if passed else 0.0,
+                    "latency_seconds": latency,
+                    "actual_model": res.model if res else "",
+                    "failure_reason": failure_reason,
+                    "actual_output": output,
+                    "total_tokens": res.usage.total_tokens if res else 0,
+                })
+                if asyncio.iscoroutine(ev):
+                    await ev
 
         passed_count = sum(1 for r in scenario_results if r.passed)
         total_count = len(scenario_results)
@@ -144,4 +173,8 @@ class BenchRunner:
         if self.evidence_signer:
             result.attestation = self.evidence_signer.sign(
                 "bench", result.evidence_payload(context.organization_id, context.project_id, context.actor.actor_id))
+        if on_event:
+            ev = on_event("bench.completed", result.model_dump())
+            if asyncio.iscoroutine(ev):
+                await ev
         return result

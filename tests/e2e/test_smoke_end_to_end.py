@@ -36,11 +36,8 @@ from database.schema import Base
 from tests.live_gateway import selected_live_model
 from tests.conftest import bind_test_context
 from database.repositories.organization_repo import OrganizationRepository
-
-hermes_module = importlib.import_module("packages.runtime-adapters.hermes")
-HermesRuntimeAdapter = hermes_module.HermesRuntimeAdapter
-model_adapters_module = importlib.import_module("packages.model-adapters")
-ModelRouter = model_adapters_module.ModelRouter
+from packages.runtime_adapters.hermes import HermesRuntimeAdapter
+from packages.model_adapters import ModelRouter
 
 
 def get_live_api_key() -> str:

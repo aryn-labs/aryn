@@ -6,7 +6,7 @@ This is the private primary monorepo for ARYN Cloud and ARYN Local.
 
 ## Bounded domains
 - `modules/core/`: identity, organization/project scoping, divisions, workflows, permissions, approvals, audit, and usage authority.
-- `modules/agent-factory/`: agent blueprints, immutable versions, promotion and assignments.
+- `modules/agent_factory/`: agent blueprints, immutable versions, promotion and assignments.
 - `modules/brief/`: evidence bundles, provenance, contradiction, and abstention.
 - `modules/bench/`: safety evaluation, replay, regression gates.
 - `modules/relay/`: incident investigation, approved remediation, recovery proof.
@@ -15,12 +15,12 @@ This is the private primary monorepo for ARYN Cloud and ARYN Local.
 ## Applications and adapters
 - `apps/web/`: Cloud web interface.
 - `apps/desktop/`: Windows Local candidate (Tauri evaluation pending).
-- `services/api/`: authoritative application API.
-- `services/worker/`: background execution; never a second policy authority.
+- services/api/: authoritative application API.
+- services/worker/: background execution; never a second policy authority.
 - `packages/contracts/`: versioned data contracts.
-- `packages/runtime-adapters/`: Hermes runtime boundary (execution engine).
-- `packages/model-adapters/`: 9Router model discovery and exact-model policy; no provider credentials.
-- `packages/tool-adapters/`: allowlisted tool boundaries.
+- `packages/runtime_adapters/`: Hermes runtime boundary (execution engine).
+- `packages/model_adapters/`: 9Router model discovery and exact-model policy; no provider credentials.
+- `packages/tool_adapters/`: allowlisted tool boundaries.
 - `packages/ui/`: reusable user interface components.
 
 ## Security invariants

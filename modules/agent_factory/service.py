@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from database.connection import DatabaseManager
 from database.repositories.agent_repo import AgentRepository
@@ -217,6 +217,7 @@ class AgentFactoryService:
         context: SecurityContext,
         version_id: str,
         scenarios: Optional[List[BenchScenario]] = None,
+        on_event: Optional[Callable[[str, Dict[str, Any]], Any]] = None,
     ) -> BenchEvaluationResult:
         self.permission_engine.enforce("run:create", context, context.organization_id, context.project_id)
         if scenarios is not None:
@@ -249,7 +250,7 @@ class AgentFactoryService:
         # Execute isolated bench evaluation
         self.bench_runner.evidence_signer = self.db_manager.evidence_signer
         try:
-            result = await self.bench_runner.evaluate_agent_version(context, version_contract, scenarios)
+            result = await self.bench_runner.evaluate_agent_version(context, version_contract, scenarios, on_event=on_event)
         except BaseException:
             with self.db_manager.session(write=True) as session:
                 AgentRepository(session).update_version_status(context, version_id, "rejected")

@@ -155,5 +155,11 @@ export type Shared = {
     body: unknown,
     success: string,
   ) => Promise<Record<string, unknown>>;
+  actStream?: (
+    path: string,
+    body: unknown,
+    success: string,
+    onEvent?: (event: { type: string; data: any }) => void,
+  ) => Promise<any>;
   openBlueprint: () => void;
 };

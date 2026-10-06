@@ -1,12 +1,8 @@
 """Unit tests for ModelRouter and provider abstractions."""
 
 import pytest
-import importlib
 from packages.contracts.model import ModelProviderType, ModelRoutingConfig
-
-model_adapters = importlib.import_module("packages.model-adapters")
-ModelRouter = model_adapters.ModelRouter
-ModelRoutingError = model_adapters.ModelRoutingError
+from packages.model_adapters import ModelRouter, ModelRoutingError
 
 
 def test_model_router_resolves_configured_model():

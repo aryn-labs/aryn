@@ -7,8 +7,7 @@ from tests.live_gateway import selected_live_model
 from packages.contracts.core import Actor, SecurityContext
 from packages.contracts.runtime import RunRequest, RunStatus
 
-hermes_module = importlib.import_module("packages.runtime-adapters.hermes")
-HermesRuntimeAdapter = hermes_module.HermesRuntimeAdapter
+from packages.runtime_adapters.hermes import HermesRuntimeAdapter
 
 
 def get_live_api_key() -> str:

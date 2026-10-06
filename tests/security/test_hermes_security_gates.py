@@ -16,13 +16,14 @@ import httpx
 from packages.contracts.core import Actor, SecurityContext
 from packages.contracts.runtime import RunRequest
 
-hermes_module = importlib.import_module("packages.runtime-adapters.hermes")
-HermesRuntimeAdapter = hermes_module.HermesRuntimeAdapter
-RuntimeSecurityError = hermes_module.RuntimeSecurityError
-RuntimeAuthenticationError = hermes_module.RuntimeAuthenticationError
-RuntimeTimeoutError = hermes_module.RuntimeTimeoutError
-RuntimeConnectionError = hermes_module.RuntimeConnectionError
-HermesAdapterError = hermes_module.HermesAdapterError
+from packages.runtime_adapters.hermes import (
+    HermesRuntimeAdapter,
+    RuntimeSecurityError,
+    RuntimeAuthenticationError,
+    RuntimeTimeoutError,
+    RuntimeConnectionError,
+    HermesAdapterError,
+)
 
 
 def test_adapter_rejects_non_loopback_urls():

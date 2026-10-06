@@ -49,7 +49,7 @@ Total: 60 file.
 - `modules/core/workflows/coordinator.py`
 - `packages/contracts/bench.py`
 - `packages/contracts/runtime.py`
-- `packages/runtime-adapters/hermes/adapter.py`
+- `packages/runtime_adapters/hermes/adapter.py`
 - `pyproject.toml`
 - `README.md`
 - `scripts/start-studio.ps1`

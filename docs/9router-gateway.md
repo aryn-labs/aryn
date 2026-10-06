@@ -280,11 +280,11 @@ dan tidak dimasukkan dalam commit ini.
 - `modules/core/workflows/coordinator.py`
 - `packages/contracts/model.py`
 - `packages/contracts/runtime.py`
-- `packages/model-adapters/providers/gemini.py`
-- `packages/model-adapters/providers/nous.py`
-- `packages/model-adapters/router.py`
+- `packages/model_adapters/providers/gemini.py`
+- `packages/model_adapters/providers/nous.py`
+- `packages/model_adapters/router.py`
 - `packages/model_adapters/gateway.py`
-- `packages/runtime-adapters/hermes/adapter.py`
+- `packages/runtime_adapters/hermes/adapter.py`
 - `scripts/hermes-9router.py`
 - `scripts/start-runtime-9router.ps1`
 - `scripts/stop-runtime-9router.ps1`

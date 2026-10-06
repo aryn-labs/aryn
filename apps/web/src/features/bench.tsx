@@ -1,7 +1,7 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Check, ChevronDown, ChevronRight, X } from "lucide-react";
-import type { Evaluation } from "../lib/types";
+import { Beaker, Check, ChevronDown, ChevronRight, X } from "lucide-react";
+import type { Evaluation, Shared } from "../lib/types";
 import { date, number } from "../lib/utils";
 import { Button } from "../components/ui/button";
 import {
@@ -12,14 +12,20 @@ import {
   scenarioNames,
   failureReason,
 } from "../components/shared";
-import type { Shared } from "../lib/types";
 import { Panel } from "../components/workspace";
 import { ArynCanvas } from "../components/canvas/aryn-canvas";
 import { buildBenchNodesAndEdges } from "../components/canvas/canvas-builders";
-import { evaluationStatus } from "../lib/studio-state";
-import { useReducedMotion } from "../lib/motion";
+import type { NodeStatus } from "../components/canvas/types";
+import { evaluationStatus, executionReady } from "../lib/studio-state";
 export { evaluationStatus } from "../lib/studio-state";
-export function EvaluationPanel({ evaluation }: { evaluation: Evaluation }) {
+
+export function EvaluationPanel({
+  evaluation,
+  showCanvas = true,
+}: {
+  evaluation: Evaluation;
+  showCanvas?: boolean;
+}) {
   const status = evaluationStatus(evaluation);
   const unverified = status === "bench_unverified";
   const passed = status === "bench_passed";
@@ -54,15 +60,17 @@ export function EvaluationPanel({ evaluation }: { evaluation: Evaluation }) {
         </div>
       }
     >
-      <div className="bench-canvas-section mb-4">
-        <ArynCanvas
-          mode="bench"
-          initialNodes={benchNodes}
-          initialEdges={benchEdges}
-          evaluation={evaluation}
-          showInspectorByDefault={false}
-        />
-      </div>
+      {showCanvas && (
+        <div className="bench-canvas-section mb-4">
+          <ArynCanvas
+            mode="bench"
+            initialNodes={benchNodes}
+            initialEdges={benchEdges}
+            evaluation={evaluation}
+            showInspectorByDefault={false}
+          />
+        </div>
+      )}
       <div className="evaluation-notice">
         <Notice tone={unverified ? "warning" : passed ? "success" : "error"}>
           {unverified
@@ -130,29 +138,147 @@ export function EvaluationPanel({ evaluation }: { evaluation: Evaluation }) {
   );
 }
 
-export function BenchPage({ data }: Pick<Shared, "data">) {
-  const reducedMotion = useReducedMotion();
+export function BenchPage({
+  data,
+  workspace,
+  pending = false,
+  act,
+  actStream,
+}: Partial<Shared> & Pick<Shared, "data">) {
   const [params, setParams] = useSearchParams();
-  const selected = data.evaluations.find(
-    (e) => e.id === params.get("evaluasi"),
-  );
+  const [benchRunning, setBenchRunning] = useState(false);
+  const [benchError, setBenchError] = useState<string | null>(null);
+  const [consent, setConsent] = useState(true);
 
-  const viewEvaluation = (evalId: string) => {
-    setParams({ evaluasi: evalId });
-    setTimeout(() => {
-      const target = document.getElementById("evaluasi-bench");
-      if (target) {
-        target.scrollIntoView({
-          behavior: reducedMotion ? "auto" : "smooth",
-          block: "start",
-        });
-        target.classList.remove("highlight-pulse");
-        void target.offsetWidth;
-        target.classList.add("highlight-pulse");
-        setTimeout(() => target.classList.remove("highlight-pulse"), 1600);
+  const selectedEvaluation = useMemo(() => {
+    const evalId = params.get("evaluasi");
+    if (evalId) {
+      const match = data.evaluations.find((e) => e.id === evalId);
+      if (match) return match;
+    }
+    return data.evaluations[0] || null;
+  }, [data.evaluations, params]);
+
+  const [selectedVersionId, setSelectedVersionId] = useState<string>(() => {
+    const fromParam = params.get("versi");
+    if (fromParam) return fromParam;
+    if (selectedEvaluation) return selectedEvaluation.version_id;
+    return data.versions[0]?.id || "";
+  });
+
+  const selectedVersion = useMemo(() => {
+    if (selectedVersionId) {
+      const match = data.versions.find((v) => v.id === selectedVersionId);
+      if (match) return match;
+    }
+    if (selectedEvaluation) {
+      return data.versions.find((v) => v.id === selectedEvaluation.version_id) || null;
+    }
+    return data.versions[0] || null;
+  }, [data.versions, selectedVersionId, selectedEvaluation]);
+
+  const [liveBenchEvent, setLiveBenchEvent] = useState<{
+    step: string;
+    scenarioIndex?: number;
+    scenarioId?: string;
+    data?: any;
+    scenarioStatuses?: Record<number, { passed?: boolean; status: NodeStatus }>;
+  } | null>(null);
+
+  const { nodes: benchNodes, edges: benchEdges } = useMemo(() => {
+    return buildBenchNodesAndEdges(
+      selectedEvaluation,
+      selectedVersion,
+      liveBenchEvent,
+    );
+  }, [selectedEvaluation, selectedVersion, liveBenchEvent]);
+
+  const runBench = async () => {
+    if (!selectedVersionId || !act) return;
+    setBenchError(null);
+    setBenchRunning(true);
+    const scenarioStatuses: Record<number, { passed?: boolean; status: NodeStatus }> = {};
+    const scenarioIndexMap: Record<string, number> = {
+      safety_boundary: 0,
+      quality_coherence: 1,
+      system_prompt_adherence: 2,
+      confinement_leak_prevention: 3,
+    };
+
+    setLiveBenchEvent({
+      step: "bench.started",
+      scenarioStatuses: {},
+    });
+
+    try {
+      const runner = actStream || act;
+      const res = await runner(
+        `/versions/${selectedVersionId}/bench`,
+        { allow_remote_model: consent },
+        "Bench selesai dievaluasi.",
+        (evt: any) => {
+          if (!evt) return;
+          if (evt.type === "bench.started") {
+            setLiveBenchEvent({
+              step: "bench.started",
+              scenarioStatuses: { ...scenarioStatuses },
+            });
+          } else if (evt.type === "scenario.started") {
+            const sId = evt.data?.scenario_id;
+            const idx =
+              sId !== undefined && scenarioIndexMap[sId] !== undefined
+                ? scenarioIndexMap[sId]
+                : 0;
+            setLiveBenchEvent({
+              step: "scenario.started",
+              scenarioId: sId,
+              scenarioIndex: idx,
+              scenarioStatuses: { ...scenarioStatuses },
+            });
+          } else if (evt.type === "scenario.completed") {
+            const sId = evt.data?.scenario_id;
+            const idx =
+              sId !== undefined && scenarioIndexMap[sId] !== undefined
+                ? scenarioIndexMap[sId]
+                : 0;
+            scenarioStatuses[idx] = {
+              passed: evt.data?.passed,
+              status: evt.data?.passed ? "completed" : "failed",
+            };
+            setLiveBenchEvent({
+              step: "scenario.completed",
+              scenarioId: sId,
+              scenarioIndex: idx,
+              scenarioStatuses: { ...scenarioStatuses },
+              data: evt.data,
+            });
+          } else if (evt.type === "bench.completed") {
+            setLiveBenchEvent({
+              step: "bench.completed",
+              scenarioStatuses: { ...scenarioStatuses },
+              data: evt.data?.evaluation,
+            });
+          }
+        },
+      );
+      if (res && (res as any).id) {
+        setParams({ evaluasi: (res as any).id });
       }
-    }, 60);
+    } catch (err: any) {
+      setBenchError(err.message || "Gagal menjalankan evaluasi Bench");
+    } finally {
+      setBenchRunning(false);
+    }
   };
+
+  const isReady = workspace ? executionReady(workspace) : true;
+  const canRun =
+    !benchRunning &&
+    !pending &&
+    Boolean(selectedVersionId) &&
+    consent &&
+    isReady &&
+    (data.permissions ? Boolean(data.permissions["run:create"]) : true);
 
   return (
     <>
@@ -161,15 +287,79 @@ export function BenchPage({ data }: Pick<Shared, "data">) {
         title="Bench"
         description="Bukti keselamatan dan kualitas, sebelum sebuah versi dipublikasikan."
       />
-      <Notice>
-        Suite riset v1 menjalankan empat skenario teks pada model yang dipilih.
-        Seluruh toolset runtime harus nonaktif. Hasil ini bukan audit keamanan
-        menyeluruh.
-      </Notice>
+
+      <div className="detail-toolbar mb-4">
+        <div className="version-picker">
+          <label htmlFor="bench-version-select" className="sr-only">
+            Pilih versi untuk dievaluasi
+          </label>
+          <select
+            id="bench-version-select"
+            aria-label="Pilih versi untuk dievaluasi"
+            value={selectedVersionId}
+            onChange={(e) => setSelectedVersionId(e.target.value)}
+            disabled={benchRunning || pending}
+          >
+            {data.versions.length ? (
+              data.versions.map((v) => {
+                const bp = data.blueprints.find((b) => b.id === v.blueprint_id);
+                return (
+                  <option key={v.id} value={v.id}>
+                    {bp ? `${bp.name} · ` : ""}v{v.version_number} ({v.model})
+                  </option>
+                );
+              })
+            ) : (
+              <option value="">Belum ada versi agent</option>
+            )}
+          </select>
+        </div>
+        <div className="flex items-center gap-3">
+          <label className="checkbox-field text-sm">
+            <input
+              type="checkbox"
+              checked={consent}
+              onChange={(e) => setConsent(e.target.checked)}
+              disabled={benchRunning || pending}
+            />
+            Persetujuan model
+          </label>
+          <Button
+            onClick={runBench}
+            disabled={!canRun}
+            variant="default"
+          >
+            <Beaker size={15} />
+            {benchRunning ? "Mengevaluasi…" : "Jalankan Bench"}
+          </Button>
+        </div>
+      </div>
+
+      {benchError && <Notice tone="error">{benchError}</Notice>}
+
+      <div className="bench-canvas-workspace mb-6">
+        <ArynCanvas
+          mode="bench"
+          initialNodes={benchNodes}
+          initialEdges={benchEdges}
+          evaluation={selectedEvaluation}
+          version={selectedVersion}
+          showInspectorByDefault={false}
+          pending={benchRunning || pending}
+          onRunBench={canRun ? runBench : undefined}
+        />
+      </div>
+
+      {Boolean(params.get("evaluasi")) && selectedEvaluation && (
+        <div className="mt-6 mb-6">
+          <EvaluationPanel evaluation={selectedEvaluation} showCanvas={false} />
+        </div>
+      )}
+
       <Panel
         className="mt-6"
         title="Riwayat evaluasi"
-        subtitle="Skor dan respons disimpan di database proyek."
+        subtitle={`${data.evaluations.length} hasil evaluasi tersimpan di database proyek.`}
       >
         {data.evaluations.length ? (
           <div className="table-scroll">
@@ -189,7 +379,7 @@ export function BenchPage({ data }: Pick<Shared, "data">) {
               <tbody>
                 {data.evaluations.map((e) => {
                   const v = data.versions.find((v) => v.id === e.version_id);
-                  const isCurrent = selected?.id === e.id;
+                  const isCurrent = selectedEvaluation?.id === e.id;
                   return (
                     <tr
                       key={e.id}
@@ -216,7 +406,10 @@ export function BenchPage({ data }: Pick<Shared, "data">) {
                         <Button
                           variant={isCurrent ? "secondary" : "ghost"}
                           size="sm"
-                          onClick={() => viewEvaluation(e.id)}
+                          onClick={() => {
+                            setParams({ evaluasi: e.id });
+                            setSelectedVersionId(e.version_id);
+                          }}
                           aria-label={`Lihat hasil evaluasi ${e.id}`}
                         >
                           Lihat hasil
@@ -232,17 +425,10 @@ export function BenchPage({ data }: Pick<Shared, "data">) {
         ) : (
           <Empty
             title="Belum ada evaluasi Bench"
-            description="Buat versi di Agent Factory, lalu jalankan evaluasi untuk melihat respons model dan skor aktual."
-            action="Buka Agent Factory"
-            onAction={() => window.location.assign("/factory")}
+            description="Pilih versi pada bilah alat di atas, lalu klik 'Jalankan Bench' untuk mengevaluasi empat skenario keselamatan dan kualitas."
           />
         )}
       </Panel>
-      {selected && (
-        <div className="mt-6">
-          <EvaluationPanel evaluation={selected} />
-        </div>
-      )}
     </>
   );
 }

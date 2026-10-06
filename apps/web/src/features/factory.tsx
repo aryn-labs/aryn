@@ -2,13 +2,11 @@ import { executionReady, gatewayStatus } from "../lib/studio-state";
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
-  ArrowDownToLine,
   ArrowLeft,
   ArrowRight,
   Beaker,
   Bot,
   ChevronRight,
-  Fingerprint,
   Folder,
   GitBranch,
   Layers3,
@@ -313,7 +311,19 @@ export function AgentDetail({
           </select>
           {selected && <Status value={selected.status} />}
         </div>
-        <span className="mono subtle">{blueprint.id}</span>
+        <div className="flex items-center gap-2 flex-wrap">
+          {!selected ? (
+            <Button
+              size="sm"
+              onClick={() => openDialog("version")}
+              disabled={pending || !data.permissions["run:create"]}
+            >
+              <Plus size={15} />
+              Buat versi pertama
+            </Button>
+          ) : null}
+          <span className="mono subtle">{blueprint.id}</span>
+        </div>
       </div>
       {selected &&
         (!selected.integrity_valid ||
@@ -338,246 +348,93 @@ export function AgentDetail({
           {gatewayStatus(workspace).label}
         </Notice>
       )}
-      {!selected ? (
-        <Panel title="Konfigurasikan versi pertama">
-          <Empty
-            title="Blueprint siap. Tentukan cara agent bekerja."
-            description="Atur instruksi sistem, model, dan batas token. Setiap konfigurasi disimpan sebagai versi baru agar persetujuan tetap dapat ditelusuri."
-            action="Buat versi pertama"
-            onAction={() => openDialog("version")}
-          />
-        </Panel>
-      ) : (
-        <>
-          <div className="tabs" role="tablist" aria-label="Detail agent">
-            {[
-              ["configuration", "Konfigurasi"],
-              ["bench", "Hasil Bench"],
-              ["assignment", "Penugasan"],
-              ["audit", "Audit"],
-            ].map(([id, label]) => (
-              <button
-                key={id}
-                role="tab"
-                id={`tab-${id}`}
-                aria-controls="agent-tab-panel"
-                aria-selected={tab === id}
-                tabIndex={tab === id ? 0 : -1}
-                onClick={() => changeTab(id)}
-                onKeyDown={(e) => {
-                  if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
-                    e.preventDefault();
-                    const ids = [
-                      "configuration",
-                      "bench",
-                      "assignment",
-                      "audit",
-                    ];
-                    const next =
-                      ids[
-                        (ids.indexOf(tab) + (e.key === "ArrowRight" ? 1 : 3)) %
-                          4
-                      ];
-                    changeTab(next);
-                    document.getElementById(`tab-${next}`)?.focus();
-                  }
-                }}
-              >
-                {label}
-                {id === "bench" && evaluation && (
-                  <span
-                    className={`tab-dot ${evaluationStatus(evaluation) === "bench_unverified" ? "warning" : evaluationStatus(evaluation) === "bench_passed" ? "success" : "error"}`}
-                  />
-                )}
-              </button>
-            ))}
-          </div>
-          <div
-            role="tabpanel"
-            id="agent-tab-panel"
-            aria-labelledby={`tab-${tab}`}
+      <div className="tabs" role="tablist" aria-label="Detail agent">
+        {[
+          ["configuration", "Konfigurasi"],
+          ["bench", "Hasil Bench"],
+          ["assignment", "Penugasan"],
+          ["audit", "Audit"],
+        ].map(([id, label]) => (
+          <button
+            key={id}
+            role="tab"
+            id={`tab-${id}`}
+            aria-controls="agent-tab-panel"
+            aria-selected={tab === id}
+            tabIndex={tab === id ? 0 : -1}
+            onClick={() => changeTab(id)}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+                e.preventDefault();
+                const ids = [
+                  "configuration",
+                  "bench",
+                  "assignment",
+                  "audit",
+                ];
+                const next =
+                  ids[
+                    (ids.indexOf(tab) + (e.key === "ArrowRight" ? 1 : 3)) %
+                      4
+                  ];
+                changeTab(next);
+                document.getElementById(`tab-${next}`)?.focus();
+              }
+            }}
           >
-            {tab === "configuration" ? (
-              <>
-                <ArynCanvas
-                  mode="factory"
-                  initialNodes={factoryNodes}
-                  initialEdges={factoryEdges}
-                  version={selected}
-                  workspace={workspace}
-                  showInspectorByDefault
-                  versions={versions}
-                  pending={pending}
-                  error={error}
-                  onCreateVersion={
-                    data.permissions["run:create"] ? saveVersion : undefined
-                  }
-                  onRunBench={
-                    canBench
-                      ? () => {
-                          setConsent(false);
-                          openDialog("bench");
-                        }
-                      : undefined
-                  }
-                  onApproveVersion={
-                    canApprove
-                      ? () => {
-                          setComments("");
-                          openDialog("approve");
-                        }
-                      : undefined
-                  }
-                  onPublishVersion={
-                    canPublish
-                      ? () => {
-                          openDialog("publish");
-                        }
-                      : undefined
-                  }
-                />
-                <div className="detail-layout">
-                  <Panel
-                    title="Instruksi dan model"
-                    subtitle="Konfigurasi tersimpan. Perubahan dibuat melalui versi baru."
-                    action={
-                      <span className="subtle-label">TETAP PER VERSI</span>
-                    }
-                  >
-                    <div className="configuration-content">
-                      <div className="field-caption">INSTRUKSI SISTEM</div>
-                      <pre className="prompt-output">
-                        {selected.system_prompt}
-                      </pre>
-                      <div className="config-grid">
-                        <div>
-                          <small>Model yang dipilih</small>
-                          <strong className="mono">{selected.model}</strong>
-                        </div>
-                        <div>
-                          <small>Temperature</small>
-                          <strong>{selected.temperature}</strong>
-                        </div>
-                        <div>
-                          <small>Batas output</small>
-                          <strong>{number(selected.max_tokens)} token</strong>
-                        </div>
-                        <div>
-                          <small>Tool runtime</small>
-                          <strong>Tanpa tool · teks saja</strong>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="hash-block">
-                      <Fingerprint size={16} />
-                      <div>
-                        <small>SHA-256 konfigurasi</small>
-                        <code className="wrap">{selected.payload_hash}</code>
-                      </div>
-                    </div>
-                  </Panel>
-                  <div>
-                    <Panel
-                      title="Langkah berikutnya"
-                      subtitle="Core memeriksa setiap persyaratan."
-                    >
-                      <div className="next-actions">
-                        <div>
-                          <Beaker size={19} />
-                          <div>
-                            <h3>Evaluasi dengan Bench</h3>
-                            <p>
-                              Empat skenario keselamatan dan kualitas. Syarat
-                              lulus: 100%.
-                            </p>
-                          </div>
-                        </div>
-                        <Button
-                          variant="secondary"
-                          onClick={() => {
-                            setConsent(false);
-                            openDialog("bench");
-                          }}
-                          disabled={
-                            pending ||
-                            !executionReady(workspace) ||
-                            !modelReady ||
-                            !selected.integrity_valid ||
-                            !["draft", "rejected"].includes(selected.status) ||
-                            !data.permissions["run:create"]
-                          }
-                        >
-                          <Beaker size={15} />
-                          Jalankan Bench
-                        </Button>
-                        {!workspace.runtime.ready && (
-                          <p className="text-warning">
-                            ARYN Runtime belum siap. Periksa Pengaturan.
-                          </p>
-                        )}
-                        <hr />
-                        <div>
-                          <ShieldCheck size={19} />
-                          <div>
-                            <h3>Persetujuan manusia</h3>
-                            <p>
-                              Terikat pada hash versi dan evaluasi terakhir yang
-                              lulus.
-                            </p>
-                          </div>
-                        </div>
-                        <Button
-                          variant="secondary"
-                          onClick={() => {
-                            setComments("");
-                            openDialog("approve");
-                          }}
-                          disabled={
-                            pending ||
-                            !passed ||
-                            selected.status !== "draft" ||
-                            !data.permissions["version:approve"]
-                          }
-                        >
-                          <ShieldCheck size={15} />
-                          Tinjau dan setujui
-                        </Button>
-                        <Button
-                          onClick={() => openDialog("publish")}
-                          disabled={
-                            pending ||
-                            selected.status !== "approved" ||
-                            !selected.governance_valid ||
-                            !passed ||
-                            !data.permissions["version:publish"]
-                          }
-                        >
-                          <ArrowDownToLine size={15} />
-                          Publikasikan versi
-                        </Button>
-                      </div>
-                    </Panel>
-                    {selected.status === "published" &&
-                      selected.governance_valid && (
-                        <div className="mt-6">
-                          <Notice tone="success">
-                            Versi ini dipublikasikan dan tidak dapat diubah.
-                            Lanjutkan ke penugasan.
-                          </Notice>
-                          <Button
-                            className="mt-4"
-                            onClick={() => changeTab("assignment")}
-                            variant="secondary"
-                          >
-                            Atur penugasan
-                            <ArrowRight size={15} />
-                          </Button>
-                        </div>
-                      )}
-                  </div>
-                </div>
-              </>
-            ) : tab === "bench" ? (
+            {label}
+            {id === "bench" && evaluation && (
+              <span
+                className={`tab-dot ${evaluationStatus(evaluation) === "bench_unverified" ? "warning" : evaluationStatus(evaluation) === "bench_passed" ? "success" : "error"}`}
+              />
+            )}
+          </button>
+        ))}
+      </div>
+      <div
+        role="tabpanel"
+        id="agent-tab-panel"
+        aria-labelledby={`tab-${tab}`}
+      >
+        {tab === "configuration" ? (
+          <ArynCanvas
+            mode="factory"
+            initialNodes={factoryNodes}
+            initialEdges={factoryEdges}
+            version={selected || null}
+            workspace={workspace}
+            showInspectorByDefault
+            versions={versions}
+            pending={pending}
+            error={error}
+            onCreateVersion={
+              data.permissions["run:create"] ? saveVersion : undefined
+            }
+            onRunBench={() => {
+              setConsent(false);
+              openDialog("bench");
+            }}
+            onApproveVersion={() => {
+              setComments("");
+              openDialog("approve");
+            }}
+            onPublishVersion={() => {
+              openDialog("publish");
+            }}
+            canBench={canBench}
+            canApprove={canApprove}
+            canPublish={canPublish}
+          />
+        ) : !selected ? (
+          <Panel title="Belum ada versi">
+            <Empty
+              title="Blueprint belum dikonfigurasi"
+              description="Konfigurasikan versi pertama pada tab Konfigurasi untuk membuka data ini."
+              action="Buka Konfigurasi"
+              onAction={() => changeTab("configuration")}
+            />
+          </Panel>
+        ) : tab === "bench" ? (
               <>
                 <div className="section-actions">
                   <p>
@@ -693,8 +550,6 @@ export function AgentDetail({
               </Panel>
             )}
           </div>
-        </>
-      )}
       <Modal
         open={!!dialog}
         busy={pending}

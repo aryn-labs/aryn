@@ -160,7 +160,7 @@ export function Overview({ data, workspace, project, openBlueprint }: Shared) {
           subtitle="Tujuh tahap untuk merancang, memvalidasi, dan mengoperasikan agent."
           action={<span className="subtle-label">7 TAHAP</span>}
         >
-          <AgentFlow />
+          <AgentFlow data={data} />
           <div className="workflow-footer">
             <span className="workflow-assurance">
               <ShieldCheck size={15} />

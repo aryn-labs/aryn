@@ -1,16 +1,34 @@
 import { useId, useState } from "react";
-import { Bot, Check, Copy, Lock, Maximize2, Plus, ShieldCheck, X } from "lucide-react";
+import {
+  Bot,
+  Check,
+  Copy,
+  Lock,
+  Maximize2,
+  Plus,
+  ShieldCheck,
+  Workflow,
+  X,
+  Beaker,
+  ArrowDownToLine,
+} from "lucide-react";
 import { Button } from "../ui/button";
 import { Modal } from "../ui/dialog";
 import { Notice, Status, scenarioNames, failureReason } from "../shared";
 import { VersionForm } from "../version-form";
 import { AuditList } from "../workspace";
 import { date, number } from "../../lib/utils";
-import { availabilityLabel, evaluationStatus } from "../../lib/studio-state";
+import {
+  availabilityLabel,
+  evaluationStatus,
+  executionReady,
+  gatewayStatus,
+} from "../../lib/studio-state";
 import type { BaseNodeData, CanvasMode } from "./types";
 import type {
   Assignment,
   Audit,
+  Blueprint,
   Evaluation,
   Run,
   Version,
@@ -121,6 +139,23 @@ export function InspectorTextBlock({
   );
 }
 
+export interface ExecutionFormConfig {
+  assignments: Assignment[];
+  blueprints: Blueprint[];
+  selectedAssignmentId: string;
+  onSelectAssignment: (id: string) => void;
+  prompt: string;
+  onPromptChange: (p: string) => void;
+  consent: boolean;
+  onConsentChange: (c: boolean) => void;
+  onSubmit: (e?: React.FormEvent) => void;
+  executing: boolean;
+  validationError?: string;
+  canSubmit: boolean;
+  workspace: Workspace;
+  permissionCanRun: boolean;
+}
+
 interface CanvasInspectorProps {
   mode: CanvasMode;
   selectedNode: BaseNodeData | null;
@@ -134,10 +169,14 @@ interface CanvasInspectorProps {
   onRunBench?: () => void;
   onApproveVersion?: () => void;
   onPublishVersion?: () => void;
+  canBench?: boolean;
+  canApprove?: boolean;
+  canPublish?: boolean;
   run?: Run | null;
   assignment?: Assignment;
   auditEvents?: Audit[];
   evaluation?: Evaluation | null;
+  executionForm?: ExecutionFormConfig;
 }
 
 export function CanvasInspector({
@@ -153,10 +192,14 @@ export function CanvasInspector({
   onRunBench,
   onApproveVersion,
   onPublishVersion,
+  canBench = true,
+  canApprove = true,
+  canPublish = true,
   run,
   assignment,
   auditEvents = [],
   evaluation,
+  executionForm,
 }: CanvasInspectorProps) {
   const tabs =
     mode === "execution"
@@ -174,40 +217,84 @@ export function CanvasInspector({
             ["konfigurasi", "KONFIGURASI"],
             ["integritas", "TATA KELOLA"],
           ];
+
   const [activeTab, setActiveTab] = useState(tabs[0][0]);
   const [draft, setDraft] = useState(false);
+  const [newRunMode, setNewRunMode] = useState(false);
   const id = useId();
+
   const availability =
     workspace?.models.find((m) => m.model_id === version?.model)
       ?.availability || "unknown";
+
   const benchState = evaluation
     ? evaluationStatus(evaluation)
     : "bench_unverified";
+
   const benchTone =
     benchState === "failed"
       ? "error"
       : benchState === "bench_passed"
         ? "success"
         : "warning";
-  const scenarios =
-    evaluation?.details.filter(
-      (s) =>
-        selectedNode?.nodeType !== "scenario" ||
-        s.scenario_id === selectedNode.details?.scenarioId,
-    ) || [];
+
+  const standardSuiteScenarios = Object.entries(scenarioNames).map(
+    ([scenario_id, name]) => ({
+      scenario_id,
+      name,
+      passed: undefined as boolean | undefined,
+      actual_output: "",
+      latency_seconds: 0,
+      total_tokens: 0,
+      actual_model: "",
+      failure_reason: undefined as string | undefined,
+    }),
+  );
+
+  const scenarios = evaluation
+    ? evaluation.details.filter(
+        (s) =>
+          selectedNode?.nodeType !== "scenario" ||
+          s.scenario_id === selectedNode.details?.scenarioId,
+      )
+    : standardSuiteScenarios.filter(
+        (s) =>
+          selectedNode?.nodeType !== "scenario" ||
+          s.scenario_id === selectedNode.details?.scenarioId,
+      );
+
+  const showExecutionForm =
+    mode === "execution" &&
+    executionForm &&
+    (newRunMode || !run || selectedNode?.id === "exec-input");
+
   return (
     <section className="canvas-inspector" aria-label="Inspector Node">
       <div className="inspector-header">
         <div className="inspector-title-group">
           <div className="inspector-node-type">
             {mode === "factory"
-              ? draft
-                ? "RANCANGAN LOKAL"
-                : "VERSI TERSIMPAN · HANYA BACA"
-              : "DATA TERSIMPAN · HANYA BACA"}
+              ? !version
+                ? "BLUEPRINT · BELUM ADA VERSI"
+                : draft
+                  ? "RANCANGAN LOKAL"
+                  : "VERSI TERSIMPAN · HANYA BACA"
+              : mode === "execution"
+                ? showExecutionForm
+                  ? "EKSEKUSI RESEARCH AGENT"
+                  : "DATA TERSIMPAN · HANYA BACA"
+                : !evaluation
+                  ? "SKENARIO SUITE · BELUM DIJALANKAN"
+                  : "DATA TERSIMPAN · HANYA BACA"}
           </div>
           <h2 className="inspector-title">
-            {draft ? "Rancang Versi Baru" : selectedNode?.label || "Pilih node"}
+            {mode === "factory" && draft
+              ? "Rancang Versi Baru"
+              : mode === "factory" && !version
+                ? "Konfigurasikan Versi Pertama"
+                : showExecutionForm
+                  ? "Form Eksekusi Agent"
+                  : selectedNode?.label || "Pilih node"}
           </h2>
         </div>
         <Button
@@ -220,12 +307,125 @@ export function CanvasInspector({
           <X size={16} />
         </Button>
       </div>
-      {!selectedNode ? (
+
+      {!selectedNode && !showExecutionForm && (
         <div className="inspector-empty-state">
           <Bot size={28} />
           <p>Pilih node menggunakan klik atau keyboard untuk memeriksa data.</p>
         </div>
-      ) : (
+      )}
+
+      {showExecutionForm && executionForm && (
+        <div className="inspector-content p-4" tabIndex={0}>
+          {executionForm.assignments.length ? (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                executionForm.onSubmit(e);
+              }}
+              className="run-form"
+              noValidate
+            >
+              <div className="form-fields">
+                <label>
+                  Penugasan agent
+                  <select
+                    value={executionForm.selectedAssignmentId}
+                    onChange={(e) => executionForm.onSelectAssignment(e.target.value)}
+                    disabled={executionForm.executing}
+                  >
+                    <option value="">Pilih penugasan aktif</option>
+                    {executionForm.assignments.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {executionForm.blueprints.find((b) => b.id === a.blueprint_id)
+                          ?.name || a.blueprint_id}{" "}
+                        · {a.role_name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  Instruksi riset
+                  <textarea
+                    placeholder="Contoh: Jelaskan perbedaan likuiditas dan solvabilitas, lalu sebutkan risiko yang perlu diperhatikan tim produk."
+                    rows={6}
+                    value={executionForm.prompt}
+                    maxLength={12000}
+                    onChange={(e) => executionForm.onPromptChange(e.target.value)}
+                    disabled={executionForm.executing}
+                  />
+                </label>
+
+                <Notice>
+                  Instruksi dan konfigurasi agent dikirim melalui ARYN Runtime ke
+                  penyedia model jarak jauh yang dipilih.
+                </Notice>
+
+                <label className="checkbox-field">
+                  <input
+                    type="checkbox"
+                    checked={executionForm.consent}
+                    onChange={(e) => executionForm.onConsentChange(e.target.checked)}
+                    disabled={executionForm.executing}
+                  />
+                  Saya menyetujui pengiriman instruksi ini ke model yang dipilih.
+                </label>
+
+                {executionForm.validationError && (
+                  <Notice tone="error">{executionForm.validationError}</Notice>
+                )}
+                {!executionForm.workspace.runtime.ready && (
+                  <Notice tone="error">
+                    {executionForm.workspace.runtime.message}
+                  </Notice>
+                )}
+                {gatewayStatus(executionForm.workspace).tone !== "success" && (
+                  <Notice tone={gatewayStatus(executionForm.workspace).tone}>
+                    {gatewayStatus(executionForm.workspace).label}
+                  </Notice>
+                )}
+              </div>
+
+              <div className="run-submit mt-4">
+                <span className="text-xs subtle flex items-center gap-1">
+                  <ShieldCheck size={13} />
+                  Budget dan izin diperiksa Core
+                </span>
+                <Button
+                  className="w-full mt-2"
+                  disabled={
+                    executionForm.executing ||
+                    !executionReady(executionForm.workspace) ||
+                    !executionForm.permissionCanRun ||
+                    !executionForm.canSubmit
+                  }
+                >
+                  <Workflow size={15} />
+                  {executionForm.executing ? "Menjalankan…" : "Jalankan agent"}
+                </Button>
+                {run && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full mt-2"
+                    onClick={() => setNewRunMode(false)}
+                  >
+                    Kembali ke hasil run yang dipilih
+                  </Button>
+                )}
+              </div>
+            </form>
+          ) : (
+            <Notice tone="warning">
+              Belum ada agent aktif yang ditugaskan di proyek ini. Selesaikan
+              Bench, persetujuan, dan penugasan di Agent Factory.
+            </Notice>
+          )}
+        </div>
+      )}
+
+      {selectedNode && !showExecutionForm && (
         <>
           <div
             className="inspector-tabs"
@@ -265,6 +465,7 @@ export function CanvasInspector({
               </button>
             ))}
           </div>
+
           <div
             className="inspector-content"
             role="tabpanel"
@@ -278,6 +479,17 @@ export function CanvasInspector({
                   {activeTab === "detail" && (
                     <>
                       <Status value={run.status} />
+                      {executionForm && (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          className="w-full mb-3"
+                          onClick={() => setNewRunMode(true)}
+                        >
+                          <Workflow size={14} />
+                          Eksekusi baru
+                        </Button>
+                      )}
                       <dl className="inspector-meta-list">
                         <dt>Core Run ID</dt>
                         <dd className="mono">{run.id}</dd>
@@ -357,9 +569,8 @@ export function CanvasInspector({
                   {activeTab === "trace" && (
                     <>
                       <Notice>
-                        Trace runtime tidak tersedia. Jejak audit Core tersimpan
-                        berikut adalah peristiwa aplikasi, bukan trace per-node
-                        ARYN Runtime.
+                        Trace runtime tidak tersedia. Jejak audit Core
+                        tersimpan berikut adalah peristiwa aplikasi nyata.
                       </Notice>
                       <AuditList events={auditEvents} />
                     </>
@@ -367,15 +578,35 @@ export function CanvasInspector({
                 </>
               ) : (
                 <Notice>
-                  Belum ada run dipilih. Status eksekusi baru ditampilkan
-                  terpisah sampai Core mengembalikan hasil.
+                  Belum ada run dipilih. Gunakan node instruksi run untuk
+                  memulai eksekusi.
                 </Notice>
               ))}
-            {mode === "factory" && version && (
+
+            {mode === "factory" && (
               <>
                 {activeTab === "konfigurasi" && (
                   <>
-                    {draft && onCreateVersion ? (
+                    {!version ? (
+                      <div>
+                        <Notice>
+                          Blueprint ini belum dikonfigurasi. Tentukan instruksi
+                          sistem, model, dan parameter untuk versi pertamanya.
+                        </Notice>
+                        {error && <Notice tone="error">{error}</Notice>}
+                        {onCreateVersion && (
+                          <VersionForm
+                            versions={versions}
+                            models={workspace?.models || []}
+                            previous={undefined}
+                            pending={pending}
+                            onSubmit={(body) => {
+                              void onCreateVersion(body).catch(() => {});
+                            }}
+                          />
+                        )}
+                      </div>
+                    ) : draft && onCreateVersion ? (
                       <>
                         <Notice>
                           Rancangan ini belum tersimpan. Simpan membuat
@@ -403,10 +634,7 @@ export function CanvasInspector({
                       <>
                         <Notice>
                           <Lock size={14} /> Konfigurasi versi tersimpan hanya
-                          baca.{" "}
-                          {version.status === "published"
-                            ? "Versi dipublikasikan tidak dapat diubah."
-                            : "Perubahan disimpan melalui versi baru."}
+                          baca. Perubahan disimpan melalui versi baru.
                         </Notice>
                         <dl className="inspector-meta-list">
                           <dt>Versi</dt>
@@ -437,7 +665,7 @@ export function CanvasInspector({
                         )}
                         {onCreateVersion && (
                           <Button
-                            className="w-full"
+                            className="w-full mt-3"
                             disabled={pending}
                             onClick={() => setDraft(true)}
                           >
@@ -445,14 +673,16 @@ export function CanvasInspector({
                             Rancang Versi Baru
                           </Button>
                         )}
-                        {selectedNode.nodeType === "approval" && (
-                          <div className="approval-quick-actions">
+                        {(selectedNode.nodeType === "approval" || selectedNode.nodeType === "agent") && (
+                          <div className="approval-quick-actions mt-3">
                             {onRunBench && (
                               <Button
                                 variant="secondary"
                                 size="sm"
                                 onClick={onRunBench}
+                                disabled={!canBench}
                               >
+                                <Beaker size={14} />
                                 Jalankan Bench
                               </Button>
                             )}
@@ -461,140 +691,203 @@ export function CanvasInspector({
                                 variant="secondary"
                                 size="sm"
                                 onClick={onApproveVersion}
+                                disabled={!canApprove}
                               >
                                 <ShieldCheck size={14} />
                                 Tinjau dan setujui
                               </Button>
                             )}
                             {onPublishVersion && (
-                              <Button size="sm" onClick={onPublishVersion}>
+                              <Button
+                                size="sm"
+                                onClick={onPublishVersion}
+                                disabled={!canPublish}
+                              >
+                                <ArrowDownToLine size={14} />
                                 Publikasikan versi
                               </Button>
                             )}
+                          </div>
+                        )}
+                        {version.status === "published" && version.governance_valid && (
+                          <div className="mt-3">
+                            <Notice tone="success">
+                              Versi ini dipublikasikan dan tidak dapat diubah. Lanjutkan ke penugasan.
+                            </Notice>
                           </div>
                         )}
                       </>
                     )}
                   </>
                 )}
+
                 {activeTab === "integritas" && (
                   <>
-                    <Status value={version.status} />
-                    <InspectorTextBlock
-                      label="HASH KONFIGURASI SHA-256"
-                      content={version.payload_hash}
-                      subtitle="Hash payload konfigurasi untuk verifikasi integritas versi agen."
-                    />
-                    <dl className="inspector-meta-list">
-                      <dt>Integritas versi</dt>
-                      <dd>
-                        {version.integrity_valid
-                          ? "Valid menurut Core"
-                          : "Tidak valid"}
-                      </dd>
-                      <dt>Evidence Bench eligible</dt>
-                      <dd>
-                        {version.bench_eligible
-                          ? "Terverifikasi dan lulus"
-                          : "Belum / tidak berlaku"}
-                      </dd>
-                      <dt>Governance</dt>
-                      <dd>
-                        {version.governance_valid
-                          ? "Valid menurut Core"
-                          : "Belum / tidak valid"}
-                      </dd>
-                      <dt>Dibuat</dt>
-                      <dd>{date(version.created_at)}</dd>
-                    </dl>
+                    {!version ? (
+                      <Notice>
+                        Belum ada versi tersimpan. SHA-256 payload hash dan
+                        status tata kelola akan tercatat setelah versi pertama
+                        dibuat.
+                      </Notice>
+                    ) : (
+                      <>
+                        <Status value={version.status} />
+                        <InspectorTextBlock
+                          label="HASH KONFIGURASI SHA-256"
+                          content={version.payload_hash}
+                          subtitle="Hash payload konfigurasi untuk verifikasi integritas versi agen."
+                        />
+                        <dl className="inspector-meta-list">
+                          <dt>Integritas versi</dt>
+                          <dd>
+                            {version.integrity_valid
+                              ? "Valid menurut Core"
+                              : "Tidak valid"}
+                          </dd>
+                          <dt>Evidence Bench eligible</dt>
+                          <dd>
+                            {version.bench_eligible
+                              ? "Terverifikasi dan lulus"
+                              : "Belum / tidak berlaku"}
+                          </dd>
+                          <dt>Governance</dt>
+                          <dd>
+                            {version.governance_valid
+                              ? "Valid menurut Core"
+                              : "Belum / tidak valid"}
+                          </dd>
+                          <dt>Dibuat</dt>
+                          <dd>{date(version.created_at)}</dd>
+                        </dl>
+                      </>
+                    )}
                   </>
                 )}
               </>
             )}
-            {mode === "bench" && evaluation && (
+
+            {mode === "bench" && (
               <>
-                <div className={`bench-score-banner text-${benchTone}`}>
-                  <div className="score-percent">
-                    {Math.round(evaluation.score * 100)}%
-                  </div>
-                  <div>
-                    <Status value={benchState} />
-                    <p>
-                      {evaluation.passed_scenarios}/{evaluation.total_scenarios}{" "}
-                      skenario tercatat lulus
-                    </p>
-                  </div>
-                </div>
-                {!evaluation.verified && (
-                  <Notice tone="warning">
-                    Hasil historis tetap disimpan. Evidence tidak terverifikasi
-                    dan tidak dapat dipakai untuk approval/publish.
+                {evaluation ? (
+                  <>
+                    <div className={`bench-score-banner text-${benchTone}`}>
+                      <div className="score-percent">
+                        {Math.round(evaluation.score * 100)}%
+                      </div>
+                      <div>
+                        <Status value={benchState} />
+                        <p>
+                          {evaluation.passed_scenarios}/
+                          {evaluation.total_scenarios} skenario tercatat lulus
+                        </p>
+                      </div>
+                    </div>
+                    {!evaluation.verified && (
+                      <Notice tone="warning">
+                        Hasil historis tetap disimpan. Evidence tidak
+                        terverifikasi dan tidak dapat dipakai untuk
+                        approval/publish.
+                      </Notice>
+                    )}
+                  </>
+                ) : (
+                  <Notice>
+                    Empat skenario suite standar di bawah ini belum dijalankan.
+                    Klik "Jalankan Bench" untuk mengevaluasi versi agent.
                   </Notice>
                 )}
-                {activeTab === "skenario" &&
-                  scenarios.map((s) => (
-                    <div
-                      key={s.scenario_id}
-                      className="scenario-inspector-item"
-                    >
-                      <strong>
-                        {scenarioNames[s.scenario_id] ||
-                          s.name ||
-                          s.scenario_id}
-                      </strong>
-                      <Status
-                        value={
-                          !s.passed
-                            ? "failed"
-                            : !evaluation.verified
-                              ? "bench_unverified"
-                              : "bench_passed"
-                        }
-                      />
-                      <p className="subtle">
-                        {failureReason(s.failure_reason)}
-                      </p>
-                      <dl className="inspector-meta-list">
-                        <dt>Model aktual tercatat</dt>
-                        <dd>{s.actual_model || "Tidak dilaporkan"}</dd>
-                        <dt>Token</dt>
-                        <dd>{number(s.total_tokens)}</dd>
-                        <dt>Latensi</dt>
-                        <dd>{s.latency_seconds}s</dd>
-                      </dl>
-                      {selectedNode.nodeType === "scenario" && (
-                        <InspectorTextBlock
-                          label="RESPONS AKTUAL SKENARIO"
-                          content={s.actual_output}
-                          emptyText="Tidak ada respons tersimpan."
-                          subtitle={`Respons aktual skenario ${s.name || s.scenario_id}.`}
+
+                {activeTab === "skenario" && (
+                  <>
+                    {scenarios.map((s) => (
+                      <div
+                        key={s.scenario_id}
+                        className="scenario-inspector-item"
+                      >
+                        <strong>
+                          {scenarioNames[s.scenario_id] ||
+                            s.name ||
+                            s.scenario_id}
+                        </strong>
+                        <Status
+                          value={
+                            s.passed === undefined
+                              ? "idle"
+                              : !s.passed
+                                ? "failed"
+                                : !evaluation?.verified
+                                  ? "bench_unverified"
+                                  : "bench_passed"
+                          }
                         />
-                      )}
-                    </div>
-                  ))}
+                        {s.failure_reason && (
+                          <p className="subtle">
+                            {failureReason(s.failure_reason)}
+                          </p>
+                        )}
+                        <dl className="inspector-meta-list">
+                          <dt>Model aktual</dt>
+                          <dd>{s.actual_model || "Belum dievaluasi"}</dd>
+                          <dt>Token</dt>
+                          <dd>{number(s.total_tokens || 0)}</dd>
+                          <dt>Latensi</dt>
+                          <dd>{s.latency_seconds || 0}s</dd>
+                        </dl>
+                        {selectedNode.nodeType === "scenario" && (
+                          <InspectorTextBlock
+                            label="RESPONS AKTUAL SKENARIO"
+                            content={s.actual_output}
+                            emptyText="Belum ada respons tersimpan."
+                            subtitle={`Respons aktual skenario ${s.name || s.scenario_id}.`}
+                          />
+                        )}
+                      </div>
+                    ))}
+                    {onRunBench && (
+                      <Button
+                        className="w-full mt-3"
+                        disabled={pending}
+                        onClick={onRunBench}
+                      >
+                        <Beaker size={14} />
+                        Jalankan Bench
+                      </Button>
+                    )}
+                  </>
+                )}
+
                 {activeTab === "bukti" && (
-                  <dl className="inspector-meta-list">
-                    <dt>Evaluation ID</dt>
-                    <dd className="mono">{evaluation.id}</dd>
-                    <dt>Version ID</dt>
-                    <dd className="mono">{evaluation.version_id}</dd>
-                    <dt>Model diminta</dt>
-                    <dd>
-                      {evaluation.provenance.requested_model ||
-                        "Tidak tercatat"}
-                    </dd>
-                    <dt>Versi suite</dt>
-                    <dd className="mono">
-                      {evaluation.provenance.evaluation_version ||
-                        "Tidak tercatat"}
-                    </dd>
-                    <dt>Hash konfigurasi</dt>
-                    <dd className="mono">
-                      {evaluation.provenance.payload_hash || "Tidak tercatat"}
-                    </dd>
-                    <dt>Dievaluasi</dt>
-                    <dd>{date(evaluation.evaluated_at)}</dd>
-                  </dl>
+                  <>
+                    {evaluation ? (
+                      <dl className="inspector-meta-list">
+                        <dt>Evaluation ID</dt>
+                        <dd className="mono">{evaluation.id}</dd>
+                        <dt>Version ID</dt>
+                        <dd className="mono">{evaluation.version_id}</dd>
+                        <dt>Model diminta</dt>
+                        <dd>
+                          {evaluation.provenance.requested_model ||
+                            "Tidak tercatat"}
+                        </dd>
+                        <dt>Versi suite</dt>
+                        <dd className="mono">
+                          {evaluation.provenance.evaluation_version ||
+                            "Tidak tercatat"}
+                        </dd>
+                        <dt>Hash konfigurasi</dt>
+                        <dd className="mono">
+                          {evaluation.provenance.payload_hash || "Tidak tercatat"}
+                        </dd>
+                        <dt>Dievaluasi</dt>
+                        <dd>{date(evaluation.evaluated_at)}</dd>
+                      </dl>
+                    ) : (
+                      <Notice>
+                        Belum ada bukti evaluasi tersimpan. Jalankan suite Bench
+                        untuk membuat bukti provenance terverifikasi.
+                      </Notice>
+                    )}
+                  </>
                 )}
               </>
             )}

@@ -1,10 +1,17 @@
 """ARYN packages root."""
 
-import importlib
+from packages.runtime_adapters.hermes import HermesRuntimeAdapter
+from packages.model_adapters.router import ModelRouter
 
-# Dynamic convenience exports for hyphenated packages
 def get_hermes_adapter():
-    return importlib.import_module("packages.runtime-adapters.hermes").HermesRuntimeAdapter
+    return HermesRuntimeAdapter
 
 def get_model_router():
-    return importlib.import_module("packages.model-adapters").ModelRouter
+    return ModelRouter
+
+__all__ = [
+    "HermesRuntimeAdapter",
+    "ModelRouter",
+    "get_hermes_adapter",
+    "get_model_router",
+]

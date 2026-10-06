@@ -1,13 +1,10 @@
-"""Model adapters package (Python-compliant snake_case alias)."""
+"""Model adapters package."""
 
-import importlib
-
-_mod = importlib.import_module("packages.model-adapters")
-ModelRouter = _mod.ModelRouter
-ModelRoutingError = _mod.ModelRoutingError
-GeminiModelAdapter = _mod.GeminiModelAdapter
-NousModelAdapter = _mod.NousModelAdapter
-MockModelAdapter = _mod.MockModelAdapter
+from packages.model_adapters.router import ModelRouter, ModelRoutingError
+from packages.model_adapters.providers.gemini import GeminiModelAdapter
+from packages.model_adapters.providers.mock import MockModelAdapter
+from packages.model_adapters.providers.nous import NousModelAdapter
+from packages.model_adapters.gateway import NineRouterGateway, GatewaySettings
 
 __all__ = [
     "ModelRouter",
@@ -15,4 +12,6 @@ __all__ = [
     "GeminiModelAdapter",
     "NousModelAdapter",
     "MockModelAdapter",
+    "NineRouterGateway",
+    "GatewaySettings",
 ]

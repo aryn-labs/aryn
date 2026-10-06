@@ -54,7 +54,7 @@ model yang sudah dipilih pada versi. Pesan tampil pada seluruh tab detail agent.
 - Tampilan: `apps/web/src/features/bench.tsx`, `factory.tsx`, `runs.tsx`,
   `components/shared.tsx`, `lib/types.ts`, `styles.css`.
 - Runtime/Core/API: `packages/contracts/runtime.py`,
-  `packages/runtime-adapters/hermes/adapter.py`, `modules/bench/runner.py`,
+  `packages/runtime_adapters/hermes/adapter.py`, `modules/bench/runner.py`,
   `modules/core/workflows/coordinator.py`, `services/api/studio.py`.
 - Pengujian: `apps/web/src/test/bench-evidence.test.tsx`,
   `apps/web/e2e/studio.spec.ts`, `tests/security/test_uat_model_availability.py`,

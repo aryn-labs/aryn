@@ -2,17 +2,17 @@ import { executionReady, gatewayStatus } from "../lib/studio-state";
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Bot, ChevronRight, ShieldCheck, Workflow } from "lucide-react";
-import type { Run, Audit } from "../lib/types";
+import type { Shared, Audit, Run } from "../lib/types";
 import { date, number } from "../lib/utils";
 import { Button } from "../components/ui/button";
 import { Busy, Empty, Notice, PageHeading, Status } from "../components/shared";
-import type { Shared } from "../lib/types";
 import { Panel, AuditList } from "../components/workspace";
 import { ArynCanvas } from "../components/canvas/aryn-canvas";
 import { buildExecutionNodesAndEdges } from "../components/canvas/canvas-builders";
 import { historicalRunContext } from "../lib/studio-state";
 import { useReducedMotion } from "../lib/motion";
-export function Runs({ data, workspace, pending, act }: Shared) {
+
+export function Runs({ data, workspace, pending, act, actStream }: Shared) {
   const [params, setParams] = useSearchParams();
   const active = data.assignments.filter(
     (a) =>
@@ -34,6 +34,9 @@ export function Runs({ data, workspace, pending, act }: Shared) {
   const [runKey, setRunKey] = useState(() => crypto.randomUUID());
   const [validation, setValidation] = useState("");
   const [executing, setExecuting] = useState(false);
+  const [liveEvent, setLiveEvent] = useState<{ step: string; message?: string } | null>(
+    null,
+  );
   const reducedMotion = useReducedMotion();
   const selected = params.has("hasil")
     ? data.runs.find((r) => r.id === params.get("hasil"))
@@ -44,25 +47,20 @@ export function Runs({ data, workspace, pending, act }: Shared) {
   const modelAvailability =
     workspace.models.find((m) => m.model_id === version?.model)?.availability ||
     "unknown";
+
   const viewResult = (runId: string) => {
     setParams({ hasil: runId });
-    const target = document.getElementById("hasil-eksekusi");
+    const target = document.getElementById("canvas-inspector");
     if (target) {
       target.scrollIntoView({
         behavior: reducedMotion ? "auto" : "smooth",
         block: "start",
       });
-      target.classList.remove("highlight-pulse");
-      void target.offsetWidth;
-      target.classList.add("highlight-pulse");
-      setTimeout(() => {
-        target.classList.remove("highlight-pulse");
-      }, 1600);
     }
   };
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const submit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (prompt.trim().length < 5 || !assigned || !consent) {
       setValidation(
         "Pilih penugasan, isi instruksi minimal lima karakter, dan konfirmasikan penggunaan model.",
@@ -71,8 +69,11 @@ export function Runs({ data, workspace, pending, act }: Shared) {
     }
     setValidation("");
     setExecuting(true);
+    setLiveEvent({ step: "run.requested" });
+
     try {
-      const r = await act(
+      const runner = actStream || act;
+      const r = await runner(
         "/runs",
         {
           assignment_id: assignment,
@@ -81,23 +82,74 @@ export function Runs({ data, workspace, pending, act }: Shared) {
           allow_remote_model: consent,
         },
         "Eksekusi selesai. Hasil dan audit tersimpan.",
+        (evt: any) => {
+          if (!evt) return;
+          setLiveEvent({ step: evt.type, message: evt.data?.message });
+        },
       );
-      const newRunId = String(r.run_id || r.id);
+      const newRunId = String((r as any).run_id || (r as any).id);
       setRunKey(crypto.randomUUID());
       viewResult(newRunId);
     } catch {
       /* Retry preserves idempotency key; edits create a new key. */
     } finally {
       setExecuting(false);
+      setLiveEvent(null);
     }
   };
+
   const { nodes: execNodes, edges: execEdges } = useMemo(() => {
     return buildExecutionNodesAndEdges(
       selected,
       historical.version,
       historical.blueprint?.name,
+      liveEvent,
     );
-  }, [selected, historical.version, historical.blueprint?.name]);
+  }, [selected, historical.version, historical.blueprint?.name, liveEvent]);
+
+  const executionFormConfig = useMemo(
+    () => ({
+      assignments: active,
+      blueprints: data.blueprints,
+      selectedAssignmentId: assigned?.id || "",
+      onSelectAssignment: (id: string) => {
+        setAssignment(id);
+        setRunKey(crypto.randomUUID());
+      },
+      prompt,
+      onPromptChange: (p: string) => {
+        setPrompt(p);
+        setRunKey(crypto.randomUUID());
+      },
+      consent,
+      onConsentChange: setConsent,
+      onSubmit: submit,
+      executing,
+      validationError: validation,
+      canSubmit:
+        !pending &&
+        executionReady(workspace) &&
+        modelAvailability === "available" &&
+        Boolean(data.permissions["run:create"]) &&
+        consent &&
+        prompt.trim().length >= 5,
+      workspace,
+      permissionCanRun: Boolean(data.permissions["run:create"]),
+    }),
+    [
+      active,
+      data.blueprints,
+      assigned?.id,
+      prompt,
+      consent,
+      executing,
+      validation,
+      pending,
+      workspace,
+      modelAvailability,
+      data.permissions,
+    ],
+  );
 
   return (
     <>
@@ -121,156 +173,157 @@ export function Runs({ data, workspace, pending, act }: Shared) {
           dapat dianggap sebagai bukti konfigurasi saat eksekusi.
         </Notice>
       )}
-      <ArynCanvas
-        mode="execution"
-        initialNodes={execNodes}
-        initialEdges={execEdges}
-        run={selected}
-        version={historical.version}
-        assignment={historical.assignment}
-        auditEvents={data.audit.filter((e) => e.resource_id === selected?.id)}
-        showInspectorByDefault={Boolean(selected)}
-      />
-      <div className="run-layout">
-        <Panel
-          className="run-panel-execution"
-          title="Eksekusi Research Agent"
-          subtitle="Konfigurasi selalu diambil dari versi yang dipublikasikan."
-        >
-          {active.length ? (
-            <form onSubmit={submit} className="run-form" noValidate>
-              <div className="form-fields">
-                <label>
-                  Penugasan agent
-                  <select
-                    value={assigned?.id || ""}
-                    onChange={(e) => {
-                      setAssignment(e.target.value);
-                      setRunKey(crypto.randomUUID());
-                    }}
-                    disabled={pending}
-                  >
-                    <option value="">Pilih penugasan aktif</option>
-                    {active.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {
-                          data.blueprints.find((b) => b.id === a.blueprint_id)
-                            ?.name
-                        }{" "}
-                        · {a.role_name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                {version && (
-                  <div className="model-scope">
-                    <Bot size={15} />
-                    <span className="mono">{version.model}</span>
-                    <span>v{version.version_number}</span>
-                  </div>
-                )}
-                <label>
-                  Instruksi riset
-                  <textarea
-                    placeholder="Contoh: Jelaskan perbedaan likuiditas dan solvabilitas, lalu sebutkan risiko yang perlu diperhatikan tim produk."
-                    rows={7}
-                    value={prompt}
-                    maxLength={12000}
-                    onChange={(e) => {
-                      setPrompt(e.target.value);
-                      setRunKey(crypto.randomUUID());
-                    }}
-                    disabled={pending}
-                  />
-                </label>
-                <Notice>
-                  Instruksi dan konfigurasi agent dikirim melalui ARYN Runtime
-                  ke penyedia model jarak jauh yang dipilih. Gunakan data yang
-                  Anda izinkan untuk dikirim. Tool host tidak tersedia.
-                </Notice>
-                <label className="checkbox-field">
-                  <input
-                    type="checkbox"
-                    checked={consent}
-                    onChange={(e) => setConsent(e.target.checked)}
-                    disabled={pending}
-                  />
-                  Saya menyetujui pengiriman instruksi ini ke model yang
-                  dipilih.
-                </label>
-                {validation && <Notice tone="error">{validation}</Notice>}
-                {!workspace.runtime.ready && (
-                  <Notice tone="error">{workspace.runtime.message}</Notice>
-                )}
-                {gatewayStatus(workspace).tone !== "success" && (
-                  <Notice tone={gatewayStatus(workspace).tone}>
-                    {gatewayStatus(workspace).label}
-                  </Notice>
-                )}
-                {modelAvailability !== "available" && (
-                  <Notice tone="warning">
-                    {modelAvailability === "unavailable"
-                      ? "Model tidak tersedia melalui Model Gateway. Pilih versi dengan model lain sebelum menjalankan agent."
-                      : "Ketersediaan model belum dapat diverifikasi. Eksekusi diblokir sampai runtime menyediakan bukti ketersediaan yang valid."}
-                  </Notice>
-                )}
-              </div>
-              <div className="run-submit">
-                <span>
-                  <ShieldCheck size={14} />
-                  Budget dan izin diperiksa Core
-                </span>
-                <Button
-                  disabled={
-                    pending ||
-                    !executionReady(workspace) ||
-                    modelAvailability !== "available" ||
-                    !data.permissions["run:create"] ||
-                    !consent ||
-                    prompt.trim().length < 5
-                  }
-                >
-                  <Workflow size={15} />
-                  {pending ? "Menjalankan…" : "Jalankan agent"}
-                </Button>
-              </div>
-            </form>
-          ) : (
-            <Empty
-              title="Belum ada agent yang ditugaskan"
-              description="Selesaikan Bench, persetujuan, publikasi, dan penugasan di Agent Factory sebelum menjalankan riset."
-              action="Buka Agent Factory"
-              onAction={() => window.location.assign("/factory")}
-            />
-          )}
-        </Panel>
-        <Panel
-          id="hasil-eksekusi"
-          className="run-panel-result"
-          title="Hasil eksekusi"
-          subtitle="Output asli, penggunaan token, dan jejak Core."
-        >
-          {selected ? (
-            <RunResultPanel
-              run={selected}
-              audit={data.audit.filter((e) => e.resource_id === selected.id)}
-            />
-          ) : (
-            <Empty
-              title={
-                params.has("hasil")
-                  ? "Run yang dipilih tidak tersedia"
-                  : "Hasil riset akan muncul di sini"
-              }
-              description={
-                params.has("hasil")
-                  ? "Run tidak ditemukan pada proyek aktif. Pilih run yang tersedia dari riwayat."
-                  : "Belum ada eksekusi pada proyek ini. Output dan jumlah token hanya ditampilkan setelah dilaporkan runtime."
-              }
-            />
-          )}
-        </Panel>
+
+      <div className="execution-canvas-workspace mb-6">
+        <ArynCanvas
+          mode="execution"
+          initialNodes={execNodes}
+          initialEdges={execEdges}
+          run={selected}
+          version={historical.version}
+          assignment={historical.assignment}
+          auditEvents={data.audit.filter((e) => e.resource_id === selected?.id)}
+          showInspectorByDefault={Boolean(selected)}
+          executionForm={executionFormConfig}
+        />
       </div>
+
+      {params.has("hasil") && !selected && (
+        <Panel title="Hasil eksekusi" className="mb-6">
+          <Empty
+            title="Run yang dipilih tidak tersedia"
+            description="Run tidak ditemukan pada proyek aktif. Pilih run yang tersedia dari riwayat."
+          />
+        </Panel>
+      )}
+
+      {selected && (
+        <Panel
+          className="run-panel-result mb-6"
+          title="Hasil eksekusi"
+          subtitle={`${historical.blueprint ? `${historical.blueprint.name} · ` : ""}${historical.assignment ? historical.assignment.role_name : "Run terisolasi"}`}
+        >
+          <RunResultPanel
+            run={selected}
+            audit={data.audit.filter((a) => a.resource_id === selected.id)}
+          />
+        </Panel>
+      )}
+
+      <Panel
+        className="run-panel-execution mt-6"
+        title="Eksekusi agent"
+        subtitle="Konfigurasi selalu diambil dari versi yang dipublikasikan."
+      >
+        {active.length ? (
+          <form onSubmit={submit} className="run-form" noValidate>
+            <div className="form-fields">
+              <label>
+                Penugasan agent
+                <select
+                  value={assigned?.id || ""}
+                  onChange={(e) => {
+                    setAssignment(e.target.value);
+                    setRunKey(crypto.randomUUID());
+                  }}
+                  disabled={pending || executing}
+                >
+                  <option value="">Pilih penugasan aktif</option>
+                  {active.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {
+                        data.blueprints.find((b) => b.id === a.blueprint_id)
+                          ?.name
+                      }{" "}
+                      · {a.role_name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {version && (
+                <div className="model-scope">
+                  <Bot size={15} />
+                  <span className="mono">{version.model}</span>
+                  <span>v{version.version_number}</span>
+                </div>
+              )}
+              <label>
+                Instruksi riset
+                <textarea
+                  placeholder="Contoh: Jelaskan perbedaan likuiditas dan solvabilitas, lalu sebutkan risiko yang perlu diperhatikan tim produk."
+                  rows={6}
+                  value={prompt}
+                  maxLength={12000}
+                  onChange={(e) => {
+                    setPrompt(e.target.value);
+                    setRunKey(crypto.randomUUID());
+                  }}
+                  disabled={pending || executing}
+                />
+              </label>
+              <Notice>
+                Instruksi dan konfigurasi agent dikirim melalui ARYN Runtime ke
+                penyedia model jarak jauh yang dipilih. Gunakan data yang Anda
+                izinkan untuk dikirim. Tool host tidak tersedia.
+              </Notice>
+              <label className="checkbox-field">
+                <input
+                  type="checkbox"
+                  checked={consent}
+                  onChange={(e) => setConsent(e.target.checked)}
+                  disabled={pending || executing}
+                />
+                Saya menyetujui pengiriman instruksi ini ke model yang
+                dipilih.
+              </label>
+              {validation && <Notice tone="error">{validation}</Notice>}
+              {!workspace.runtime.ready && (
+                <Notice tone="error">{workspace.runtime.message}</Notice>
+              )}
+              {gatewayStatus(workspace).tone !== "success" && (
+                <Notice tone={gatewayStatus(workspace).tone}>
+                  {gatewayStatus(workspace).label}
+                </Notice>
+              )}
+              {modelAvailability !== "available" && (
+                <Notice tone="warning">
+                  {modelAvailability === "unavailable"
+                    ? "Model tidak tersedia melalui Model Gateway. Pilih versi dengan model lain sebelum menjalankan agent."
+                    : "Ketersediaan model belum dapat diverifikasi. Eksekusi diblokir sampai runtime menyediakan bukti ketersediaan yang valid."}
+                </Notice>
+              )}
+            </div>
+            <div className="run-submit">
+              <span>
+                <ShieldCheck size={14} />
+                Budget dan izin diperiksa Core
+              </span>
+              <Button
+                disabled={
+                  pending ||
+                  executing ||
+                  !executionReady(workspace) ||
+                  modelAvailability !== "available" ||
+                  !data.permissions["run:create"] ||
+                  !consent ||
+                  prompt.trim().length < 5
+                }
+              >
+                <Workflow size={15} />
+                {pending || executing ? "Menjalankan…" : "Jalankan agent"}
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <Empty
+            title="Belum ada agent yang ditugaskan"
+            description="Selesaikan Bench, persetujuan, publikasi, dan penugasan di Agent Factory sebelum menjalankan riset."
+            action="Buka Agent Factory"
+            onAction={() => window.location.assign("/factory")}
+          />
+        )}
+      </Panel>
+
       <Panel
         className="mt-6"
         title="Riwayat eksekusi"

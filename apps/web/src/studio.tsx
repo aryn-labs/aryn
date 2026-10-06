@@ -22,7 +22,7 @@ import {
   Workflow,
   X,
 } from "lucide-react";
-import { api, ApiError } from "./lib/api";
+import { api, apiStream, ApiError } from "./lib/api";
 import type { Snapshot, Workspace } from "./lib/types";
 import { Button } from "./components/ui/button";
 import { Modal } from "./components/ui/dialog";
@@ -101,6 +101,21 @@ export function App() {
     setToast(success);
     return result;
   };
+  const actStream = async (
+    path: string,
+    body: unknown,
+    success: string,
+    onEvent?: (event: { type: string; data: any }) => void,
+  ): Promise<any> => {
+    try {
+      const result = await apiStream(`/projects/${project}${path}`, body, onEvent);
+      if (success) setToast(success);
+      await queryClient.invalidateQueries({ queryKey: ["snapshot", project] });
+      return result;
+    } catch (err: any) {
+      throw err;
+    }
+  };
   useEffect(() => {
     setMobile(false);
     mutation.reset();
@@ -156,6 +171,7 @@ export function App() {
     error: mutation.error?.message,
     resetError: () => mutation.reset(),
     act,
+    actStream,
     openBlueprint: () => {
       mutation.reset();
       setNewBlueprint(true);

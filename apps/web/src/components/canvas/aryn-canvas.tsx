@@ -22,7 +22,7 @@ import {
 import { Button } from "../ui/button";
 import { nodeTypes } from "./nodes/custom-nodes";
 import { edgeTypes } from "./edges/aryn-edge";
-import { CanvasInspector } from "./canvas-inspector";
+import { CanvasInspector, type ExecutionFormConfig } from "./canvas-inspector";
 import type { BaseNodeData, CanvasMode } from "./types";
 import type {
   Assignment,
@@ -52,8 +52,13 @@ interface ArynCanvasProps {
   onRunBench?: () => void;
   onApproveVersion?: () => void;
   onPublishVersion?: () => void;
+  canBench?: boolean;
+  canApprove?: boolean;
+  canPublish?: boolean;
   className?: string;
   showInspectorByDefault?: boolean;
+  executionForm?: ExecutionFormConfig;
+  onSelectNode?: (nodeId: string) => void;
 }
 
 function CanvasInner({
@@ -73,6 +78,9 @@ function CanvasInner({
   onRunBench,
   onApproveVersion,
   onPublishVersion,
+  canBench,
+  canApprove,
+  canPublish,
   className = "",
   showInspectorByDefault = false,
 }: ArynCanvasProps) {
@@ -267,6 +275,9 @@ function CanvasInner({
             onRunBench={onRunBench}
             onApproveVersion={onApproveVersion}
             onPublishVersion={onPublishVersion}
+            canBench={canBench}
+            canApprove={canApprove}
+            canPublish={canPublish}
             run={run}
             assignment={assignment}
             versions={versions}
