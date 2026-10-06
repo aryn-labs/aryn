@@ -118,6 +118,7 @@ export type Runtime = {
   message: string;
   enabled_toolsets?: string[];
   readiness?: string;
+  reason?: string;
 };
 export type Workspace = {
   organization: { id: string; name: string };

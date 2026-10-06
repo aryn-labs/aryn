@@ -59,7 +59,7 @@ class GatewayDiscovery(BaseModel):
 
 class GatewayUnavailableError(RuntimeError):
     def __init__(self):
-        super().__init__("Model Gateway 9Router tidak dapat dijangkau atau discovery belum valid.")
+        super().__init__("Model Gateway tidak dapat dijangkau atau discovery belum valid.")
 
 
 class ModelIdentityError(RuntimeError):
@@ -69,7 +69,7 @@ class ModelIdentityError(RuntimeError):
 
 class RuntimeGatewayError(RuntimeError):
     def __init__(self):
-        super().__init__("ARYN Runtime belum siap. Routing 9Router dan bukti model aktual belum dapat diverifikasi.")
+        super().__init__("ARYN Runtime belum siap. Routing Model Gateway dan bukti model aktual belum dapat diverifikasi.")
 
 
 class ModelUnavailableError(RuntimeError):
@@ -80,7 +80,7 @@ class ModelUnavailableError(RuntimeError):
         self.availability = availability.status
         self.reason = availability.reason
         message = (
-            "Model tidak tersedia melalui 9Router. Pilih model lain sebelum menjalankan Bench atau eksekusi."
+            "Model tidak tersedia melalui Model Gateway. Pilih model lain sebelum menjalankan Bench atau eksekusi."
             if availability.status == "unavailable" else
             "Ketersediaan model belum dapat diverifikasi. Bench dan eksekusi diblokir sampai tersedia bukti ketersediaan yang valid."
         )

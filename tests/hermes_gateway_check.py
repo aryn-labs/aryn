@@ -4,6 +4,18 @@ import json
 import os
 from pathlib import Path
 import sys
+import socket
+import traceback
+
+network_attempts = []
+native_connect = socket.socket.connect
+
+def reject_network(*args, **kwargs):
+    caller = traceback.extract_stack(limit=2)[0]
+    if caller.name == "_fallback_socketpair" and Path(caller.filename) == Path(socket.__file__):
+        return native_connect(*args, **kwargs)
+    network_attempts.append(True)
+    raise RuntimeError("Network access forbidden in isolated Hermes integration test")
 
 source = Path(sys.argv[1]).resolve()
 sys.path.insert(0, str(source))
@@ -15,6 +27,16 @@ pin_process_hermes_home(home)
 os.environ["HERMES_HOME"] = home
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import httpx
+
+def metadata_double(self, request):
+    # Native Hermes probes metadata independently of its model SDK. Return an
+    # honest unsupported response without reaching any installed gateway.
+    if request.method == "GET" or (request.method == "POST" and request.url.path == "/api/show"):
+        return httpx.Response(404, request=request, json={"error": "isolated metadata unavailable"})
+    network_attempts.append(("non-SDK model request", request.method, request.url.path))
+    raise RuntimeError("Model requests must use the guarded SDK double")
+
+httpx.HTTPTransport.handle_request = metadata_double
 from packages.model_adapters.gateway import GatewaySettings
 import services.runtime.hermes_9router as binding
 from services.runtime.gateway_transport import ExactGatewayTransport
@@ -48,6 +70,10 @@ def request(model="test/model-a", *, asynchronous=False):
 
 
 async def check():
+    # Install after asyncio creates its internal Windows socketpair. No service
+    # sockets may be opened while native Hermes handles the isolated turns.
+    socket.socket.connect = reject_network
+    socket.socket.connect_ex = reject_network
     print("PHASE_BUILD", flush=True)
     api = binding.build_adapter(settings, os.environ["API_SERVER_KEY"])
     print("PHASE_TURN", flush=True)
@@ -90,6 +116,11 @@ async def check():
     assert response.status == 409
     assert json.loads(response.body)["error"]["code"] == "gateway_secret_leak"
     assert len(calls) == 6
+    assert network_attempts == [], "Native Hermes attempted a request outside the HTTP doubles"
     print("REAL_HERMES_ISOLATED_GATEWAY_PASS")
 
-asyncio.run(check())
+try:
+    asyncio.run(check())
+except BaseException:
+    traceback.print_exc()
+    sys.exit(1)

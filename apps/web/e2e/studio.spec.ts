@@ -354,7 +354,7 @@ test("UAT model unavailable memblokir tombol Bench dengan pesan Indonesia", asyn
     page.getByRole("button", { name: "Jalankan Bench", exact: true }),
   ).toBeDisabled();
   await expect(
-    page.getByText(/Model tidak tersedia melalui 9Router/),
+    page.getByText(/Model tidak tersedia melalui Model Gateway/),
   ).toBeVisible();
 });
 
@@ -1004,14 +1004,13 @@ test("9Router: browser mengakses API Studio saja", async ({ page }) => {
   });
   const fixture = await publishedAssignment(page);
   await page.goto(`/factory/${fixture.bp.id}`);
-  await expect(
-    page.getByText("Model Gateway · 9Router terhubung"),
-  ).toBeVisible();
+  await expect(page.getByText("Model Gateway terhubung")).toBeVisible();
   await page.goto("/settings");
   await expect(
     page.getByText("Backend runtime", { exact: true }),
   ).toBeVisible();
   await expect(page.getByText("Hermes", { exact: true })).toBeVisible();
+  await expect(page.locator("body")).not.toContainText("9Router");
   expect(direct).toEqual([]);
 });
 
@@ -1028,7 +1027,7 @@ test("9Router: gateway terputus memblokir Bench meskipun runtime siap", async ({
   });
   await page.goto(`/factory/${fixture.bp.id}`);
   await expect(
-    page.getByText("Model Gateway 9Router tidak dapat dijangkau."),
+    page.getByText("Model Gateway tidak dapat dijangkau."),
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Jalankan Bench", exact: true }),

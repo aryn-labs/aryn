@@ -8,18 +8,16 @@ Prasyarat: Python 3.11+ dan Node.js 22.14+ tersedia pada PATH. Dari repository:
 
 ```powershell
 Set-Location D:\ARYN\aryn-labs\aryn
-.\scripts\start-runtime-9router.ps1
-.\scripts\start-studio.ps1
+.\scripts\start-aryn.ps1
 ```
 
 Launcher membuat `.venv`, memasang dependensi dari package lock, membangun frontend, menjalankan API di `127.0.0.1:8710`, lalu membuka browser. Jika eksekusi skrip dibatasi oleh kebijakan PowerShell, gunakan proses sekali jalan tanpa mengubah kebijakan mesin:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass
-# Pada sesi tersebut, jalankan start-runtime-9router.ps1 lalu start-studio.ps1.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-aryn.ps1
 ```
 
-Buka **http://127.0.0.1:8710**. Setelah instalasi awal, gunakan `-SkipInstall -SkipBuild` untuk menjalankan hasil build yang sudah ada. `-NoBrowser` menonaktifkan pembukaan browser, `-Port 8712` memakai port loopback lain. Launcher menolak port yang dipakai proses lain. Hentikan dengan:
+Buka **http://127.0.0.1:8710**. Setelah instalasi awal, gunakan `-SkipInstall -SkipBuild` untuk menjalankan hasil build yang sudah ada. `-NoBrowser` menonaktifkan pembukaan browser. Launcher bersama meneruskan autentikasi runtime sementara ke API tanpa menyimpan key. Jika menjalankan API secara terpisah, `start-studio.ps1 -Port 8712` memakai port loopback lain dan memerlukan environment autentikasi runtime yang sama. Launcher menolak port yang dipakai proses lain. Hentikan dengan:
 
 ```powershell
 .\scripts\stop-studio.ps1

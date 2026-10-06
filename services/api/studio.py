@@ -64,7 +64,7 @@ from packages.contracts.core import AuditStatus
 from packages.contracts.runtime import (ModelUnavailableError, GatewayUnavailableError, ModelIdentityError, RuntimeGatewayError)
 from packages.contracts.model import ModelProviderType, ModelSpec
 from packages.model_adapters import ModelRouter, ModelRoutingError
-from packages.runtime_adapters import HermesAdapterError, HermesRuntimeAdapter
+from packages.runtime_adapters import HermesAdapterError, HermesRuntimeAdapter, RuntimeAuthenticationError
 
 ROOT = Path(__file__).resolve().parents[2]
 DEV_ORG = "org_studio_local"
@@ -416,6 +416,7 @@ def create_app(
             return row(version)
 
     async def runtime_status():
+        health = None
         try:
             health = await adapter.health()
             caps = await adapter.capabilities()
@@ -432,6 +433,15 @@ def create_app(
                 if ready
                 else "Runtime dibatasi: seluruh toolset harus dinonaktifkan.",
                 "readiness": health.details.get("status", "unknown"),
+            }
+        except RuntimeAuthenticationError:
+            configured = bool(getattr(adapter, "api_key", ""))
+            return {
+                "connected": bool(health and health.is_healthy),
+                "ready": False,
+                "reason": "runtime_authentication_rejected" if configured else "runtime_authentication_missing",
+                "message": "Autentikasi ARYN Runtime tidak cocok. Mulai ulang runtime dan Studio bersama."
+                if configured else "Autentikasi ARYN Runtime belum dikonfigurasi. Jalankan runtime dan Studio bersama melalui start-aryn.ps1.",
             }
         except Exception:
             return {
@@ -698,7 +708,7 @@ def create_app(
         if not body.allow_remote_model:
             raise HTTPException(
                 422,
-                "Konfirmasikan pengiriman instruksi riset melalui ARYN Runtime dan Model Gateway 9Router.",
+                "Konfirmasikan pengiriman instruksi riset melalui ARYN Runtime dan Model Gateway.",
             )
         # Core validates the full fingerprint even for cached results, without runtime dispatch.
         cached = None

@@ -71,7 +71,7 @@ export function buildFactoryNodesAndEdges(
     }),
     node("node-model", "model", 600, 160, {
       label: version?.model || "Model belum dipilih",
-      sublabel: "Model Gateway · 9Router",
+      sublabel: "Model Gateway",
       nodeType: "model",
       status:
         availability === "unavailable"
@@ -198,9 +198,7 @@ export function buildExecutionNodesAndEdges(
     }),
     node("exec-model", "model", 620, 140, {
       label: run?.actual_model || run?.model || "Model belum dilaporkan",
-      sublabel: run?.gateway
-        ? `Model Gateway · ${run.gateway}`
-        : "Gateway belum tercatat",
+      sublabel: run?.gateway ? `Model Gateway` : "Gateway belum tercatat",
       nodeType: "model",
       status: "idle",
       badge: "Model tercatat",

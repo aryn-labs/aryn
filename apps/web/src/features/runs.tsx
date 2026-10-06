@@ -210,7 +210,7 @@ export function Runs({ data, workspace, pending, act }: Shared) {
                 {modelAvailability !== "available" && (
                   <Notice tone="warning">
                     {modelAvailability === "unavailable"
-                      ? "Model tidak tersedia melalui 9Router. Pilih versi dengan model lain sebelum menjalankan agent."
+                      ? "Model tidak tersedia melalui Model Gateway. Pilih versi dengan model lain sebelum menjalankan agent."
                       : "Ketersediaan model belum dapat diverifikasi. Eksekusi diblokir sampai runtime menyediakan bukti ketersediaan yang valid."}
                   </Notice>
                 )}

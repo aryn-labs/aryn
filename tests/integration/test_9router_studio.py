@@ -7,6 +7,24 @@ from tests.integration.test_studio_api import studio, draft, promoted, PREFIX, O
 from packages.model_adapters.gateway import GatewaySettings
 from services.api.studio import create_app
 from packages.contracts.runtime import GatewayDiscovery, RuntimeModelAvailability
+from packages.runtime_adapters import RuntimeAuthenticationError
+
+
+@pytest.mark.parametrize("configured", [False, True])
+def test_runtime_auth_failure_distinguishes_healthy_process_from_readiness(studio, configured):
+    client, db, runtime, app = studio
+    runtime.api_key = "isolated-runtime-key" if configured else ""
+    async def rejected():
+        raise RuntimeAuthenticationError("Authentication refused")
+    runtime.capabilities = rejected
+    state = client.get("/api/workspace").json()["runtime"]
+    assert state["connected"] is True and state["ready"] is False
+    assert state["reason"] == ("runtime_authentication_rejected" if configured else "runtime_authentication_missing")
+    assert "Autentikasi ARYN Runtime" in state["message"]
+    assert "isolated-runtime-key" not in json.dumps(state)
+    bp, version = draft(client)
+    response = client.post(PREFIX + f"/versions/{version['id']}/bench", json={"allow_remote_model": True})
+    assert response.status_code == 503 and runtime.requests == []
 
 
 @pytest.mark.parametrize("status", ["unavailable", "unknown"])

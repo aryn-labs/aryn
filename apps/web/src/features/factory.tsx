@@ -329,7 +329,7 @@ export function AgentDetail({
       {selected && !modelReady && (
         <Notice tone="warning">
           {modelAvailability === "unavailable"
-            ? "Model tidak tersedia melalui 9Router. Pilih model lain pada versi baru sebelum menjalankan Bench."
+            ? "Model tidak tersedia melalui Model Gateway. Pilih model lain pada versi baru sebelum menjalankan Bench."
             : "Ketersediaan model belum dapat diverifikasi. Bench diblokir sampai runtime menyediakan bukti ketersediaan yang valid."}
         </Notice>
       )}

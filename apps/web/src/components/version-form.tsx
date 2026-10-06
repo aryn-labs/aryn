@@ -143,7 +143,7 @@ export function VersionForm({
         </div>
         <Notice>
           Mode riset teks. Semua tool ARYN Runtime harus dinonaktifkan. Model
-          dan credential provider dikelola oleh 9Router.
+          dan credential provider dikelola oleh Model Gateway.
         </Notice>
         {validation && <Notice tone="error">{validation}</Notice>}
       </div>

@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { Runs } from "../features/runs";
+import { SettingsPage } from "../features/settings";
 import { executionReady, gatewayStatus } from "../lib/studio-state";
 import { studioFixture } from "./studio-fixtures";
 
@@ -10,6 +11,24 @@ vi.mock("../components/canvas/aryn-canvas", () => ({
 }));
 
 describe("runtime, gateway dan model adalah dependency terpisah", () => {
+  it("Pengaturan memakai nama Model Gateway tanpa menampilkan vendor", () => {
+    const props = studioFixture();
+    const { container } = render(
+      <MemoryRouter>
+        <SettingsPage
+          workspace={props.workspace}
+          data={props.data}
+          theme="dark"
+          setTheme={() => {}}
+          refresh={() => {}}
+        />
+      </MemoryRouter>,
+    );
+    expect(
+      screen.getByText("Model Gateway", { exact: true }),
+    ).toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/9router/i);
+  });
   it.each(["offline", "discovery", "binding"])(
     "Hermes ready tidak melewati gate %s",
     (failure) => {

@@ -106,14 +106,14 @@ kosong jika 9Router tidak memerlukan auth. Jika diperlukan, berikan melalui
 environment server; jangan memasukkannya ke frontend, database, Git atau log.
 `API_SERVER_KEY` adalah auth **runtime**, terpisah dari provider/gateway key.
 Launcher membuat key runtime acak sementara jika belum ada, tanpa menampilkan
-atau menyimpannya. Runtime dan Studio harus diluncurkan dari PowerShell yang sama.
+atau menyimpannya. Launcher `start-aryn.ps1` memulai runtime dan Studio dalam satu proses PowerShell induk agar keduanya menerima autentikasi yang sama.
 
 1. Jalankan instalasi 9Router yang sudah ada; jika belum aktif, `9router
    --no-browser` dari terminal tersendiri. Jangan ubah provider/config key.
 2. Hentikan Studio lama melalui launcher existing. Hentikan Hermes lama melalui
    mekanisme yang digunakan untuk menjalankannya, bila masih memakai port 8642.
    Launcher baru menolak port terpakai dan tidak membunuh proses lain otomatis.
-3. Dari PowerShell yang sama:
+3. Jalankan launcher bersama:
 
 ```powershell
 Set-Location D:\ARYN\aryn-labs\aryn
@@ -121,16 +121,18 @@ $env:ARYN_ENV = 'development'
 $env:ARYN_9ROUTER_BASE_URL = 'http://127.0.0.1:20128/v1'
 # ARYN_9ROUTER_API_KEY kosong untuk instalasi gateway tanpa auth.
 .\scripts\start-runtime-9router.ps1 -CheckOnly
-.\scripts\start-runtime-9router.ps1
-.\scripts\start-studio.ps1
+.\scripts\start-aryn.ps1
 ```
 
 Runtime berjalan loopback 8642; Studio http://127.0.0.1:8710. Launcher runtime
 memverifikasi kompatibilitas/confinement, menggunakan interpreter instalasi
 Hermes, menjalankan background tersembunyi dan mengecek binding sebelum menyatakan
 siap. Jika kebijakan PowerShell memblokir script, buka satu sesi dengan
-`powershell.exe -NoProfile -ExecutionPolicy Bypass`, lalu jalankan kedua launcher
-di sesi tersebut. Jangan membuka dua sesi yang kehilangan runtime auth sementara.
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-aryn.ps1`.
+Menjalankan runtime dan Studio melalui dua proses PowerShell terpisah dapat
+kehilangan runtime auth sementara; Studio akan menampilkan alasan autentikasi
+yang belum dikonfigurasi atau ditolak. UI memakai nama Model Gateway; identitas
+9Router tetap tercatat pada kontrak dan dokumentasi teknis.
 
 ```powershell
 .\scripts\stop-studio.ps1
@@ -188,6 +190,41 @@ Referensi primary source yang diaudit:
 [konfigurasi model Hermes](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/configuring-models.md),
 [9Router models endpoint](https://raw.githubusercontent.com/decolua/9router/master/src/app/api/v1/models/route.js).
 Implementasi disesuaikan juga dengan source instalasi Hermes dan 9Router lokal.
+
+## Tindak lanjut UAT: label dan autentikasi runtime (6 Oktober 2026)
+
+UI memakai nama **Model Gateway** pada topbar, Pengaturan, canvas, dan pesan
+kegagalan. Identitas 9Router tetap benar pada metadata run/kontrak dan dokumentasi
+teknis. Tidak ada perubahan routing, schema, governance, atau credential boundary.
+
+Saat pemeriksaan awal, proses Hermes hidup dan `/health` merespons, tetapi
+readiness/binding ARYN belum terverifikasi. Launcher terpisah dapat kehilangan
+`API_SERVER_KEY` sementara ketika dipanggil melalui proses PowerShell berbeda.
+`start-aryn.ps1` memulai kedua layanan dari induk yang sama. API membedakan
+`runtime_authentication_missing` dan `runtime_authentication_rejected`, tanpa
+menampilkan key; runtime yang sehat tetapi belum terautentikasi tidak diklaim siap.
+
+Sesudah pemeriksaan nol run aktif, layanan milik launcher dimulai ulang bersama.
+Workspace aktual menunjukkan `runtime.ready=true`, `tools_confined=true`, seluruh
+toolset nonaktif, serta binding gateway terverifikasi. Database lokal tetap
+tersimpan: `PRAGMA integrity_check=ok`, nol pelanggaran foreign key. Endpoint
+model gateway `/v1/models` kemudian timeout; katalog kosong dan Bench/Run tetap
+fail closed. Runtime siap tidak dijadikan bukti bahwa gateway/model tersedia.
+
+Regresi native Hermes awal menemukan probe metadata yang belum terisolasi dari
+jaringan. Test kini memakai HTTP double untuk probe metadata dan SDK model,
+serta memblokir socket keluar; pengecualian hanya socketpair internal asyncio
+Windows. Penamaan sesi otomatis Hermes dapat mengirim request model tambahan;
+jalur tersebut dinonaktifkan hanya pada proses khusus ARYN, tanpa mengubah
+instalasi atau konfigurasi Hermes. Native integration tetap memeriksa exact model,
+concurrency, evidence durable async, penolakan mismatch/secret dan jumlah panggilan.
+
+Validasi akhir: backend **221 PASS, 5 SKIP** (54,40 detik); Vitest source khusus
+commit **34 PASS**, working tree **35 PASS** termasuk popup pengguna; TypeScript
+check dan production build **PASS**; Playwright/axe **14 PASS** (2,8 menit).
+Test launcher memeriksa autentikasi sementara bersama, penerusan opsi, dan bahwa
+Studio tidak dimulai setelah runtime gagal. Tidak ada inference live yang diklaim
+PASS. Tidak ada push/merge ke main atau perluasan Batch 2.
 
 ## Residual limitation dan satu sesi UAT
 

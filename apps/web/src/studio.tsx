@@ -364,7 +364,7 @@ export function App() {
               className={`connection ${apiConnected && w?.gateway.connected && w?.gateway.discovery_valid && w?.gateway.runtime_binding_verified ? "online" : apiConnected && w?.gateway.connected ? "degraded" : "offline"}`}
             >
               <span className="connection-dot" />
-              Model Gateway · 9Router{" "}
+              Model Gateway{" "}
               {apiConnected && w?.gateway.connected ? "terhubung" : "terputus"}
             </span>
             <Button

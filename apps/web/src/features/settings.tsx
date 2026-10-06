@@ -104,13 +104,11 @@ export function SettingsPage({
               </dd>
               <dt>Backend runtime</dt>
               <dd>Hermes</dd>
-              <dt>Gateway model</dt>
-              <dd>9Router</dd>
               <dt>Model ditemukan</dt>
               <dd>{workspace.models.length}</dd>
             </dl>
             <p className="subtle">
-              Credential provider dikelola langsung oleh 9Router. ARYN hanya
+              Credential provider dikelola oleh Model Gateway. ARYN hanya
               menggunakan endpoint gateway dan credential akses gateway opsional
               di server. Kunci tidak dikirim ke browser, database, audit, atau
               log.

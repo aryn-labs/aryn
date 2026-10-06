@@ -32,7 +32,7 @@ export const gatewayStatus = (workspace: Workspace) =>
   !workspace.gateway.connected
     ? {
         tone: "error" as const,
-        label: "Model Gateway 9Router tidak dapat dijangkau.",
+        label: "Model Gateway tidak dapat dijangkau.",
       }
     : !workspace.gateway.discovery_valid
       ? {
@@ -43,9 +43,9 @@ export const gatewayStatus = (workspace: Workspace) =>
         ? {
             tone: "warning" as const,
             label:
-              "9Router terhubung; routing ARYN Runtime belum terverifikasi.",
+              "Model Gateway terhubung; routing ARYN Runtime belum terverifikasi.",
           }
-        : { tone: "success" as const, label: "9Router · Terhubung" };
+        : { tone: "success" as const, label: "Model Gateway terhubung" };
 export const availabilityLabel = {
   available: "Model tersedia",
   unknown: "Ketersediaan belum terverifikasi",

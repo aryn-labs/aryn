@@ -210,7 +210,7 @@ export function CanvasInspector({
                         <dt>Model aktual</dt>
                         <dd className="mono">{run.actual_model || "Belum tercatat"}</dd>
                         <dt>Model Gateway</dt>
-                        <dd>{run.gateway || "Belum tercatat"}</dd>
+                        <dd>{run.gateway ? "Tercatat pada run" : "Belum tercatat"}</dd>
                         <dt>Backend runtime</dt>
                         <dd>{run.runtime_backend || "Belum tercatat"}</dd>
                         <dt>Provider aktual</dt>

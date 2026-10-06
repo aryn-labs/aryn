@@ -28,6 +28,7 @@ def build_adapter(settings, runtime_key, port=8642):
     import httpx
     from openai import OpenAI
     from run_agent import AIAgent
+    from agent import title_generator
     from gateway.config import PlatformConfig
     from gateway.platforms.api_server import APIServerAdapter, _require_auth
     from gateway.run import _load_gateway_config
@@ -39,6 +40,9 @@ def build_adapter(settings, runtime_key, port=8642):
             raise RuntimeError("Hermes toolsets must already be disabled.")
 
     require_confinement()
+    # Session naming must not dispatch an additional, ungoverned model request.
+    # This affects only the dedicated ARYN process, never installed Hermes config.
+    title_generator._auto_title_enabled = lambda: False
 
     class GovernedAgent(AIAgent):
         def __init__(self, receipt, **kwargs):
