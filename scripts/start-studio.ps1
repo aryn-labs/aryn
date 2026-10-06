@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateRange(1024, 65535)][int]$Port = 8710,
+    [ValidateRange(1024, 65535)][int]$Port = 0,
     [switch]$NoBrowser,
     [switch]$SkipInstall,
     [switch]$SkipBuild,
@@ -10,7 +10,37 @@ $ErrorActionPreference = 'Stop'
 $studioRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $studioLocal = Join-Path $studioRoot '.local'
 New-Item -ItemType Directory -Path $studioLocal -Force | Out-Null
-$studioUrl = "http://127.0.0.1:$Port"
+
+# Load .env if present
+$envFile = Join-Path $studioRoot '.env'
+if (Test-Path -LiteralPath $envFile) {
+    Get-Content -LiteralPath $envFile | ForEach-Object {
+        $line = $_.Trim()
+        if ($line -and -not $line.StartsWith('#') -and $line -match '^([A-Za-z_][A-Za-z0-9_]*)=(.*)$') {
+            $k = $matches[1]
+            $v = $matches[2]
+            if (-not (Get-Item "env:$k" -ErrorAction SilentlyContinue)) {
+                Set-Item "env:$k" $v
+            }
+        }
+    }
+}
+if (-not $env:ARYN_ENV) { $env:ARYN_ENV = 'development' }
+if (-not $env:ARYN_STUDIO_HOST) { $env:ARYN_STUDIO_HOST = '127.0.0.1' }
+if (-not $env:ARYN_STUDIO_PORT) { $env:ARYN_STUDIO_PORT = '8710' }
+
+$studioHost = $env:ARYN_STUDIO_HOST.ToLowerInvariant()
+if ($studioHost -notin @('127.0.0.1', 'localhost', '::1')) {
+    throw "Studio lokal hanya mengizinkan host loopback. Host '$studioHost' ditolak."
+}
+
+if ($Port -eq 0) {
+    $Port = [int]$env:ARYN_STUDIO_PORT
+} else {
+    $env:ARYN_STUDIO_PORT = "$Port"
+}
+
+$studioUrl = "http://${studioHost}:$Port"
 $studioPidFile = Join-Path $studioLocal 'studio-process.json'
 $studioExisting = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
 if ($studioExisting) {
@@ -51,7 +81,7 @@ try {
             if ($LASTEXITCODE -ne 0) { throw 'Build frontend gagal.' }
         }
     } finally { Pop-Location }
-    $studioProcess = Start-Process -FilePath $studioPython -ArgumentList @('-m','services.api','--port',"$Port") -WorkingDirectory $studioRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $studioLocal 'studio.stdout.log') -RedirectStandardError (Join-Path $studioLocal 'studio.stderr.log')
+    $studioProcess = Start-Process -FilePath $studioPython -ArgumentList @('-m','services.api','--host',"$studioHost",'--port',"$Port") -WorkingDirectory $studioRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $studioLocal 'studio.stdout.log') -RedirectStandardError (Join-Path $studioLocal 'studio.stderr.log')
     @{pid=$studioProcess.Id;port=$Port;started=$studioProcess.StartTime.ToUniversalTime().ToString('o')} | ConvertTo-Json | Set-Content -LiteralPath $studioPidFile
     $studioReady = $false
     for ($studioAttempt = 0; $studioAttempt -lt 60; $studioAttempt++) {
@@ -64,13 +94,17 @@ try {
     if (-not $studioReady) { throw "API belum siap. Periksa $studioLocal\studio.stderr.log" }
     # Windows virtualenv's python.exe can delegate to a child interpreter. Track
     # the actual loopback listener so stop/restart never leaves the API orphaned.
-    $studioListener = Get-NetTCPConnection -LocalAddress '127.0.0.1' -LocalPort $Port -State Listen | Select-Object -First 1
-    $studioListenerProcess = Get-Process -Id $studioListener.OwningProcess
-    $studioListenerInfo = Get-CimInstance Win32_Process -Filter "ProcessId = $($studioListenerProcess.Id)"
-    if ($studioListenerProcess.Id -ne $studioProcess.Id -and $studioListenerInfo.ParentProcessId -ne $studioProcess.Id) {
-        throw 'Listener tidak cocok dengan proses Studio yang dijalankan launcher.'
+    $studioListener = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($studioListener) {
+        $studioListenerProcess = Get-Process -Id $studioListener.OwningProcess -ErrorAction SilentlyContinue
+        if ($studioListenerProcess) {
+            $studioListenerInfo = Get-CimInstance Win32_Process -Filter "ProcessId = $($studioListenerProcess.Id)" -ErrorAction SilentlyContinue
+            if ($studioListenerProcess.Id -ne $studioProcess.Id -and $studioListenerInfo -and $studioListenerInfo.ParentProcessId -ne $studioProcess.Id) {
+                throw 'Listener tidak cocok dengan proses Studio yang dijalankan launcher.'
+            }
+            @{pid=$studioListenerProcess.Id;port=$Port;started=$studioListenerProcess.StartTime.ToUniversalTime().ToString('o')} | ConvertTo-Json | Set-Content -LiteralPath $studioPidFile
+        }
     }
-    @{pid=$studioListenerProcess.Id;port=$Port;started=$studioListenerProcess.StartTime.ToUniversalTime().ToString('o')} | ConvertTo-Json | Set-Content -LiteralPath $studioPidFile
     Write-Host "ARYN Studio siap: $studioUrl"
     Write-Host 'Sesi development lokal. Identitas dan kredensial runtime tetap di server.'
     Write-Host 'Hentikan dengan .\scripts\stop-studio.ps1'

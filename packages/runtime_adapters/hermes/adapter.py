@@ -48,7 +48,7 @@ class HermesRuntimeAdapter(RuntimeAdapter):
 
     def __init__(
         self,
-        base_url: str = "http://127.0.0.1:8642",
+        base_url: Optional[str] = None,
         api_key: Optional[str] = None,
         timeout: float = 30.0,
         enforce_loopback: bool = True,
@@ -56,6 +56,9 @@ class HermesRuntimeAdapter(RuntimeAdapter):
         http_client: Optional[httpx.AsyncClient] = None,
         model_gateway: Optional[NineRouterGateway] = None,
     ) -> None:
+        if base_url is None:
+            from packages.config import get_settings
+            base_url = get_settings().runtime_base_url
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key or ""
         self.timeout = timeout
@@ -67,10 +70,29 @@ class HermesRuntimeAdapter(RuntimeAdapter):
 
         if self.enforce_loopback:
             self._verify_loopback_only(self.base_url)
+        else:
+            self._verify_url_safety(self.base_url)
+
+    @staticmethod
+    def _verify_url_safety(url: str) -> None:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            raise RuntimeSecurityError(
+                f"Security policy violation: Hermes adapter must use http or https scheme, got '{parsed.scheme}'."
+            )
+        if parsed.username or parsed.password:
+            raise RuntimeSecurityError(
+                "Security policy violation: Hermes adapter URL must not contain credentials."
+            )
+        if parsed.query or parsed.fragment:
+            raise RuntimeSecurityError(
+                "Security policy violation: Hermes adapter URL must not contain query parameters or fragments."
+            )
 
     @staticmethod
     def _verify_loopback_only(url: str) -> None:
-        """Enforces that the adapter connects ONLY to loopback addresses."""
+        """Enforces that the adapter connects ONLY to loopback addresses without credentials or queries."""
+        HermesRuntimeAdapter._verify_url_safety(url)
         parsed = urlparse(url)
         hostname = (parsed.hostname or "").lower()
         if hostname not in ("127.0.0.1", "localhost", "::1"):

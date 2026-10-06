@@ -19,7 +19,10 @@ from services.runtime.gateway_transport import ExactGatewayTransport, ModelRecei
 TURN = ContextVar("aryn_gateway_turn", default=None)
 
 
-def build_adapter(settings, runtime_key, port=8642):
+def build_adapter(settings, runtime_key, port=None):
+    if port is None:
+        from packages.config import get_settings
+        port = get_settings().runtime_port
     # Hermes imports its dotenv loader during run_agent import. Disable that loader
     # in this dedicated process: gateway credentials are supplied explicitly only.
     from hermes_cli import env_loader
@@ -164,12 +167,15 @@ def build_adapter(settings, runtime_key, port=8642):
 
 
 async def serve(args):
-    settings = GatewaySettings.from_env()
-    runtime_key = os.getenv("API_SERVER_KEY", "")
+    from packages.config import get_settings
+    aryn_settings = get_settings()
+    settings = aryn_settings.gateway_settings
+    runtime_key = aryn_settings.api_server_key.get_secret_value()
     if len(runtime_key) < 16:
         raise RuntimeError("Supply API_SERVER_KEY to the runtime and ARYN API process; no secret files are scanned.")
     sys.path.insert(0, str(Path(args.hermes_source).resolve()))
-    adapter = build_adapter(settings, runtime_key, args.port)
+    port = args.port if args.port is not None else aryn_settings.runtime_port
+    adapter = build_adapter(settings, runtime_key, port)
     if args.check:
         print("Hermes integration compatible; confinement verified; no inference dispatched.")
         return
@@ -184,7 +190,7 @@ async def serve(args):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--hermes-source", required=True)
-    parser.add_argument("--port", type=int, default=8642)
+    parser.add_argument("--port", type=int, default=None)
     parser.add_argument("--check", action="store_true")
     asyncio.run(serve(parser.parse_args()))
 

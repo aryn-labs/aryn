@@ -12,6 +12,7 @@ import os
 import secrets
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -136,7 +137,8 @@ class StudioHermesAdapter(HermesRuntimeAdapter):
 
 def runtime_key() -> str:
     """Runtime authentication only, explicitly supplied to the server process."""
-    return os.getenv("API_SERVER_KEY", "")
+    from packages.config import get_settings
+    return get_settings().api_server_key.get_secret_value()
 
 
 def row(model):
@@ -168,11 +170,29 @@ def migrate(engine):
 def create_app(
     db: DatabaseManager | None = None,
     runtime=None,
-    origin="http://127.0.0.1:8710",
+    origin: str | None = None,
     testing=False,
 ):
-    if origin not in {f"http://127.0.0.1:{p}" for p in range(1024, 65536)}:
-        raise ValueError("Studio origin must be an explicit 127.0.0.1 loopback port.")
+    from packages.config import get_settings
+    settings = get_settings()
+    if origin is None:
+        origin = settings.studio_origin
+
+    parsed_origin = urlsplit(origin)
+    origin_host = (parsed_origin.hostname or "").lower()
+    origin_port = parsed_origin.port
+    if (
+        parsed_origin.scheme != "http"
+        or origin_host not in {"127.0.0.1", "localhost", "::1"}
+        or origin_port is None
+        or not (1024 <= origin_port <= 65535)
+        or parsed_origin.username
+        or parsed_origin.password
+        or parsed_origin.query
+        or parsed_origin.fragment
+        or (parsed_origin.path and parsed_origin.path != "/")
+    ):
+        raise ValueError("Studio origin must be an explicit loopback port.")
     if db is None:
         path = ROOT / ".local/studio.sqlite3"
         path.parent.mkdir(exist_ok=True)
@@ -182,10 +202,15 @@ def create_app(
     binder = TrustedIdentityBinder(secret_key=secrets.token_bytes(32))
     permissions = PermissionEngine(db_manager=db, identity_binder=binder)
     audit = AuditLogger(db_manager=db)
-    adapter = runtime or StudioHermesAdapter(api_key=runtime_key(), timeout=10)
-    protected_credentials = [getattr(adapter, "api_key", "")]
+    adapter = runtime or StudioHermesAdapter(base_url=settings.runtime_base_url, api_key=runtime_key(), timeout=10)
+    protected_credentials = [
+        getattr(adapter, "api_key", ""),
+        runtime_key(),
+        settings.nine_router_api_key.get_secret_value(),
+        settings.api_server_key.get_secret_value(),
+    ]
     gateway_client = getattr(adapter, "model_gateway", None)
-    if gateway_client:
+    if gateway_client and hasattr(gateway_client, "settings"):
         protected_credentials.append(gateway_client.settings.api_key.get_secret_value())
     model_router = ModelRouter(catalog={})
     factory = AgentFactoryService(

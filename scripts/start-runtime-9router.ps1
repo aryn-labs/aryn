@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$HermesSource = (Join-Path $env:LOCALAPPDATA 'hermes\hermes-agent'),
-    [ValidateRange(1024, 65535)][int]$Port = 8642,
+    [ValidateRange(1024, 65535)][int]$Port = 0,
     [switch]$CheckOnly
 )
 $ErrorActionPreference = 'Stop'
@@ -12,7 +12,48 @@ $arynRuntimeCommand = (& $arynHermesCommand --print-runtime-command | ConvertFro
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $arynRuntimeCommand[0])) {
     throw 'Interpreter instalasi Hermes belum tersedia.'
 }
+
+# Load .env if present
+$envFile = Join-Path $arynRoot '.env'
+if (Test-Path -LiteralPath $envFile) {
+    Get-Content -LiteralPath $envFile | ForEach-Object {
+        $line = $_.Trim()
+        if ($line -and -not $line.StartsWith('#') -and $line -match '^([A-Za-z_][A-Za-z0-9_]*)=(.*)$') {
+            $k = $matches[1]
+            $v = $matches[2]
+            if (-not (Get-Item "env:$k" -ErrorAction SilentlyContinue)) {
+                Set-Item "env:$k" $v
+            }
+        }
+    }
+}
+if (-not $env:ARYN_ENV) { $env:ARYN_ENV = 'development' }
+if (-not $env:ARYN_RUNTIME_BASE_URL) { $env:ARYN_RUNTIME_BASE_URL = 'http://127.0.0.1:8642' }
 if (-not $env:ARYN_9ROUTER_BASE_URL) { $env:ARYN_9ROUTER_BASE_URL = 'http://127.0.0.1:20128/v1' }
+
+# Determine runtime host and port from ARYN_RUNTIME_BASE_URL or -Port
+$runtimeUri = [System.Uri]$env:ARYN_RUNTIME_BASE_URL
+$runtimeHost = $runtimeUri.Host.ToLowerInvariant()
+if ($runtimeHost -notin @('127.0.0.1', 'localhost', '::1')) {
+    throw "Runtime lokal hanya mengizinkan host loopback. Host '$runtimeHost' ditolak."
+}
+if ($runtimeUri.Scheme -notin @('http', 'https')) {
+    throw "Skema runtime harus http atau https."
+}
+if ($runtimeUri.UserInfo) {
+    throw "Kredensial dalam runtime URL ditolak."
+}
+if ($runtimeUri.Query -or ($env:ARYN_RUNTIME_BASE_URL -match '\?')) {
+    throw "Query parameters dalam runtime URL ditolak."
+}
+
+$configuredPort = if ($runtimeUri.Port -gt 0) { $runtimeUri.Port } else { 8642 }
+if ($Port -eq 0) {
+    $Port = $configuredPort
+} elseif ($Port -ne $configuredPort) {
+    $env:ARYN_RUNTIME_BASE_URL = "$($runtimeUri.Scheme)://${runtimeHost}:$Port"
+}
+
 if (-not $env:API_SERVER_KEY) {
     # Runtime authentication only. No provider key, file persistence or secret output.
     $arynKeyBytes = New-Object byte[] 32
@@ -26,16 +67,16 @@ if ($CheckOnly) { return }
 if (Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue) {
     throw "Port runtime $Port sedang digunakan. Hentikan runtime lama secara sengaja; launcher tidak menggantinya otomatis."
 }
-if ($Port -ne 8642) { throw 'Studio lokal menggunakan port runtime 8642. Port lain hanya untuk pemeriksaan kompatibilitas.' }
 $arynLocal = Join-Path $arynRoot '.local'
 New-Item -ItemType Directory -Path $arynLocal -Force | Out-Null
 $arynArguments = @('-I', ('"' + $arynEntry + '"'), '--hermes-source', ('"' + $arynHermesSource + '"'), '--port', "$Port")
 $arynProcess = Start-Process -FilePath $arynRuntimeCommand[0] -ArgumentList $arynArguments -WorkingDirectory $arynRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $arynLocal 'runtime.stdout.log') -RedirectStandardError (Join-Path $arynLocal 'runtime.stderr.log')
 $arynReady = $false
+$gatewayCheckUri = "$($env:ARYN_RUNTIME_BASE_URL.TrimEnd('/'))/aryn/gateway"
 for ($arynAttempt = 0; $arynAttempt -lt 40; $arynAttempt++) {
     if ($arynProcess.HasExited) { throw 'ARYN Runtime berhenti sebelum siap. Periksa log runtime lokal.' }
     try {
-        $arynBinding = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/aryn/gateway" -Headers @{Authorization="Bearer $env:API_SERVER_KEY"} -TimeoutSec 2
+        $arynBinding = Invoke-RestMethod -Uri $gatewayCheckUri -Headers @{Authorization="Bearer $env:API_SERVER_KEY"} -TimeoutSec 2
         if ($arynBinding.gateway -eq '9Router' -and $arynBinding.runtime_backend -eq 'Hermes' -and
             $arynBinding.exact_model_enforced -eq $true -and $arynBinding.base_url -eq $env:ARYN_9ROUTER_BASE_URL.TrimEnd('/')) {
             $arynReady = $true
@@ -48,5 +89,5 @@ if (-not $arynReady) {
     throw 'Routing ARYN Runtime ke 9Router belum dapat diverifikasi. Periksa log runtime lokal.'
 }
 @{pid=$arynProcess.Id;port=$Port;started=$arynProcess.StartTime.ToUniversalTime().ToString('o')} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $arynLocal 'runtime-process.json')
-Write-Host 'ARYN Runtime dimulai melalui Hermes dengan gateway 9Router.'
+Write-Host "ARYN Runtime dimulai melalui Hermes pada port $Port dengan gateway 9Router."
 Write-Host 'Jalankan start-studio.ps1 dari sesi PowerShell yang sama agar autentikasi runtime cocok.'

@@ -29,31 +29,7 @@ class GatewaySettings(BaseModel):
     def from_env(cls):
         base_url = os.getenv("ARYN_9ROUTER_BASE_URL", "http://127.0.0.1:20128/v1").rstrip("/")
         api_key = os.getenv("ARYN_9ROUTER_API_KEY", "")
-        if not api_key:
-            api_key = cls._local_9router_key()
         return cls(base_url=base_url, api_key=SecretStr(api_key))
-
-    @staticmethod
-    def _local_9router_key() -> str:
-        from pathlib import Path
-        import sqlite3
-        candidate = Path.home() / "AppData" / "Roaming" / "9router" / "db" / "data.sqlite"
-        if not candidate.is_file():
-            candidate = Path.home() / ".9router" / "db" / "data.sqlite"
-        if not candidate.is_file():
-            return ""
-        try:
-            conn = sqlite3.connect(f"file:{candidate.as_posix()}?mode=ro", uri=True)
-            try:
-                cur = conn.cursor()
-                row = cur.execute("SELECT key FROM apiKeys WHERE name = 'ARYN' OR name = 'default' ORDER BY id ASC LIMIT 1").fetchone()
-                if not row:
-                    row = cur.execute("SELECT key FROM apiKeys ORDER BY id ASC LIMIT 1").fetchone()
-                return row[0] if row and row[0] else ""
-            finally:
-                conn.close()
-        except Exception:
-            return ""
 
 
 class NineRouterGateway:

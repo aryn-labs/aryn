@@ -26,8 +26,17 @@ def test_runtime_auth_does_not_scan_provider_env_file(monkeypatch):
 
 def test_production_environment_reads_are_explicit_and_never_provider_credentials():
     root = Path(__file__).resolve().parents[2]
-    allowed = {"ARYN_9ROUTER_BASE_URL", "ARYN_9ROUTER_API_KEY", "API_SERVER_KEY",
-               "ARYN_IDENTITY_SECRET", "ARYN_EVIDENCE_SECRET"}
+    allowed = {
+        "ARYN_ENV",
+        "ARYN_STUDIO_HOST",
+        "ARYN_STUDIO_PORT",
+        "ARYN_RUNTIME_BASE_URL",
+        "ARYN_9ROUTER_BASE_URL",
+        "ARYN_9ROUTER_API_KEY",
+        "API_SERVER_KEY",
+        "ARYN_IDENTITY_SECRET",
+        "ARYN_EVIDENCE_SECRET",
+    }
     for directory in ("services", "packages", "modules"):
         for path in (root / directory).rglob("*.py"):
             tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -43,5 +52,10 @@ def test_production_environment_reads_are_explicit_and_never_provider_credential
 def test_env_example_contains_only_safe_gateway_configuration():
     root = Path(__file__).resolve().parents[2]
     assert (root / ".env.example").read_text(encoding="utf-8").splitlines() == [
-        "ARYN_ENV=development", "ARYN_9ROUTER_BASE_URL=http://127.0.0.1:20128/v1",
-        "ARYN_9ROUTER_API_KEY="]
+        "ARYN_ENV=development",
+        "ARYN_STUDIO_HOST=127.0.0.1",
+        "ARYN_STUDIO_PORT=8710",
+        "ARYN_RUNTIME_BASE_URL=http://127.0.0.1:8642",
+        "ARYN_9ROUTER_BASE_URL=http://127.0.0.1:20128/v1",
+        "ARYN_9ROUTER_API_KEY=",
+    ]
