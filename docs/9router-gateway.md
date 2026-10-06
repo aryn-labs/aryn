@@ -297,7 +297,7 @@ dan tidak dimasukkan dalam commit ini.
 - `tests/hermes_gateway_check.py`
 - `tests/integration/test_9router_studio.py`
 - `tests/integration/test_agent_lifecycle_workflow.py`
-- `tests/integration/test_batch1_migrations.py`
+- `tests/integration/test_schema_migration_compatibility.py`
 - `tests/integration/test_hermes_9router_binding.py`
 - `tests/integration/test_hermes_adapter_integration.py`
 - `tests/integration/test_studio_api.py`
@@ -305,7 +305,7 @@ dan tidak dimasukkan dalam commit ini.
 - `tests/security/test_9router_boundary.py`
 - `tests/security/test_9router_discovery.py`
 - `tests/security/test_9router_exact_model.py`
-- `tests/security/test_batch1_runtime_provenance.py`
+- `tests/security/test_runtime_provenance_verification.py`
 - `tests/security/test_hermes_security_gates.py`
 - `tests/security/test_uat_model_availability.py`
 - `tests/studio_runtime.py`
