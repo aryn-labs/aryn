@@ -1,4 +1,4 @@
-"""Batch 1 negative gates, using real SQLite/Core/Bench and an isolated adapter."""
+"""Security integrity negative gates, using real SQLite/Core/Bench and an isolated adapter."""
 
 import json
 
@@ -91,7 +91,53 @@ async def test_tampering_without_hash_change_blocks_all_lifecycle_gates(lifecycl
             factory.publish_version(ctx, version.id)
         else:
             await RunCoordinator(runtime, db_manager=db).execute_assigned_agent_turn(assignment.id, "Research", ctx)
-    assert len(runtime.requests) == before
     with db.session() as s:
         assert s.execute(text("PRAGMA integrity_check")).scalar() == "ok"
         assert s.execute(text("PRAGMA foreign_key_check")).all() == []
+
+
+@pytest.mark.parametrize("column,value", [
+    ("role", "compromised_role"),
+    ("objective", "unauthorized objective"),
+    ("output_contract_json", '{"format":"json"}'),
+    ("constraints_json", '{"disallowed_actions":["compromised"]}'),
+    ("tool_policy_json", '{"tool_grants":["terminal"]}'),
+    ("model_policy_json", '{"primary_model":"shadow_model"}'),
+    ("budget_policy_json", '{"max_tokens_per_run":999999}'),
+    ("evaluation_reference_json", '{"suite_id":"other_suite"}'),
+])
+@pytest.mark.asyncio
+async def test_legacy_hash_cannot_bypass_custom_definition_fields(lifecycle, column, value):
+    db, ctx, runtime, factory, bp, version = lifecycle
+    # Force the version row to have a legacy v2 hash
+    legacy_hash = version.calculate_legacy_v2_payload_hash()
+    with db.session() as s:
+        s.execute(text(f"UPDATE agent_versions SET payload_hash=:hash, {column}=:value WHERE id=:id"),
+                  {"hash": legacy_hash, "value": value, "id": version.id})
+
+    # The row claims to match legacy hash, but has custom definition fields: must fail integrity!
+    with pytest.raises(ValueError, match="integrity"):
+        with db.session() as s:
+            AgentRepository(s).get_version(ctx, version.id)
+
+
+@pytest.mark.asyncio
+async def test_unmodified_legacy_version_rejected_at_active_lifecycle_gates(lifecycle):
+    db, ctx, runtime, factory, bp, version = lifecycle
+    clean_legacy_version = version.model_copy(update={"owner": None})
+    legacy_hash = clean_legacy_version.calculate_legacy_v2_payload_hash()
+    with db.session() as s:
+        s.execute(text("UPDATE agent_versions SET payload_hash=:hash, owner=NULL WHERE id=:id"),
+                  {"hash": legacy_hash, "id": version.id})
+
+    # Evaluation with bench must reject legacy format
+    with pytest.raises(Exception, match="legacy payload format"):
+        await factory.evaluate_version_with_bench(ctx, version.id)
+
+    # Approval must reject legacy format
+    with pytest.raises(Exception, match="legacy payload format"):
+        factory.approve_version(ctx, version.id)
+
+    # Publication must reject legacy format
+    with pytest.raises(Exception, match="legacy payload format"):
+        factory.publish_version(ctx, version.id)

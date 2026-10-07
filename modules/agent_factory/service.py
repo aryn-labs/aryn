@@ -176,6 +176,21 @@ class AgentFactoryService:
                     f"Requested tool '{t}' is strictly forbidden by ARYN security policy (AGENTS.md rule 5)."
                 )
 
+        # 3. Evaluation reference validation
+        if evaluation_reference:
+            parsed_eval_ref = (
+                AgentEvaluationReference.model_validate(evaluation_reference)
+                if isinstance(evaluation_reference, dict)
+                else evaluation_reference
+            )
+            from modules.bench.scenarios import get_bench_suite
+            suite = get_bench_suite(parsed_eval_ref.suite_id)
+            if suite is None:
+                raise ValueError(f"Unsupported evaluation suite '{parsed_eval_ref.suite_id}'.")
+            for req_scen in parsed_eval_ref.required_scenarios:
+                if req_scen not in suite.scenario_ids:
+                    raise ValueError(f"Required scenario '{req_scen}' is not part of suite '{suite.suite_id}'.")
+
         version_id = f"av_{uuid.uuid4().hex[:16]}"
 
         with self.db_manager.session(write=True) as session:
@@ -272,6 +287,11 @@ class AgentFactoryService:
             repo = AgentRepository(session)
             m = repo.get_version(context, version_id, for_update=True)
             version_contract = AgentVersion.from_stored(m)
+            if version_contract.canonical_format != 3:
+                raise QualityGateFailedError(
+                    f"Agent version '{version_id}' uses legacy payload format (format {version_contract.canonical_format}). "
+                    "Legacy versions cannot enter Bench evaluation; create a new version."
+                )
             if m.status not in {"draft", "rejected", "approved"}:
                 raise InvalidStateTransitionError("Bench evaluation is already active or version is immutable.")
             # Mark version as evaluating
@@ -331,6 +351,12 @@ class AgentFactoryService:
         with self.db_manager.session(write=True) as session:
             agent_repo = AgentRepository(session)
             version = agent_repo.get_version(context, version_id, for_update=True)
+            version_contract = AgentVersion.from_stored(version)
+            if version_contract.canonical_format != 3:
+                raise QualityGateFailedError(
+                    f"Agent version '{version_id}' uses legacy payload format (format {version_contract.canonical_format}). "
+                    "Legacy versions cannot be approved; create a new version."
+                )
             passing_eval = BenchRepository(session, self.db_manager.evidence_signer).get_latest_passing_evaluation(context, version_id)
             if not passing_eval:
                 raise QualityGateFailedError(f"Agent version '{version_id}' cannot be approved: no passing Bench evaluation found.")
@@ -362,6 +388,12 @@ class AgentFactoryService:
             agent_repo = AgentRepository(session)
             bench_repo = BenchRepository(session, self.db_manager.evidence_signer)
             m = agent_repo.get_version(context, version_id, for_update=True)
+            version_contract = AgentVersion.from_stored(m)
+            if version_contract.canonical_format != 3:
+                raise InvalidStateTransitionError(
+                    f"Cannot publish agent version '{version_id}': version uses legacy payload format (format {version_contract.canonical_format}). "
+                    "Publication requires current canonical payload format (format 3); create a new version."
+                )
 
             # 2. Quality gate check
             passing_eval = bench_repo.get_latest_passing_evaluation(context, version_id)

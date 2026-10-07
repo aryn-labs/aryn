@@ -122,20 +122,35 @@ class AgentBudgetPolicy(BaseModel):
     timeout_seconds: int = Field(default=120, ge=1, le=3600)
 
 
+from packages.contracts.bench import RESEARCH_BENCH_SUITE_ID, RESEARCH_SAFETY_SCENARIO_IDS
+
+
 class AgentEvaluationReference(BaseModel):
     """Evaluation suite and quality gate requirements for Bench promotion."""
-    suite_id: str = "research-safety"
-    evaluation_version: str = "research-safety-1.2.0"
+    suite_id: str = RESEARCH_BENCH_SUITE_ID
+    evaluation_version: str = "1.2.0"
     min_score_threshold: float = Field(default=1.0, ge=0.0, le=1.0)
     required_scenarios: List[str] = Field(
-        default_factory=lambda: [
-            "prompt_injection_rejection",
-            "tool_leakage_rejection",
-            "solvency_accuracy",
-            "temporal_abstention",
-        ]
+        default_factory=lambda: list(RESEARCH_SAFETY_SCENARIO_IDS)
     )
     evaluation_id: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _validate_suite_and_scenarios(self) -> AgentEvaluationReference:
+        valid_suites = {RESEARCH_BENCH_SUITE_ID, "research-safety"}
+        if self.suite_id not in valid_suites:
+            raise ValueError(
+                f"Unsupported evaluation suite '{self.suite_id}'. "
+                f"Supported suites: {sorted(list(valid_suites))}."
+            )
+        valid_scenarios = set(RESEARCH_SAFETY_SCENARIO_IDS)
+        for scen in self.required_scenarios:
+            if scen not in valid_scenarios:
+                raise ValueError(
+                    f"Unknown scenario ID '{scen}' for suite '{self.suite_id}'. "
+                    f"Available scenarios: {sorted(list(valid_scenarios))}."
+                )
+        return self
 
 
 class AgentDefinition(BaseModel):
@@ -363,14 +378,63 @@ class AgentVersion(BaseModel):
         encoded = self.canonical_payload_legacy_v2().encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()
 
-    def verify_integrity(self) -> None:
+    def _has_custom_definition_fields(self) -> bool:
+        """Returns True if any first-class definition field differs from clean legacy defaults."""
+        if self.role != "general_agent":
+            return True
+        if self.objective != "":
+            return True
+        if self.owner is not None:
+            return True
+        if self.schema_version != "1.0.0":
+            return True
+        if self.output_contract != AgentOutputContract():
+            return True
+        if self.constraints != AgentConstraints():
+            return True
+        if self.tool_policy != AgentToolPolicy(tool_grants=sorted(self.tool_grants)):
+            return True
+        if self.model_policy != AgentModelPolicy(
+            primary_model=self.model,
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
+        ):
+            return True
+        if self.budget_policy != AgentBudgetPolicy():
+            return True
+        if self.evaluation_reference != AgentEvaluationReference():
+            return True
+        return False
+
+    @property
+    def canonical_format(self) -> int:
+        """Returns 3 for current canonical format, 2 for un-tampered legacy format, 0 if invalid."""
+        if not self.payload_hash:
+            return 0
+        if self.payload_hash == self.calculate_payload_hash():
+            return 3
+        if self.payload_hash == self.calculate_legacy_v2_payload_hash() and not self._has_custom_definition_fields():
+            return 2
+        return 0
+
+    def verify_integrity(self, require_canonical: bool = False) -> None:
         if not self.payload_hash:
             raise VersionIntegrityError("Agent version integrity check failed: missing payload hash.")
         current_hash = self.calculate_payload_hash()
         if self.payload_hash == current_hash:
             return
+        if require_canonical:
+            raise VersionIntegrityError(
+                "Agent version integrity check failed: active lifecycle operations require canonical format 3. "
+                "Legacy payload formats cannot enter evaluation, approval, or publication; create a new version."
+            )
         legacy_hash = self.calculate_legacy_v2_payload_hash()
         if self.payload_hash == legacy_hash:
+            if self._has_custom_definition_fields():
+                raise VersionIntegrityError(
+                    "Agent version integrity check failed: custom definition contracts cannot be authenticated "
+                    "under legacy payload format. Create a new version to authenticate first-class policies."
+                )
             return
         raise VersionIntegrityError("Agent version integrity check failed; create and evaluate a new version.")
 
@@ -430,6 +494,8 @@ class AgentVersion(BaseModel):
             version.verify_integrity()
             return version
         except (ValueError, TypeError) as exc:
+            if isinstance(exc, VersionIntegrityError):
+                raise
             raise VersionIntegrityError("Stored agent version integrity check failed.") from exc
 
 

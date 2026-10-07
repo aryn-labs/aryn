@@ -14,8 +14,8 @@ Dokumen ini mendefinisikan canonical domain contract untuk **Agent Factory** pad
 4. **Anti-Silent-Fallback Model Policy**: Sesuai ADR-005 dan tata kelola ARYN, fallback model tanpa persetujuan eksplisit dilarang (`allow_fallback = False`). Parameter model divalidasi terhadap daftar model yang diizinkan dan rentang hyperparameter yang aman.
 5. **Exact Payload Hash Approval Binding**: Persetujuan manusia (*human approval*) mengikat exact SHA-256 hash dari representasi kanonikal versi agent, evaluasi Bench yang lulus dan terverifikasi, serta tenant/project boundary.
 6. **No Self-Approve / No Self-Publish**: Agent tidak memiliki kapabilitas menyetujui atau menerbitkan versinya sendiri. Seluruh transisi status lifecycle memerlukan aktor manusia yang terautentikasi dan memiliki role yang sesuai.
-7. **Bench Quality Gate**: Versi draft hanya dapat diajukan untuk approval setelah lulus seluruh evaluasi pada suite Bench yang ditentukan (`evaluation_reference`), dengan skor 100% dan bukti evidence terverifikasi.
-8. **Dual-Mode Canonical Verification (Backward Compatibility)**: Versi baru menghitung SHA-256 menggunakan `canonical_format: 3` yang menyertakan seluruh 10 atribut definisi agent. Versi historis dengan `canonical_format: 2` tetap dapat diverifikasi integritasnya tanpa merusak data lama.
+7. **Authoritative Bench Evaluation Reference**: Agent version mendefinisikan `evaluation_reference` yang mengikat suite, versi, skor minimum, dan daftar skenario wajib (`required_scenarios`). Evaluasi Bench diverifikasi secara fail-closed terhadap referensi ini; evaluasi yang tidak cocok ditolak.
+8. **Perlindungan Backward Compatibility & Anti-Bypass Legacy**: Versi baru menghitung SHA-256 menggunakan `canonical_format: 3`. Format legacy v2 hanya diizinkan untuk pembacaan historis (*read-only*), dengan proteksi ketat di mana versi legacy yang memiliki modifikasi field baru langsung ditolak sebagai korup/tampered. Seluruh transisi lifecycle baru (`evaluate`, `approve`, `publish`) mewajibkan Format 3 kanonikal.
 
 ---
 
@@ -33,9 +33,9 @@ Domain contract didefinisikan pada `packages/contracts/agent.py` dan diekspor me
 
 - **`AgentConstraints`**:
   - `disallowed_actions`: Daftar aksi/operasi yang dilarang dieksekusi oleh agent.
-  - `operational_rules`: Aturan batasan operasional (misal: "Must not execute shell commands directly").
+  - `operational_rules`: Aturan batasan operasional.
   - `require_evidence_citation`: Mewajibkan sitasi bukti pada setiap temuan/klaim.
-  - `max_execution_time_seconds`: Batas waktu maksimum eksekusi per interaksi.
+  - `max_execution_time_seconds`: Batas waktu maksimum eksekusi per interaksi (default: `300.0`).
 
 - **`AgentToolPolicy`**:
   - `tool_grants`: Daftar tool yang diizinkan secara eksplisit (`List[str]`).
@@ -60,10 +60,15 @@ Domain contract didefinisikan pada `packages/contracts/agent.py` dan diekspor me
   - `timeout_seconds`: Batas waktu eksekusi run sebelum timeout (default: `120.0`).
 
 - **`AgentEvaluationReference`**:
-  - `suite_id`: Identifier test suite Bench (default: `research-safety-1.2.0`).
+  - `suite_id`: Identifier test suite Bench (default: `research-safety-1.2.0`, alias: `research-safety`).
   - `evaluation_version`: Versi test suite evaluator (default: `1.2.0`).
   - `min_score_threshold`: Skor kelulusan minimum (default: `1.0` / 100%).
-  - `required_scenarios`: Daftar skenario yang wajib lulus.
+  - `required_scenarios`: Daftar skenario yang wajib lulus. Default berisi 4 skenario Bench aktual:
+    - `scen_safety_injection_defense`
+    - `scen_tool_confinement_defense`
+    - `scen_research_accuracy_synthesis`
+    - `scen_grounded_abstention`
+  - Validasi: Memvalidasi `suite_id` terhadap suite registry dan memastikan seluruh elemen di `required_scenarios` merupakan skenario yang sah dalam suite tersebut.
 
 - **`AgentDefinition`**:
   - Model komposit yang menyatukan seluruh spesifikasi di atas:
@@ -88,6 +93,7 @@ Representasi versi agent immutable yang memiliki hash kanonikal:
 - Atribut typed definition lengkap: `schema_version`, `role`, `objective`, `owner`, `output_contract`, `constraints`, `tool_policy`, `model_policy`, `budget_policy`, `evaluation_reference`.
 - Sinkronisasi otomatis dua arah antara scalar fields (`model`, `temperature`, `max_tokens`, `tool_grants`) dan nested policy objects (`model_policy`, `tool_policy`).
 - Property `.definition` yang memproyeksikan seluruh spesifikasi menjadi objek `AgentDefinition`.
+- Property `.canonical_format` yang mengembalikan format integritas (`3` untuk kanonikal saat ini, `2` untuk legacy v2 bersih, `0` jika korup/tidak valid).
 
 ---
 
@@ -112,9 +118,9 @@ Representasi versi agent immutable yang memiliki hash kanonikal:
 
 ---
 
-## 4. Representasi Kanonikal Payload Hash (Format 3)
+## 4. Representasi Kanonikal Payload Hash (Format 3) & Hardening Legacy
 
-Integritas versi dihitung dengan SHA-256 dari JSON kanonikal dengan kunci berurutan alfabetis dan tanpa spasi redundan (`separators=(",", ":")`):
+Integritas versi dihitung dengan SHA-256 dari JSON kanonikal Format 3 dengan kunci berurutan alfabetis dan tanpa spasi redundan (`separators=(",", ":")`):
 
 ```json
 {
@@ -134,7 +140,12 @@ Integritas versi dihitung dengan SHA-256 dari JSON kanonikal dengan kunci beruru
   "evaluation_reference": {
     "evaluation_version": "1.2.0",
     "min_score_threshold": 1.0,
-    "required_scenarios": [],
+    "required_scenarios": [
+      "scen_safety_injection_defense",
+      "scen_tool_confinement_defense",
+      "scen_research_accuracy_synthesis",
+      "scen_grounded_abstention"
+    ],
     "suite_id": "research-safety-1.2.0"
   },
   "max_tokens": 4096,
@@ -169,9 +180,15 @@ Integritas versi dihitung dengan SHA-256 dari JSON kanonikal dengan kunci beruru
 }
 ```
 
-Method `verify_integrity()` pada `AgentVersion` mengevaluasi:
-1. Format 3 canonical hash (standar utama untuk seluruh versi baru).
-2. Format 2 legacy hash (fallback otomatis untuk versi historis yang tersimpan sebelum migrasi).
+### 4.1 Aturan Verifikasi Integritas (`verify_integrity`)
+
+1. **Format 3 Kanonikal**: Standar wajib untuk seluruh versi baru. Jika `payload_hash == calculate_payload_hash()`, integritas valid.
+2. **Format 2 Legacy**:
+   - Hanya diizinkan pada pembacaan (*read mode*) rekaman historis yang sudah ada.
+   - **Anti-Bypass Protection**: Jika `_has_custom_definition_fields()` bernilai `True` (artinya ada perubahan pada `role`, `objective`, `owner`, `output_contract`, `constraints`, `tool_policy`, `model_policy`, `budget_policy`, `evaluation_reference`), verifikasi format legacy langsung menolak dengan `VersionIntegrityError`. Modifikasi atribut bertipe baru tidak dapat diselundupkan di balik hash legacy.
+3. **Strict Canonical Lifecycle Gate**:
+   - Parameter `verify_integrity(require_canonical=True)` mewajibkan Format 3.
+   - Seluruh tahapan transisi aktif (`evaluate_version_with_bench`, `approve_version`, `publish_version`) memeriksa `version.canonical_format == 3`. Versi legacy draft/rejected/approved ditolak dari siklus hidup baru dan harus dibuatkan versi baru ber-Format 3.
 
 ---
 
@@ -179,11 +196,15 @@ Method `verify_integrity()` pada `AgentVersion` mengevaluasi:
 
 Service layer di `modules/agent_factory/service.py` mengorkestrasi:
 - **Pewarisan Persona Blueprint**: Jika pembuatan versi tidak secara eksplisit menyertakan `role`, `objective`, atau `owner`, nilainya secara otomatis diwarisi dari parent `AgentBlueprint`.
-- **Validasi Kebijakan**:
+- **Validasi Kebijakan & Registry Bench**:
   - `model_policy.validate_model(model, temperature, max_tokens)` dieksekusi sebelum commit.
   - `tool_policy.validate_tool_grants()` memastikan tidak ada tool terlarang yang lolos.
+  - `evaluation_reference` divalidasi terhadap suite registry (`get_bench_suite()`) dan scenario IDs suite.
+- **Otoritas Evaluasi Bench**:
+  - `BenchRunner` mengeksekusi suite yang secara eksplisit ditentukan oleh `version.evaluation_reference.suite_id`.
+  - `BenchQualityGate.validate_evidence(evaluation, evaluation_reference)` memverifikasi kesesuaian suite, ambang skor (`min_score_threshold`), dan kelulusan seluruh skenario dalam `required_scenarios`.
 - **Audit Logging**: Mencatat event audit terstruktur `agent_factory.blueprint_created`, `agent_factory.version_created`, `agent_factory.version_evaluated`, dan `agent_factory.version_published` dengan metadata `schema_version`, `role`, `owner`, dan `payload_hash`.
-- **Integrasi Bench & Approval**: Memastikan versi dievaluasi dan disetujui terhadap hash aktual sebelum dapat dipublikasikan.
+- **Integrasi Approval & Publikasi**: Memastikan versi ber-Format 3 kanonikal, memiliki hasil evaluasi Bench yang lulus dan valid terhadap `evaluation_reference`, serta approval mengikat exact payload hash sebelum transisi ke `published`.
 
 ---
 
@@ -201,9 +222,9 @@ Service layer di `modules/agent_factory/service.py` mengorkestrasi:
 ## 7. Verifikasi dan Pengujian Otomatis
 
 Seluruh perubahan diverifikasi melalui automated test suite yang ketat:
-- `tests/unit/test_agent_contracts.py` (17 tests): Unit testing komprehensif untuk contract models, policy boundary, hashing kanonikal, legacy backward compatibility, dan blueprint inheritance.
-- `tests/security/test_version_payload_integrity.py` (20 tests): Pengujian keamanan anti-tampering pada setiap kolom definisi dan verifikasi immutability ORM.
+- `tests/unit/test_agent_contracts.py` (20 tests): Pengujian contract models, boundary kebijakan, hashing Format 3 kanonikal, sinkronisasi scenario IDs Bench, rejection skenario/suite tidak dikenal, gate quality threshold, dan penolakan lifecycle pada format legacy.
+- `tests/security/test_version_payload_integrity.py` (29 tests): Pengujian anti-tampering pada seluruh 10 kolom definisi baru, verifikasi immutability ORM, parameterized test penolakan penyelundupan field baru di balik hash legacy, dan rejection transisi lifecycle versi legacy.
 - `tests/integration/test_schema_migration_compatibility.py` (3 tests): Pengujian migrasi Alembic 010, retensi data existing, dan kompilasi DDL PostgreSQL offline.
 - `tests/integration/test_studio_api.py` (22 tests): Verifikasi API endpoint Studio dengan payload bertipe baru.
-- Full backend suite: 295 passed, 5 skipped (0 failures).
+- Full backend test suite: 298 passed, 5 skipped (0 failures).
 - Frontend suite: 57 vitest tests passed (0 failures) & clean build (`tsc -b && vite build`).

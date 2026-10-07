@@ -50,6 +50,7 @@ class BenchRepository:
             evaluated_by=context.actor.actor_id,
             evaluated_at=datetime.datetime.fromisoformat(eval_result.evaluated_at),
             provenance_json=json.dumps({
+                "suite_id": getattr(eval_result, "suite_id", "research-safety-1.2.0"),
                 "evaluation_version": eval_result.evaluation_version,
                 "requested_model": eval_result.requested_model,
                 "payload_hash": eval_result.payload_hash,
@@ -70,7 +71,7 @@ class BenchRepository:
         return model
 
     def verify_result(self, context, result, version, evaluated_by):
-        BenchQualityGate.validate_evidence(result)
+        BenchQualityGate.validate_evidence(result, evaluation_reference=version.evaluation_reference)
         if (result.blueprint_id != version.blueprint_id or result.version_id != version.id
                 or result.payload_hash != version.payload_hash or result.requested_model != version.model
                 or not self.evidence_signer
@@ -83,6 +84,7 @@ class BenchRepository:
             if row.passed not in {0, 1}:
                 raise ValueError("Invalid stored pass indicator.")
             provenance = json.loads(row.provenance_json)
+            provenance.setdefault("suite_id", "research-safety-1.2.0")
             result = BenchEvaluationResult(
                 evaluation_id=row.id, blueprint_id=row.blueprint_id, version_id=row.version_id,
                 passed=bool(row.passed), total_scenarios=row.total_scenarios,
@@ -130,7 +132,9 @@ class BenchRepository:
         if not latest or not latest.passed:
             return None
         version = AgentVersion.from_stored(AgentRepository(self.session).get_version(context, version_id))
+        if version.canonical_format != 3:
+            return None
         if version.evaluation_id != latest.id:
             raise QualityGateFailedError("Latest evaluation differs from the version evidence reference.")
-        BenchQualityGate().enforce(self.validate_stored(context, latest, version))
+        BenchQualityGate().enforce(self.validate_stored(context, latest, version), evaluation_reference=version.evaluation_reference)
         return latest

@@ -5,15 +5,59 @@ Complies with ARYN-ARCH-001 Section 06 and AGENTS.md rule 6.
 
 from __future__ import annotations
 
-from typing import List
+from typing import Dict, List, Optional
 import hashlib
 import json
+from pydantic import BaseModel, Field
 from packages.contracts.bench import BenchCategory, BenchScenario
+
+RESEARCH_SAFETY_SUITE_ID = "research-safety-1.2.0"
+RESEARCH_SAFETY_SUITE_ALIAS = "research-safety"
+RESEARCH_SAFETY_EVALUATION_VERSION = "1.2.0"
+
+RESEARCH_SAFETY_SCENARIO_IDS: List[str] = [
+    "scen_safety_injection_defense",
+    "scen_tool_confinement_defense",
+    "scen_research_accuracy_synthesis",
+    "scen_grounded_abstention",
+]
+
+
+class BenchSuiteDefinition(BaseModel):
+    """Authoritative Bench evaluation suite definition."""
+    suite_id: str
+    evaluation_version: str
+    name: str
+    description: str
+    scenarios: List[BenchScenario]
+    scenario_ids: List[str]
+    suite_hash: str
 
 
 def research_suite_hash() -> str:
     payload = [scenario.model_dump(mode="json") for scenario in get_standard_research_bench_scenarios()]
     return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def get_bench_suite(suite_id: str) -> Optional[BenchSuiteDefinition]:
+    """Resolves an authoritative Bench suite by its canonical identifier or registered alias."""
+    if suite_id in (RESEARCH_SAFETY_SUITE_ID, RESEARCH_SAFETY_SUITE_ALIAS):
+        scenarios = get_standard_research_bench_scenarios()
+        return BenchSuiteDefinition(
+            suite_id=RESEARCH_SAFETY_SUITE_ID,
+            evaluation_version=RESEARCH_SAFETY_EVALUATION_VERSION,
+            name="Research Safety Benchmark Suite",
+            description="Four-pillar deterministic verification: injection defense, tool confinement, accuracy, and abstention.",
+            scenarios=scenarios,
+            scenario_ids=list(RESEARCH_SAFETY_SCENARIO_IDS),
+            suite_hash=research_suite_hash(),
+        )
+    return None
+
+
+def get_supported_bench_suite_ids() -> List[str]:
+    """Returns all recognized suite identifiers including aliases."""
+    return [RESEARCH_SAFETY_SUITE_ID, RESEARCH_SAFETY_SUITE_ALIAS]
 
 
 def get_standard_research_bench_scenarios() -> List[BenchScenario]:

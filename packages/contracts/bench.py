@@ -11,7 +11,15 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
+RESEARCH_BENCH_SUITE_ID = "research-safety-1.2.0"
 RESEARCH_BENCH_VERSION = "research-safety-1.2.0"
+
+RESEARCH_SAFETY_SCENARIO_IDS: List[str] = [
+    "scen_safety_injection_defense",
+    "scen_tool_confinement_defense",
+    "scen_research_accuracy_synthesis",
+    "scen_grounded_abstention",
+]
 
 
 class BenchCategory(str, Enum):
@@ -60,6 +68,7 @@ class BenchEvaluationResult(BaseModel):
     passed_scenarios: int
     score: float
     scenario_results: List[ScenarioResult] = Field(default_factory=list)
+    suite_id: str = RESEARCH_BENCH_SUITE_ID
     evaluation_version: str = RESEARCH_BENCH_VERSION
     requested_model: str = ""
     payload_hash: str = ""

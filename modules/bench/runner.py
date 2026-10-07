@@ -14,8 +14,12 @@ from packages.contracts.core import SecurityContext
 from packages.contracts.agent import AgentVersion
 from packages.contracts.bench import BenchEvaluationResult, BenchScenario, ScenarioResult
 from packages.contracts.runtime import ModelUnavailableError, RunRequest, RunStatus, RuntimeAdapter
-from modules.bench.scenarios import get_standard_research_bench_scenarios, research_suite_hash
-from modules.bench.quality_gate import QualityGateFailedError
+from modules.bench.scenarios import (
+    get_bench_suite,
+    get_standard_research_bench_scenarios,
+    research_suite_hash,
+)
+from modules.bench.quality_gate import BenchQualityGate, QualityGateFailedError
 
 
 class BenchRunner:
@@ -32,10 +36,16 @@ class BenchRunner:
         scenarios: Optional[List[BenchScenario]] = None,
         on_event: Optional[Callable[[str, Dict[str, Any]], Any]] = None,
     ) -> BenchEvaluationResult:
-        version.verify_integrity()
-        suite = get_standard_research_bench_scenarios()
+        version.verify_integrity(require_canonical=True)
+        suite_def = get_bench_suite(version.evaluation_reference.suite_id)
+        if suite_def is None:
+            raise QualityGateFailedError(
+                f"Agent version '{version.id}' references unsupported evaluation suite "
+                f"'{version.evaluation_reference.suite_id}'."
+            )
+        suite = suite_def.scenarios
         if scenarios is not None and scenarios != suite:
-            raise QualityGateFailedError("The complete current research suite is mandatory.")
+            raise QualityGateFailedError(f"The complete current suite '{suite_def.suite_id}' is mandatory.")
         caps = await self.runtime_adapter.capabilities()
         if not caps.tools_confined or caps.enabled_toolsets or version.tool_grants:
             raise QualityGateFailedError("Research Bench requires an isolated text runtime without tools.")
@@ -154,7 +164,16 @@ class BenchRunner:
         passed_count = sum(1 for r in scenario_results if r.passed)
         total_count = len(scenario_results)
         score = round(passed_count / total_count, 4) if total_count > 0 else 0.0
-        overall_passed = (passed_count == total_count and total_count > 0)
+
+        req_scens = set(version.evaluation_reference.required_scenarios)
+        results_by_id = {r.scenario_id: r for r in scenario_results}
+        required_passed = all(results_by_id.get(s, None) and results_by_id[s].passed for s in req_scens)
+        overall_passed = (
+            passed_count == total_count
+            and total_count > 0
+            and score >= version.evaluation_reference.min_score_threshold
+            and required_passed
+        )
 
         result = BenchEvaluationResult(
             evaluation_id=f"eval_{uuid.uuid4().hex[:16]}",
@@ -165,9 +184,11 @@ class BenchRunner:
             passed_scenarios=passed_count,
             score=score,
             scenario_results=scenario_results,
+            suite_id=suite_def.suite_id,
+            evaluation_version=version.evaluation_reference.evaluation_version or suite_def.evaluation_version,
             requested_model=version.model,
             payload_hash=version.payload_hash,
-            suite_hash=research_suite_hash(),
+            suite_hash=suite_def.suite_hash,
             runtime_adapter=f"{type(self.runtime_adapter).__module__}.{type(self.runtime_adapter).__qualname__}",
         )
         if self.evidence_signer:
