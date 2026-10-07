@@ -1,8 +1,60 @@
+export type OutputContract = {
+  format?: string;
+  schema_definition?: Record<string, unknown> | null;
+  required_sections?: string[];
+  description?: string | null;
+  strict?: boolean;
+};
+
+export type Constraints = {
+  disallowed_actions?: string[];
+  operational_rules?: string[];
+  require_evidence_citation?: boolean;
+  max_execution_time_seconds?: number;
+};
+
+export type ToolPolicy = {
+  tool_grants?: string[];
+  forbidden_tools?: string[];
+  deny_by_default?: boolean;
+  network_access?: boolean;
+  file_write_access?: boolean;
+  code_execution?: boolean;
+};
+
+export type ModelPolicy = {
+  primary_model?: string;
+  provider?: string;
+  allowed_models?: string[];
+  temperature?: number;
+  max_tokens?: number;
+  allow_fallback?: boolean;
+  stop_sequences?: string[];
+};
+
+export type BudgetPolicy = {
+  max_tokens_per_run?: number;
+  max_turns?: number;
+  max_cost_usd?: number;
+  timeout_seconds?: number;
+};
+
+export type EvaluationReference = {
+  suite_id?: string;
+  evaluation_version?: string;
+  min_score_threshold?: number;
+  required_scenarios?: string[];
+  evaluation_id?: string | null;
+};
+
 export type Blueprint = {
   id: string;
   name: string;
   slug: string;
   description: string;
+  role?: string | null;
+  objective?: string | null;
+  owner?: string | null;
   created_at: string;
 };
 export type Version = {
@@ -20,6 +72,16 @@ export type Version = {
   bench_eligible: boolean;
   governance_valid: boolean;
   created_at: string;
+  schema_version?: string;
+  role?: string;
+  objective?: string;
+  owner?: string | null;
+  output_contract?: OutputContract;
+  constraints?: Constraints;
+  tool_policy?: ToolPolicy;
+  model_policy?: ModelPolicy;
+  budget_policy?: BudgetPolicy;
+  evaluation_reference?: EvaluationReference;
 };
 export type Scenario = {
   scenario_id: string;

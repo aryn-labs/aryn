@@ -24,17 +24,21 @@ from packages.contracts.core import ActorType, AuditStatus, SecurityContext
 from packages.contracts.agent import (
     AgentAssignment,
     AgentBlueprint,
+    AgentBudgetPolicy,
+    AgentConstraints,
+    AgentDefinition,
+    AgentEvaluationReference,
+    AgentModelPolicy,
+    AgentOutputContract,
+    AgentToolPolicy,
     AgentVersion,
     AgentVersionStatus,
+    ForbiddenToolError,
+    VersionIntegrityError,
 )
 from packages.contracts.bench import BenchEvaluationResult, BenchScenario
 from packages.contracts.approval import ApprovalRecord
 from packages.model_adapters import ModelRouter
-
-
-class ForbiddenToolError(Exception):
-    """Raised when an agent version requests unsafe or unauthorized tools."""
-    pass
 
 
 class UnpublishedVersionError(Exception):
@@ -85,6 +89,9 @@ class AgentFactoryService:
         name: str,
         slug: str,
         description: Optional[str] = None,
+        role: Optional[str] = None,
+        objective: Optional[str] = None,
+        owner: Optional[str] = None,
     ) -> AgentBlueprint:
         # Check permissions
         self.permission_engine.enforce("run:create", context, context.organization_id, context.project_id)
@@ -98,25 +105,18 @@ class AgentFactoryService:
                 name=name,
                 slug=slug,
                 description=description,
+                role=role,
+                objective=objective,
+                owner=owner,
             )
-            bp_contract = AgentBlueprint(
-                id=model.id,
-                organization_id=model.organization_id,
-                project_id=model.project_id,
-                name=model.name,
-                slug=model.slug,
-                description=model.description,
-                created_by=model.created_by,
-                created_at=model.created_at.isoformat(),
-                updated_at=model.updated_at.isoformat(),
-            )
+            bp_contract = AgentBlueprint.from_stored(model)
 
         self.audit_logger.record(
             event_type="factory.blueprint.created",
             context=context,
             resource_id=blueprint_id,
             status=AuditStatus.ALLOWED,
-            payload={"name": name, "slug": slug},
+            payload={"name": name, "slug": slug, "role": role, "owner": owner or context.actor.actor_id},
         )
         return bp_contract
 
@@ -135,14 +135,41 @@ class AgentFactoryService:
         temperature: float = 0.7,
         max_tokens: int = 2048,
         metadata: Optional[Dict[str, Any]] = None,
+        schema_version: str = "1.0.0",
+        role: Optional[str] = None,
+        objective: Optional[str] = None,
+        owner: Optional[str] = None,
+        output_contract: Optional[Dict[str, Any] | AgentOutputContract] = None,
+        constraints: Optional[Dict[str, Any] | List[str] | AgentConstraints] = None,
+        tool_policy: Optional[Dict[str, Any] | AgentToolPolicy] = None,
+        model_policy: Optional[Dict[str, Any] | AgentModelPolicy] = None,
+        budget_policy: Optional[Dict[str, Any] | AgentBudgetPolicy] = None,
+        evaluation_reference: Optional[Dict[str, Any] | AgentEvaluationReference] = None,
     ) -> AgentVersion:
         self.permission_engine.enforce("run:create", context, context.organization_id, context.project_id)
 
         # 1. Model policy validation (ADR-005)
         self.model_router.resolve_model(model)
+        if model_policy:
+            parsed_model_policy = (
+                AgentModelPolicy.model_validate(model_policy)
+                if isinstance(model_policy, dict)
+                else model_policy
+            )
+            parsed_model_policy.validate_model(model)
 
-        # 2. Tool boundary confinement: block forbidden tools
-        tools = tool_grants or []
+        # 2. Tool boundary confinement: explicit grants & deny-by-default
+        if tool_policy:
+            parsed_tool_policy = (
+                AgentToolPolicy.model_validate(tool_policy)
+                if isinstance(tool_policy, dict)
+                else tool_policy
+            )
+            parsed_tool_policy.validate_tool_grants()
+            tools = parsed_tool_policy.tool_grants
+        else:
+            tools = tool_grants or []
+
         for t in tools:
             if t.lower() in self.FORBIDDEN_TOOL_NAMES:
                 raise ForbiddenToolError(
@@ -150,22 +177,39 @@ class AgentFactoryService:
                 )
 
         version_id = f"av_{uuid.uuid4().hex[:16]}"
-        v_temp = AgentVersion(
-            id=version_id,
-            blueprint_id=blueprint_id,
-            version_number=version_number,
-            status=AgentVersionStatus.DRAFT,
-            system_prompt=system_prompt,
-            model=model,
-            tool_grants=tools,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            metadata=metadata or {},
-        )
-        payload_hash = v_temp.calculate_payload_hash()
 
         with self.db_manager.session(write=True) as session:
             repo = AgentRepository(session)
+            blueprint = repo.get_blueprint(context, blueprint_id)
+
+            resolved_role = role or blueprint.role or "general_agent"
+            resolved_objective = objective or blueprint.objective or ""
+            resolved_owner = owner or blueprint.owner or context.actor.actor_id
+
+            v_temp = AgentVersion(
+                id=version_id,
+                blueprint_id=blueprint_id,
+                version_number=version_number,
+                status=AgentVersionStatus.DRAFT,
+                system_prompt=system_prompt,
+                model=model,
+                tool_grants=tools,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                metadata=metadata or {},
+                schema_version=schema_version,
+                role=resolved_role,
+                objective=resolved_objective,
+                owner=resolved_owner,
+                output_contract=output_contract or AgentOutputContract(),
+                constraints=constraints or AgentConstraints(),
+                tool_policy=tool_policy or AgentToolPolicy(tool_grants=tools),
+                model_policy=model_policy or AgentModelPolicy(primary_model=model, temperature=temperature, max_tokens=max_tokens),
+                budget_policy=budget_policy or AgentBudgetPolicy(),
+                evaluation_reference=evaluation_reference or AgentEvaluationReference(),
+            )
+            payload_hash = v_temp.calculate_payload_hash()
+
             m = repo.create_version(
                 context=context,
                 version_id=version_id,
@@ -178,21 +222,18 @@ class AgentFactoryService:
                 temperature=temperature,
                 max_tokens=max_tokens,
                 metadata=metadata,
+                schema_version=schema_version,
+                role=resolved_role,
+                objective=resolved_objective,
+                owner=resolved_owner,
+                output_contract=output_contract,
+                constraints=constraints,
+                tool_policy=tool_policy,
+                model_policy=model_policy,
+                budget_policy=budget_policy,
+                evaluation_reference=evaluation_reference,
             )
-            created_version = AgentVersion(
-                id=m.id,
-                blueprint_id=m.blueprint_id,
-                version_number=m.version_number,
-                status=AgentVersionStatus(m.status),
-                system_prompt=m.system_prompt,
-                model=m.model,
-                tool_grants=json.loads(m.tool_grants_json),
-                temperature=m.temperature,
-                max_tokens=m.max_tokens,
-                metadata=json.loads(m.metadata_json),
-                payload_hash=m.payload_hash,
-                created_at=m.created_at.isoformat(),
-            )
+            created_version = AgentVersion.from_stored(m)
 
         self.audit_logger.record(
             event_type="factory.version.created",
@@ -204,6 +245,8 @@ class AgentFactoryService:
                 "version_number": version_number,
                 "payload_hash": payload_hash,
                 "model": model,
+                "schema_version": schema_version,
+                "role": resolved_role,
             },
         )
         return created_version
@@ -228,20 +271,7 @@ class AgentFactoryService:
         with self.db_manager.session(write=True) as session:
             repo = AgentRepository(session)
             m = repo.get_version(context, version_id, for_update=True)
-            version_contract = AgentVersion(
-                id=m.id,
-                blueprint_id=m.blueprint_id,
-                version_number=m.version_number,
-                status=AgentVersionStatus(m.status),
-                system_prompt=m.system_prompt,
-                model=m.model,
-                tool_grants=json.loads(m.tool_grants_json),
-                temperature=m.temperature,
-                max_tokens=m.max_tokens,
-                metadata=json.loads(m.metadata_json),
-                payload_hash=m.payload_hash,
-                created_at=m.created_at.isoformat(),
-            )
+            version_contract = AgentVersion.from_stored(m)
             if m.status not in {"draft", "rejected", "approved"}:
                 raise InvalidStateTransitionError("Bench evaluation is already active or version is immutable.")
             # Mark version as evaluating
@@ -359,23 +389,7 @@ class AgentFactoryService:
                 published_by=context.actor.actor_id,
             )
 
-            published_version = AgentVersion(
-                id=published_model.id,
-                blueprint_id=published_model.blueprint_id,
-                version_number=published_model.version_number,
-                status=AgentVersionStatus.PUBLISHED,
-                system_prompt=published_model.system_prompt,
-                model=published_model.model,
-                tool_grants=json.loads(published_model.tool_grants_json),
-                temperature=published_model.temperature,
-                max_tokens=published_model.max_tokens,
-                metadata=json.loads(published_model.metadata_json),
-                payload_hash=published_model.payload_hash,
-                evaluation_id=published_model.evaluation_id,
-                published_at=published_model.published_at.isoformat() if published_model.published_at else None,
-                published_by=published_model.published_by,
-                created_at=published_model.created_at.isoformat(),
-            )
+            published_version = AgentVersion.from_stored(published_model)
 
         self.audit_logger.record(
             event_type="factory.version.published",

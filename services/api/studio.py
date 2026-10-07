@@ -12,6 +12,7 @@ import os
 import secrets
 import time
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Request
@@ -83,6 +84,9 @@ class BlueprintInput(BaseModel):
         min_length=2, max_length=80, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$"
     )
     description: str = Field(default="", max_length=2000)
+    role: Optional[str] = Field(default=None, max_length=64)
+    objective: Optional[str] = Field(default=None, max_length=2000)
+    owner: Optional[str] = Field(default=None, max_length=64)
 
 
 class VersionInput(BaseModel):
@@ -97,6 +101,16 @@ class VersionInput(BaseModel):
     temperature: float = Field(default=0.3, ge=0, le=2)
     max_tokens: int = Field(default=2048, ge=128, le=4096)
     tool_grants: list[str] = Field(default_factory=list, max_length=0)
+    schema_version: Optional[str] = Field(default="1.0.0", max_length=32)
+    role: Optional[str] = Field(default=None, max_length=64)
+    objective: Optional[str] = Field(default=None, max_length=4000)
+    owner: Optional[str] = Field(default=None, max_length=64)
+    output_contract: Optional[dict[str, Any]] = None
+    constraints: Optional[dict[str, Any] | list[str]] = None
+    tool_policy: Optional[dict[str, Any]] = None
+    model_policy: Optional[dict[str, Any]] = None
+    budget_policy: Optional[dict[str, Any]] = None
+    evaluation_reference: Optional[dict[str, Any]] = None
 
 
 class ApprovalInput(BaseModel):

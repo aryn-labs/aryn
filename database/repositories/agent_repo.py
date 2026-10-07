@@ -13,7 +13,15 @@ from sqlalchemy.exc import IntegrityError
 
 from database.schema import AgentBlueprintModel, AgentVersionModel, AgentAssignmentModel, utc_now
 from packages.contracts.core import SecurityContext
-from packages.contracts.agent import AgentVersion
+from packages.contracts.agent import (
+    AgentBudgetPolicy,
+    AgentConstraints,
+    AgentEvaluationReference,
+    AgentModelPolicy,
+    AgentOutputContract,
+    AgentToolPolicy,
+    AgentVersion,
+)
 from database.repositories.exceptions import (
     DuplicateEntityError,
     EntityNotFoundError,
@@ -48,6 +56,9 @@ class AgentRepository:
         name: str,
         slug: str,
         description: Optional[str] = None,
+        role: Optional[str] = None,
+        objective: Optional[str] = None,
+        owner: Optional[str] = None,
     ) -> AgentBlueprintModel:
         existing = (
             self.session.query(AgentBlueprintModel)
@@ -66,6 +77,9 @@ class AgentRepository:
             name=name,
             slug=slug,
             description=description,
+            role=role,
+            objective=objective,
+            owner=owner,
             created_by=context.actor.actor_id,
         )
         self.session.add(blueprint)
@@ -114,6 +128,16 @@ class AgentRepository:
         temperature: float = 0.7,
         max_tokens: int = 2048,
         metadata: Optional[Dict[str, Any]] = None,
+        schema_version: str = "1.0.0",
+        role: Optional[str] = None,
+        objective: Optional[str] = None,
+        owner: Optional[str] = None,
+        output_contract: Optional[Dict[str, Any] | AgentOutputContract] = None,
+        constraints: Optional[Dict[str, Any] | List[str] | AgentConstraints] = None,
+        tool_policy: Optional[Dict[str, Any] | AgentToolPolicy] = None,
+        model_policy: Optional[Dict[str, Any] | AgentModelPolicy] = None,
+        budget_policy: Optional[Dict[str, Any] | AgentBudgetPolicy] = None,
+        evaluation_reference: Optional[Dict[str, Any] | AgentEvaluationReference] = None,
     ) -> AgentVersionModel:
         # Validate parent blueprint belongs to context
         blueprint = self.get_blueprint(context, blueprint_id)
@@ -128,6 +152,35 @@ class AgentRepository:
                 f"Agent version '{version_number}' already exists for blueprint '{blueprint_id}'."
             )
 
+        resolved_role = role or blueprint.role or "general_agent"
+        resolved_objective = objective or blueprint.objective or ""
+        resolved_owner = owner or blueprint.owner
+
+        # Validate caller-supplied hash against the exact data about to be stored.
+        contract = AgentVersion(
+            id=version_id,
+            blueprint_id=blueprint.id,
+            version_number=version_number,
+            system_prompt=system_prompt,
+            model=model,
+            tool_grants=tool_grants,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            metadata=metadata or {},
+            payload_hash=payload_hash,
+            schema_version=schema_version,
+            role=resolved_role,
+            objective=resolved_objective,
+            owner=resolved_owner,
+            output_contract=output_contract or AgentOutputContract(),
+            constraints=constraints or AgentConstraints(),
+            tool_policy=tool_policy or AgentToolPolicy(tool_grants=tool_grants),
+            model_policy=model_policy or AgentModelPolicy(primary_model=model, temperature=temperature, max_tokens=max_tokens),
+            budget_policy=budget_policy or AgentBudgetPolicy(),
+            evaluation_reference=evaluation_reference or AgentEvaluationReference(),
+        )
+        contract.verify_integrity()
+
         version = AgentVersionModel(
             id=version_id,
             blueprint_id=blueprint.id,
@@ -140,15 +193,17 @@ class AgentRepository:
             max_tokens=max_tokens,
             metadata_json=json.dumps(metadata or {}),
             payload_hash=payload_hash,
+            schema_version=contract.schema_version,
+            role=contract.role,
+            objective=contract.objective,
+            owner=contract.owner,
+            output_contract_json=json.dumps(contract.output_contract.model_dump(mode="json")),
+            constraints_json=json.dumps(contract.constraints.model_dump(mode="json")),
+            tool_policy_json=json.dumps(contract.tool_policy.model_dump(mode="json")),
+            model_policy_json=json.dumps(contract.model_policy.model_dump(mode="json")),
+            budget_policy_json=json.dumps(contract.budget_policy.model_dump(mode="json")),
+            evaluation_reference_json=json.dumps(contract.evaluation_reference.model_dump(mode="json")),
         )
-        # Validate caller-supplied hash against the exact data about to be stored.
-        contract = AgentVersion(
-            id=version_id, blueprint_id=blueprint.id, version_number=version_number,
-            system_prompt=system_prompt, model=model, tool_grants=tool_grants,
-            temperature=temperature, max_tokens=max_tokens, metadata=metadata or {},
-            payload_hash=payload_hash,
-        )
-        contract.verify_integrity()
         self.session.add(version)
         try:
             self.session.flush()

@@ -184,6 +184,9 @@ class AgentBlueprintModel(Base):
     name = Column(String(255), nullable=False)
     slug = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
+    role = Column(String(64), nullable=True)
+    objective = Column(Text, nullable=True)
+    owner = Column(String(64), nullable=True)
     created_by = Column(String(64), nullable=False)
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
@@ -216,6 +219,17 @@ class AgentVersionModel(Base):
     published_by = Column(String(64), nullable=True)
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
 
+    schema_version = Column(String(32), default="1.0.0", nullable=False)
+    role = Column(String(64), default="general_agent", nullable=False)
+    objective = Column(Text, default="", nullable=False)
+    owner = Column(String(64), nullable=True)
+    output_contract_json = Column(Text, default="{}", nullable=False)
+    constraints_json = Column(Text, default="[]", nullable=False)
+    tool_policy_json = Column(Text, default="{}", nullable=False)
+    model_policy_json = Column(Text, default="{}", nullable=False)
+    budget_policy_json = Column(Text, default="{}", nullable=False)
+    evaluation_reference_json = Column(Text, default="{}", nullable=False)
+
     blueprint = relationship("AgentBlueprintModel", back_populates="versions")
     assignments = relationship("AgentAssignmentModel", back_populates="version", cascade="all, delete-orphan")
 
@@ -238,6 +252,9 @@ def protect_published_configuration(mapper, connection, target):
             "id", "blueprint_id", "version_number", "system_prompt", "model",
             "tool_grants_json", "temperature", "max_tokens", "metadata_json",
             "payload_hash", "evaluation_id", "published_at", "published_by", "created_at",
+            "schema_version", "role", "objective", "owner",
+            "output_contract_json", "constraints_json", "tool_policy_json",
+            "model_policy_json", "budget_policy_json", "evaluation_reference_json",
         )
         if any(state.attrs[name].history.has_changes() for name in protected):
             from packages.contracts.agent import VersionIntegrityError

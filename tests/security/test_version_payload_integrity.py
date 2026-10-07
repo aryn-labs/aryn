@@ -24,6 +24,15 @@ def test_hash_covers_security_metadata_and_exact_parameters(lifecycle):
     ("system_prompt", "Compromised prompt"), ("model", "mock-quality"),
     ("tool_grants_json", '["terminal"]'), ("temperature", 0.70001),
     ("max_tokens", 1024), ("metadata_json", '{"security":{"tools":"allowed"}}'),
+    ("role", "compromised_role"),
+    ("objective", "unauthorized objective"),
+    ("output_contract_json", '{"format":"malicious"}'),
+    ("constraints_json", '{"disallowed_actions":["compromised_action"]}'),
+    ("tool_policy_json", '{"network_access":true}'),
+    ("model_policy_json", '{"primary_model":"shadow_model"}'),
+    ("budget_policy_json", '{"max_tokens_per_run":999999}'),
+    ("evaluation_reference_json", '{"suite_id":"insecure_suite"}'),
+    ("schema_version", "9.9.9"),
 ])
 @pytest.mark.asyncio
 async def test_stored_configuration_tampering_is_rejected(lifecycle, column, value):
@@ -46,9 +55,19 @@ async def test_published_configuration_cannot_be_mutated_through_orm(lifecycle):
     with pytest.raises(ValueError, match="immutable"):
         with db.session() as s:
             AgentRepository(s).get_version(ctx, version.id).system_prompt = "Changed"
+    with pytest.raises(ValueError, match="immutable"):
+        with db.session() as s:
+            AgentRepository(s).get_version(ctx, version.id).role = "ChangedRole"
+    with pytest.raises(ValueError, match="immutable"):
+        with db.session() as s:
+            AgentRepository(s).get_version(ctx, version.id).output_contract_json = '{"format":"csv"}'
+    with pytest.raises(ValueError, match="immutable"):
+        with db.session() as s:
+            AgentRepository(s).get_version(ctx, version.id).tool_policy_json = '{"network_access":true}'
     with db.session() as s:
         stored = AgentRepository(s).get_version(ctx, version.id)
         assert stored.system_prompt == version.system_prompt
+        assert stored.role == version.role
         assert json.loads(stored.metadata_json) == version.metadata
 
 
