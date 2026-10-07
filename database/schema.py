@@ -125,6 +125,12 @@ class RunStateModel(Base):
     request_hash = Column(String(64), nullable=False, default="")
     runtime_run_id = Column(String(128), nullable=True)
     execution_mode = Column(String(16), nullable=False, default="legacy")
+    assignment_id = Column(String(64), nullable=True, index=True)
+    agent_version_id = Column(String(64), nullable=True, index=True)
+    agent_payload_hash = Column(String(64), nullable=True)
+    assignment_transition_id = Column(String(64), nullable=True)
+    assignment_provenance_json = Column(Text, nullable=True)
+    assignment_attestation = Column(String(64), nullable=True)
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
     completed_at = Column(DateTime(timezone=True), nullable=True)
@@ -135,6 +141,17 @@ class RunStateModel(Base):
         Index("idx_run_org_proj_status", "organization_id", "project_id", "status"),
         UniqueConstraint("project_id", "idempotency_key", name="uq_run_project_idempotency"),
     )
+
+
+@event.listens_for(RunStateModel, "before_update")
+def protect_run_assignment_provenance(mapper, connection, target):
+    state = inspect(target)
+    protected = ("assignment_id", "agent_version_id", "agent_payload_hash", "assignment_transition_id",
+        "assignment_provenance_json", "assignment_attestation")
+    if any(state.attrs[key].history.has_changes() for key in protected) and not getattr(target, "_provenance_authorized", False):
+        from packages.contracts.agent import VersionIntegrityError
+        raise VersionIntegrityError("Run assignment provenance is immutable.")
+    target._provenance_authorized = False
 
 
 class AuditEventModel(Base):
@@ -271,6 +288,8 @@ class AgentAssignmentModel(Base):
     division_id = Column(String(64), nullable=True, index=True)
     blueprint_id = Column(String(64), ForeignKey("agent_blueprints.id", ondelete="CASCADE"), nullable=False, index=True)
     version_id = Column(String(64), ForeignKey("agent_versions.id", ondelete="CASCADE"), nullable=False, index=True)
+    current_transition_id = Column(String(64), nullable=True)
+    activation_origin = Column(String(16), nullable=False, default="tracked")
     role_name = Column(String(64), nullable=False)
     status = Column(String(32), default="active", nullable=False, index=True)
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
@@ -282,6 +301,62 @@ class AgentAssignmentModel(Base):
     __table_args__ = (
         UniqueConstraint("project_id", "role_name", name="uq_assignment_project_role"),
     )
+
+
+class AgentPublicationModel(Base):
+    __tablename__ = "agent_publications"
+    id = Column(String(64), primary_key=True)
+    organization_id = Column(String(64), ForeignKey("organizations.id"), nullable=False)
+    project_id = Column(String(64), ForeignKey("projects.id"), nullable=False)
+    blueprint_id = Column(String(64), ForeignKey("agent_blueprints.id"), nullable=False)
+    version_id = Column(String(64), ForeignKey("agent_versions.id"), nullable=False, unique=True)
+    details_json = Column(Text, nullable=False)
+    attestation = Column(String(64), nullable=False)
+    __table_args__ = (Index("ix_agent_publication_scope", "organization_id", "project_id", "blueprint_id"),)
+
+
+class AssignmentTransitionModel(Base):
+    __tablename__ = "assignment_transitions"
+    id = Column(String(64), primary_key=True)
+    organization_id = Column(String(64), ForeignKey("organizations.id"), nullable=False)
+    project_id = Column(String(64), ForeignKey("projects.id"), nullable=False)
+    assignment_id = Column(String(64), ForeignKey("agent_assignments.id"), nullable=False)
+    blueprint_id = Column(String(64), ForeignKey("agent_blueprints.id"), nullable=False)
+    generation = Column(Integer, nullable=False)
+    from_version_id = Column(String(64), ForeignKey("agent_versions.id"), nullable=True)
+    to_version_id = Column(String(64), ForeignKey("agent_versions.id"), nullable=False)
+    transition_type = Column(String(32), nullable=False)
+    actor_id = Column(String(64), nullable=False)
+    committed_at = Column(DateTime(timezone=True), nullable=False)
+    idempotency_key = Column(String(100), nullable=True)
+    details_json = Column(Text, nullable=False)
+    attestation = Column(String(64), nullable=False)
+    __table_args__ = (
+        UniqueConstraint("assignment_id", "generation", name="uq_assignment_transition_generation"),
+        UniqueConstraint("assignment_id", "idempotency_key", name="uq_assignment_transition_request"),
+        Index("ix_assignment_transition_scope", "organization_id", "project_id", "assignment_id"),
+    )
+
+
+@event.listens_for(AgentPublicationModel, "before_update")
+@event.listens_for(AgentPublicationModel, "before_delete")
+@event.listens_for(AssignmentTransitionModel, "before_update")
+@event.listens_for(AssignmentTransitionModel, "before_delete")
+def protect_agent_governance_history(mapper, connection, target):
+    from packages.contracts.agent import VersionIntegrityError
+    raise VersionIntegrityError("Agent publication and activation evidence is append-only.")
+
+
+@event.listens_for(AgentAssignmentModel, "before_update")
+def protect_assignment_activation(mapper, connection, target):
+    state = inspect(target)
+    if any(state.attrs[key].history.has_changes() for key in (
+        "id", "organization_id", "project_id", "blueprint_id", "division_id", "role_name", "created_at",
+        "version_id", "current_transition_id", "activation_origin",
+    )) and not getattr(target, "_activation_authorized", False):
+        from packages.contracts.agent import VersionIntegrityError
+        raise VersionIntegrityError("Assignment activation requires governed transition authority.")
+    target._activation_authorized = False
 
 
 class BenchEvaluationModel(Base):

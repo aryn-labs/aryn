@@ -116,6 +116,10 @@ class RunResult(BaseModel):
     error_message: Optional[str] = None
     raw_response: Dict[str, Any] = Field(default_factory=dict)
     execution_evidence: Optional[Dict[str, Any]] = None
+    assignment_id: Optional[str] = None
+    agent_version_id: Optional[str] = None
+    agent_payload_hash: Optional[str] = None
+    assignment_transition_id: Optional[str] = None
     requested_model: Optional[str] = None
     actual_model: Optional[str] = None
     gateway: Optional[Literal["9Router"]] = None

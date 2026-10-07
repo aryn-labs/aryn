@@ -57,7 +57,42 @@ export type Blueprint = {
   owner?: string | null;
   created_at: string;
 };
+export type VersionRegistryEntry = {
+  version_id: string;
+  blueprint_id: string;
+  version_number: string;
+  status: string;
+  payload_hash: string;
+  created_at: string;
+  published_at?: string | null;
+  published_by?: string | null;
+  evaluation_id?: string | null;
+  bench_verified: boolean;
+  bench_passed?: boolean;
+  approval_id?: string | null;
+  approval_status?: string | null;
+  baseline_id?: string | null;
+  publication_id?: string | null;
+  regression_comparison_id?: string | null;
+  current_baseline: boolean;
+  active_assignment_count: number;
+  rollback_eligible: boolean;
+  reason: string;
+  limitations: string[];
+};
+export type AssignmentTransition = {
+  transition_id: string;
+  assignment_id: string;
+  generation: number;
+  from_version_id?: string | null;
+  to_version_id: string;
+  transition_type: string;
+  actor_id: string;
+  reason: string;
+  committed_at: string;
+};
 export type Version = {
+  registry?: VersionRegistryEntry;
   id: string;
   blueprint_id: string;
   version_number: string;
@@ -172,6 +207,10 @@ export type BenchCompletion = {
   evaluation: Evaluation;
 };
 export type Assignment = {
+  current_transition_id?: string | null;
+  activation_verified?: boolean;
+  activation_reason?: string;
+  activation_history?: AssignmentTransition[];
   id: string;
   blueprint_id: string;
   version_id: string;
@@ -192,6 +231,11 @@ export type Approval = {
   status: string;
 };
 export type Run = {
+  assignment_id?: string | null;
+  agent_version_id?: string | null;
+  agent_payload_hash?: string | null;
+  assignment_transition_id?: string | null;
+  assignment_provenance_verified?: boolean;
   id: string;
   status: string;
   prompt: string;

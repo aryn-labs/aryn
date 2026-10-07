@@ -206,3 +206,15 @@ Live model/provider tests tidak diaktifkan dan PostgreSQL divalidasi dengan offl
 - Incident replay/corpus promotion, rollback registry, full model comparison BN-08, trace viewer/export, Brief, Relay, desktop packaging, billing, production authentication dan branch protection tetap di luar scope.
 - Receipt/history serta comparison direvalidate saat governance; biaya validasi bertambah dengan panjang baseline chain dan jumlah scenarios/graders. History pagination/retention dan optimisasi belum diperlukan untuk workload lokal saat ini.
 - Private controlled requirement documents belum tersedia dalam checkout. Findings runtime di luar scope tidak diperluas menjadi implementation baru.
+## Operational rollback dan baseline separation (AF-07)
+
+Known-good assignment rollback memakai exact historical publication authority dan memverifikasi
+ulang signed Bench evidence serta frozen publication comparison terhadap baseline yang direview
+saat publication. `verify_publication_comparison()` menghitung ulang scenario/grader/metric result
+dari persisted evidence; current baseline tidak diperlukan sebagai rollback target.
+
+Forward approval/publication tetap memakai current accepted baseline dan existing BN-06 gate.
+Rollback tidak menjalankan comparison terbalik, mengubah evaluation atau memundurkan baseline.
+Perubahan current baseline adalah governed Bench action yang terpisah. Explicit accepted evaluation
+tanpa publication tidak memenuhi known-good. Lihat [Factory registry/rollback contracts](agent-factory-contracts.md#8-version-registry-dan-known-good-rollback-af-07)
+untuk publication receipts, assignment history, legacy limits dan test evidence.

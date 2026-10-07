@@ -599,7 +599,11 @@ test("keyboard: dialog terperangkap fokus dan Escape, sidebar collapsible", asyn
   const navigation = page.getByRole("dialog", { name: "Navigasi Studio" });
   await expect(navigation).toBeVisible();
   await expect(page.locator(".app-body")).toHaveAttribute("inert", "");
+  // Wait for the actual opening focus effect before issuing keyboard intent.
+  // Otherwise that effect can race and overwrite the project selector focus.
+  await expect(navigation.getByRole("link").first()).toBeFocused();
   await navigation.getByLabel("Pilih proyek").focus();
+  await expect(navigation.getByLabel("Pilih proyek")).toBeFocused();
   await page.keyboard.press("Shift+Tab");
   await expect(
     navigation.getByRole("button", { name: "Ciutkan sidebar" }),
@@ -1127,4 +1131,132 @@ test("Bench presents accepted baseline against a candidate using server evidence
     page.getByText(/Eligible untuk tinjauan promotion/),
   ).toBeVisible();
   await expect(page.getByText("unavailable", { exact: true })).toBeVisible();
+});
+
+test("AF-07 registry rolls back one assignment and preserves version, baseline and run history", async ({
+  page,
+}) => {
+  const { bp, version, prefix, headers } = await publishedAssignment(page);
+  const created = await page.request.post(
+    `${prefix}/blueprints/${bp.id}/versions`,
+    {
+      headers,
+      data: {
+        version_number: "2.0.0",
+        system_prompt:
+          "Second governed publication follows research safety and abstains without evidence.",
+        model: version.model,
+        max_tokens: 512,
+      },
+    },
+  );
+  expect(created.status()).toBe(201);
+  const second = await created.json();
+  for (const [route, data] of [
+    ["bench", { allow_remote_model: true }],
+    [
+      "approve",
+      {
+        payload_hash: second.payload_hash,
+        comments: "Reviewed second publication.",
+      },
+    ],
+    ["publish", {}],
+  ] as const) {
+    const response = await page.request.post(
+      `${prefix}/versions/${second.id}/${route}`,
+      { headers, data },
+    );
+    expect(response.status()).toBe(200);
+  }
+  const assigned = await page.request.post(`${prefix}/assignments`, {
+    headers,
+    data: {
+      blueprint_id: bp.id,
+      version_id: second.id,
+      role_name: `Rollback operations ${bp.id}`,
+    },
+  });
+  expect(assigned.status()).toBe(201);
+  const assignment = await assigned.json();
+  const other = await page.request.post(`${prefix}/assignments`, {
+    headers,
+    data: {
+      blueprint_id: bp.id,
+      version_id: second.id,
+      role_name: `Other operations ${bp.id}`,
+    },
+  });
+  expect(other.status()).toBe(201);
+  const otherAssignment = await other.json();
+  const before = await page.request.post(`${prefix}/runs`, {
+    headers,
+    data: {
+      assignment_id: assignment.id,
+      prompt: "Run before rollback",
+      allow_remote_model: true,
+      idempotency_key: `before-${bp.id}`,
+    },
+  });
+  expect(before.status()).toBe(200);
+  const beforeRun = await before.json();
+  expect(beforeRun.agent_version_id).toBe(second.id);
+  const priorSnapshot = await (
+    await page.request.get(`${prefix}/snapshot`)
+  ).json();
+  await page.goto(`/factory/${bp.id}?versi=${second.id}`);
+  await expect(
+    page.getByRole("heading", { name: "Version Registry", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", {
+      name: `Tinjau rollback ${assignment.role_name}`,
+      exact: true,
+    })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Rollback assignment" });
+  await expect(
+    dialog.getByText("Current: v2.0.0", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByText("Target: v1.0.0", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByText(version.payload_hash, { exact: true }),
+  ).toBeVisible();
+  await dialog
+    .getByLabel("Alasan rollback")
+    .fill("Restore the previously reviewed exact publication.");
+  await dialog
+    .getByRole("button", { name: "Konfirmasi rollback assignment" })
+    .click();
+  await expect(dialog).not.toBeVisible();
+  await expect(
+    page.getByText(`${assignment.role_name} · aktif v1.0.0`, { exact: true }),
+  ).toBeVisible();
+  const after = await page.request.post(`${prefix}/runs`, {
+    headers,
+    data: {
+      assignment_id: assignment.id,
+      prompt: "Run after rollback",
+      allow_remote_model: true,
+      idempotency_key: `after-${bp.id}`,
+    },
+  });
+  expect(after.status()).toBe(200);
+  expect((await after.json()).agent_version_id).toBe(version.id);
+  const snapshot = await (await page.request.get(`${prefix}/snapshot`)).json();
+  expect(snapshot.accepted_baselines).toEqual(priorSnapshot.accepted_baselines);
+  expect(
+    snapshot.assignments.find(
+      (a: { id: string }) => a.id === otherAssignment.id,
+    ).version_id,
+  ).toBe(second.id);
+  expect(
+    snapshot.runs.find((r: { id: string }) => r.id === beforeRun.run_id)
+      .agent_version_id,
+  ).toBe(second.id);
+  await page.goto(`/runs?hasil=${beforeRun.run_id}`);
+  await expect(page.locator("body")).toContainText("HISTORICAL RUN");
+  await expect(page.locator("body")).toContainText("2.0.0");
 });

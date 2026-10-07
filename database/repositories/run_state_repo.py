@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import json
 from typing import Dict, List, Optional, Set
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
@@ -90,11 +91,31 @@ class RunStateRepository:
                 f"Project boundary violation: Run '{run_id}' belongs to project '{run.project_id}', "
                 f"not context project '{context.project_id}'."
             )
+        self.verify_assignment_provenance(run)
         return run
+
+    def verify_assignment_provenance(self, run):
+        if not run.assignment_provenance_json:
+            if run.assignment_id or run.agent_version_id or run.agent_payload_hash or run.assignment_attestation:
+                raise InvalidStateTransitionError("Run assignment provenance is incomplete.")
+            return False
+        manager = self.session.info.get("db_manager")
+        try:
+            evidence = json.loads(run.assignment_provenance_json)
+            bindings = {"run_id": run.id, "organization_id": run.organization_id, "project_id": run.project_id,
+                "assignment_id": run.assignment_id, "version_id": run.agent_version_id, "payload_hash": run.agent_payload_hash,
+                "transition_id": run.assignment_transition_id, "request_hash": run.request_hash, "requested_model": run.model}
+            if (not manager or any(evidence.get(k) != v for k, v in bindings.items())
+                    or run.session_id != run.assignment_id or not manager.evidence_signer.verify(
+                        "assignment_run", evidence, run.assignment_attestation)):
+                raise ValueError("Run provenance mismatch.")
+            return True
+        except (ValueError, TypeError) as exc:
+            raise InvalidStateTransitionError("Run assignment provenance is invalid.") from exc
 
     def get_run_by_idempotency_key(self, context: SecurityContext, idempotency_key: str) -> Optional[RunStateModel]:
         """Finds existing run in the same project with given idempotency key."""
-        return (
+        row = (
             self.session.query(RunStateModel)
             .filter_by(
                 organization_id=context.organization_id,
@@ -103,6 +124,9 @@ class RunStateRepository:
             )
             .first()
         )
+        if row:
+            self.verify_assignment_provenance(row)
+        return row
 
     def transition_status(
         self,

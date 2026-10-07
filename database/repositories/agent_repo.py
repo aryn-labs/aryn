@@ -285,10 +285,11 @@ class AgentRepository:
         version_id: str,
         role_name: str,
         division_id: Optional[str] = None,
+        permission_engine=None,
     ) -> AgentAssignmentModel:
         # Validate blueprint and version in tenant
         blueprint = self.get_blueprint(context, blueprint_id)
-        version = self.get_version(context, version_id)
+        version = self.get_version(context, version_id, for_update=True)
 
         if version.blueprint_id != blueprint.id:
             raise InvalidStateTransitionError("Assignment blueprint must match the version's parent blueprint.")
@@ -299,6 +300,14 @@ class AgentRepository:
                 f"Cannot assign agent version '{version_id}' with status '{version.status}'. "
                 "Only 'published' versions can be assigned to projects or divisions."
             )
+
+        from database.repositories.agent_activation_repo import AgentActivationRepository
+        manager = self.session.info.get("db_manager")
+        if manager is None:
+            raise InvalidStateTransitionError("Assignment requires configured governance authority.")
+        activation = AgentActivationRepository(self.session, manager.evidence_signer, permission_engine)
+        activation.permissions.enforce("agent:assign", context, context.organization_id, context.project_id)
+        activation.known_good(context, version.id)
 
         existing = (
             self.session.query(AgentAssignmentModel)
@@ -328,6 +337,7 @@ class AgentRepository:
             raise DuplicateEntityError(
                 f"Assignment conflict for role '{role_name}' in project '{context.project_id}'."
             ) from exc
+        activation.initialize(context, assignment)
         return assignment
 
     def get_assignment(self, context: SecurityContext, assignment_id: str) -> AgentAssignmentModel:

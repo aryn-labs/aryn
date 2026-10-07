@@ -144,3 +144,16 @@ Browser tests memakai API HTTP, Core, dan SQLite aktual pada **port 8711** denga
 Dokumen ARYN-PRD-001/ARCH/TECH/SEC privat belum tersimpan di checkout `aryn-docs`; indeksnya menyatakan NO. ID P0 privat tidak direka. Implementasi mengikuti AGENTS.md, SECURITY.md, contracts, dan perilaku Core aktual. Referensi desain yang ditinjau: [Linear refresh](https://linear.app/changelog/2026-03-12-ui-refresh), [Dify Workflow Studio](https://dify.ai/workflows), [Langfuse observability](https://langfuse.com/docs/observability/overview), [shadcn dashboard blocks](https://ui.shadcn.com/blocks?category=dashboard). Identitas, palette, layout, dan alur Studio dibuat untuk ARYN.
 
 Hasil tes historis Studio dicatat di `docs/studio-validation.md`. Audit integritas, governance, concurrency, ownership, migrasi, hasil otomatis terbaru, serta validasi sistem terdapat pada [laporan validasi governance dan keamanan](system-governance-validation.md). Tes model live sekarang memerlukan izin pemilik dan opt-in eksplisit; pengujian biasa tidak mengirim prompt model live.
+## Version Registry dan rollback assignment
+
+Factory detail menyediakan Version Registry dan histori aktivasi per assignment. Known-good
+ditentukan server dari exact immutable publication, Bench, baseline/comparison dan Core approval;
+browser tidak dapat menetapkan flag known-good. Human admin dapat mereview rollback dari publication
+aktif ke publication sebelumnya, memasukkan reason, lalu mengirim reviewed version/activation dan
+idempotency key. Assignment lain serta Bench baseline tidak ikut berubah.
+
+API registry: `GET /api/projects/{project_id}/blueprints/{blueprint_id}/registry`.
+Rollback intent: `POST /api/projects/{project_id}/assignments/{assignment_id}/rollback`.
+Snapshot memuat eligibility, activation history dan captured run version provenance. Historical
+run tanpa durable captured identity ditampilkan unavailable; current assignment tidak dipakai
+untuk menebak versi lama. Lihat [Factory contracts](agent-factory-contracts.md#8-version-registry-dan-known-good-rollback-af-07).

@@ -40,6 +40,7 @@ class PermissionEngine:
             "bench:accept_baseline",
             "version:publish",
             "agent:assign",
+            "agent:rollback",
         },
         "operator": {
             "run:create",
@@ -61,6 +62,7 @@ class PermissionEngine:
 
     # Actions strictly reserved for human actors; autonomous agents are forbidden
     HUMAN_ONLY_ACTIONS: Set[str] = {
+        "agent:rollback",
         "bench:accept_baseline",
         "version:approve",
         "version:publish",

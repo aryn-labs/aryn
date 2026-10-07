@@ -434,6 +434,10 @@ class AgentFactoryService:
             )
 
             published_version = AgentVersion.from_stored(published_model)
+            from database.repositories.agent_activation_repo import AgentActivationRepository
+            session.info["publishing_version_id"] = version_id
+            publication = AgentActivationRepository(session, self.db_manager.evidence_signer, self.permission_engine).record_publication(
+                context, version_id, agent_repo.get_blueprint(context, m.blueprint_id).bench_baseline_id)
 
             self.audit_logger.record(
                 event_type="factory.version.published",
@@ -445,6 +449,7 @@ class AgentFactoryService:
                     "version_number": published_version.version_number,
                     "published_by": context.actor.actor_id,
                     "payload_hash": published_version.payload_hash,
+                    "publication_id": publication.publication_id,
                     "baseline_id": AgentRepository(session).get_blueprint(context, published_version.blueprint_id).bench_baseline_id,
                 },
                 session=session,
@@ -479,6 +484,7 @@ class AgentFactoryService:
                 version_id=version_id,
                 role_name=role_name,
                 division_id=division_id,
+                permission_engine=self.permission_engine,
             )
             assignment = AgentAssignment(
                 id=m.id,
@@ -487,25 +493,50 @@ class AgentFactoryService:
                 division_id=m.division_id,
                 blueprint_id=m.blueprint_id,
                 version_id=m.version_id,
+                current_transition_id=m.current_transition_id,
                 role_name=m.role_name,
                 status=m.status,
                 created_at=m.created_at.isoformat(),
                 updated_at=m.updated_at.isoformat(),
             )
 
-        self.audit_logger.record(
-            event_type="factory.agent.assigned",
-            context=context,
-            resource_id=assignment_id,
-            status=AuditStatus.ALLOWED,
-            payload={
-                "blueprint_id": blueprint_id,
-                "version_id": version_id,
-                "role_name": role_name,
-                "division_id": division_id,
-            },
-        )
+            self.audit_logger.record(
+                event_type="factory.agent.assigned",
+                context=context,
+                resource_id=assignment_id,
+                status=AuditStatus.ALLOWED,
+                payload={
+                    "blueprint_id": blueprint_id,
+                    "version_id": version_id,
+                    "role_name": role_name,
+                    "division_id": division_id,
+                },
+                session=session,
+            )
         return assignment
+
+    def rollback_assignment(self, context, assignment_id, intent):
+        from packages.contracts.agent import RollbackIntent
+        from database.repositories.agent_activation_repo import AgentActivationRepository
+        intent = RollbackIntent.model_validate(intent)
+        try:
+            with self.db_manager.session(write=True) as session:
+                return AgentActivationRepository(session, self.db_manager.evidence_signer, self.permission_engine).rollback(context, assignment_id, intent)
+        except Exception as exc:
+            self.audit_logger.record("factory.assignment.rollback_denied", context, assignment_id, AuditStatus.DENIED,
+                {"target_version_id": intent.target_version_id, "expected_current_version_id": intent.expected_current_version_id,
+                    "reason": type(exc).__name__})
+            raise
+
+    def version_registry(self, context, blueprint_id):
+        from database.repositories.agent_activation_repo import AgentActivationRepository
+        from database.schema import AgentVersionModel
+        self.permission_engine.enforce("run:read", context, context.organization_id, context.project_id)
+        with self.db_manager.session() as session:
+            AgentRepository(session).get_blueprint(context, blueprint_id)
+            repo = AgentActivationRepository(session, self.db_manager.evidence_signer, self.permission_engine)
+            return [repo.registry_entry(context, row) for row in session.query(AgentVersionModel).filter_by(
+                blueprint_id=blueprint_id).order_by(AgentVersionModel.created_at.desc()).all()]
 
     def get_assignment(self, context: SecurityContext, assignment_id: str) -> AgentAssignment:
         self.permission_engine.enforce("run:read", context, context.organization_id, context.project_id)
@@ -519,6 +550,7 @@ class AgentFactoryService:
                 division_id=m.division_id,
                 blueprint_id=m.blueprint_id,
                 version_id=m.version_id,
+                current_transition_id=m.current_transition_id,
                 role_name=m.role_name,
                 status=m.status,
                 created_at=m.created_at.isoformat(),

@@ -156,6 +156,8 @@ describe("konteks Studio", () => {
                     ...data.runs[0],
                     id: "new-run-b",
                     session_id: "assignment-b",
+                    assignment_id: "assignment-b",
+                    agent_version_id: "version-b",
                     output: "Output baru B",
                     model: "model-b",
                   },

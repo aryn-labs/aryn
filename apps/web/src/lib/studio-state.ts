@@ -69,12 +69,23 @@ export const availabilityLabel = {
 
 export function historicalRunContext(data: Snapshot, runId?: string) {
   const run = data.runs.find((r) => r.id === runId);
-  const assignment = data.assignments.find((a) => a.id === run?.session_id);
+  const currentAssignment = data.assignments.find(
+    (a) => a.id === (run?.assignment_id || run?.session_id),
+  );
   const version = data.versions.find(
     (v) =>
-      v.id === assignment?.version_id &&
-      v.blueprint_id === assignment.blueprint_id,
+      run?.assignment_provenance_verified &&
+      v.id === run.agent_version_id &&
+      v.payload_hash === run.agent_payload_hash,
   );
+  const assignment =
+    currentAssignment && version
+      ? {
+          ...currentAssignment,
+          version_id: version.id,
+          current_transition_id: run?.assignment_transition_id,
+        }
+      : undefined;
   const blueprint = data.blueprints.find((b) => b.id === version?.blueprint_id);
   return { assignment, version, blueprint };
 }

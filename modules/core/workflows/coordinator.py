@@ -13,6 +13,7 @@ import importlib
 import json
 import time
 import uuid
+from contextlib import nullcontext
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from packages.contracts.core import Actor, ActorType, AuditStatus, SecurityContext
@@ -80,6 +81,8 @@ class RunCoordinator:
             error_message=row.error_message,
             requested_model=row.model, actual_model=row.actual_model,
             gateway=row.gateway, runtime_backend=row.runtime_backend, provider=row.actual_provider,
+            assignment_id=row.assignment_id, agent_version_id=row.agent_version_id,
+            agent_payload_hash=row.agent_payload_hash, assignment_transition_id=row.assignment_transition_id,
         )
 
     @staticmethod
@@ -90,7 +93,7 @@ class RunCoordinator:
                    "organization_id": context.organization_id, "project_id": context.project_id}
         return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest()
 
-    def _claim(self, request, context, mode):
+    def _claim(self, request, context, mode, session=None, assignment_provenance=None):
         """Unique insert commits before runtime dispatch. Only its owner may execute."""
         from database.repositories.exceptions import DuplicateEntityError
         from database.repositories.run_state_repo import RunStateRepository
@@ -101,8 +104,8 @@ class RunCoordinator:
         if not self.db_manager:
             raise RuntimeError("Persistent Core state is required for managed execution.")
         if key:
-            with self.db_manager.session() as session:
-                existing = RunStateRepository(session).get_run_by_idempotency_key(context, key)
+            with (nullcontext(session) if session is not None else self.db_manager.session()) as lookup:
+                existing = RunStateRepository(lookup).get_run_by_idempotency_key(context, key)
                 if existing:
                     if existing.request_hash != fingerprint:
                         raise IdempotencyConflictError("Idempotency conflict: key belongs to a different request or configuration.")
@@ -116,15 +119,30 @@ class RunCoordinator:
             raise
         run_id = f"run_{uuid.uuid4().hex}"
         try:
-            with self.db_manager.session(write=True) as session:
-                repo = RunStateRepository(session)
-                repo.create_run(context, run_id, request.prompt, spec.model_id, spec.provider.value,
+            with (nullcontext(session) if session is not None else self.db_manager.session(write=True)) as active:
+                repo = RunStateRepository(active)
+                run = repo.create_run(context, run_id, request.prompt, spec.model_id, spec.provider.value,
                                 request.session_id, key, request_hash=fingerprint, execution_mode=mode)
+                if assignment_provenance:
+                    run._provenance_authorized = True
+                    provenance = {**assignment_provenance, "run_id": run_id, "request_hash": fingerprint,
+                        "organization_id": context.organization_id, "project_id": context.project_id,
+                        "requested_model": request.model}
+                    run.assignment_id = provenance["assignment_id"]
+                    run.agent_version_id = provenance["version_id"]
+                    run.agent_payload_hash = provenance["payload_hash"]
+                    run.assignment_transition_id = provenance["transition_id"]
+                    run.assignment_provenance_json = json.dumps(provenance, sort_keys=True)
+                    run.assignment_attestation = self.db_manager.evidence_signer.sign("assignment_run", provenance)
+                    active.flush()
                 repo.transition_status(context, run_id, "started")
                 self.audit_logger.record("core.run.initiated" if mode == "direct" else "core.run.queued",
                                          context, run_id, AuditStatus.ALLOWED,
-                                         {"model": spec.model_id, "provider": spec.provider.value, "prompt": request.prompt}, session=session)
+                                         {"model": spec.model_id, "provider": spec.provider.value, "prompt": request.prompt,
+                                            **(assignment_provenance or {})}, session=active)
         except DuplicateEntityError:
+            if session is not None:
+                raise
             if not key:
                 raise
             with self.db_manager.session() as session:
@@ -180,16 +198,18 @@ class RunCoordinator:
                                       "input_tokens": result.usage.input_tokens,
                                       "output_tokens": result.usage.output_tokens, "total_tokens": result.usage.total_tokens}, session=session)
             result.run_id = run_id
+            result.assignment_id, result.agent_version_id = row.assignment_id, row.agent_version_id
+            result.agent_payload_hash, result.assignment_transition_id = row.agent_payload_hash, row.assignment_transition_id
             return result
 
-    async def execute_managed_direct_turn(self, request: RunRequest, context: SecurityContext) -> RunResult:
+    async def execute_managed_direct_turn(self, request: RunRequest, context: SecurityContext, *, _claimed=None) -> RunResult:
         try:
             self.permission_engine.enforce("run:create", context, context.organization_id, context.project_id)
         except PermissionDeniedError as exc:
             self.audit_logger.record("core.run.denied", context, "run_request", AuditStatus.DENIED,
                                      {"reason": str(exc), "prompt": request.prompt})
             raise
-        owner, claimed = self._claim(request, context, "direct")
+        owner, claimed = _claimed if _claimed is not None else self._claim(request, context, "direct")
         if not owner:
             if claimed.status not in {RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELLED}:
                 raise RunInProgressError(claimed.run_id, claimed.status.value)
@@ -237,54 +257,39 @@ class RunCoordinator:
 
         from database.repositories.agent_repo import AgentRepository
 
-        with self.db_manager.session() as session:
+        from database.repositories.agent_activation_repo import AgentActivationRepository
+        with self.db_manager.session(write=True) as session:
             repo = AgentRepository(session)
-            assignment = repo.get_assignment(context, assignment_id)
+            activation = AgentActivationRepository(session, self.db_manager.evidence_signer, self.permission_engine)
+            assignment = activation.lock_assignment(context, assignment_id)
             if assignment.status != "active":
                 raise PermissionDeniedError("Agent assignment is not active.")
             version = repo.get_version(context, assignment.version_id)
             if version.blueprint_id != assignment.blueprint_id:
                 raise PermissionDeniedError("Assignment blueprint differs from the version blueprint.")
-
+            version = repo.get_version(context, assignment.version_id, for_update=True)
             if version.status != "published":
-                raise RuntimeError(
-                    f"Agent assignment '{assignment_id}' points to unpublished version '{version.id}' (status: {version.status})."
-                )
-            from modules.core.approvals.engine import ApprovalEngine
-            ApprovalEngine(self.db_manager, permission_engine=self.permission_engine).verify_approval(
-                context, "agent_version", version.id, version.payload_hash, session=session)
-            import json
+                raise RuntimeError("Assignment points to an unpublished version.")
+            history = activation.history(context, assignment)
+            reference = activation.known_good(context, version.id)
+            if history and history[-1].publication_reference != reference:
+                raise PermissionDeniedError("Activation evidence no longer matches publication authority.")
             if json.loads(version.tool_grants_json):
                 raise PermissionDeniedError("Assigned text execution does not support tool grants.")
-
-            system_prompt = version.system_prompt
-            model = version.model
-            blueprint_id = assignment.blueprint_id
-            version_id = version.id
-            payload_hash = version.payload_hash
-            role_name = assignment.role_name
-            division_id = assignment.division_id
-            temperature = version.temperature
-            max_tokens = version.max_tokens
-
-        req = RunRequest(
-            prompt=prompt,
-            system_instructions=system_prompt,
-            model=model,
-            session_id=assignment_id,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            idempotency_key=idempotency_key,
-            metadata={
-                "assignment_id": assignment_id,
-                "blueprint_id": blueprint_id,
-                "version_id": version_id,
-                "payload_hash": payload_hash,
-                "role_name": role_name,
-                "division_id": division_id,
-            },
-        )
-        return await self.execute_managed_direct_turn(req, context)
+            provenance = {"assignment_id": assignment.id, "blueprint_id": assignment.blueprint_id,
+                "version_id": version.id, "payload_hash": version.payload_hash,
+                "transition_id": assignment.current_transition_id,
+                "transition_hash": history[-1].attestation if history else None,
+                "publication_id": reference["publication"]["publication_id"],
+                "publication_hash": hashlib.sha256(json.dumps(reference, sort_keys=True).encode()).hexdigest()}
+            req = RunRequest(prompt=prompt, system_instructions=version.system_prompt, model=version.model,
+                session_id=assignment_id, temperature=version.temperature, max_tokens=version.max_tokens,
+                idempotency_key=idempotency_key, metadata={**provenance,
+                    "role_name": assignment.role_name, "division_id": assignment.division_id})
+            claimed = self._claim(req, context, "direct", session=session, assignment_provenance=provenance)
+        # The committed Core claim freezes version identity before dispatch. Rollback
+        # affects only subsequent claims; no lock is held during runtime inference.
+        return await self.execute_managed_direct_turn(req, context, _claimed=claimed)
 
     async def start_managed_run(self, request: RunRequest, context: SecurityContext) -> str:
         """Claim the Core ID before any asynchronous runtime start."""

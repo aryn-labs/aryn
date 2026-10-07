@@ -38,6 +38,10 @@ from packages.contracts.agent import (
     AgentVersionStatus,
     ForbiddenToolError,
     VersionIntegrityError,
+    AssignmentTransition,
+    PublicationEvidence,
+    RollbackIntent,
+    VersionRegistryEntry,
 )
 from packages.contracts.bench import (
     BenchSuiteDefinition,
@@ -92,6 +96,10 @@ __all__ = [
     "AgentVersionStatus",
     "ForbiddenToolError",
     "VersionIntegrityError",
+    "AssignmentTransition",
+    "PublicationEvidence",
+    "RollbackIntent",
+    "VersionRegistryEntry",
     "BenchSuiteDefinition", "BenchSuiteManifest", "GraderResult", "GraderSpec",
     "ScenarioExecutionEvidence", "EvaluationState", "ResourceLimits", "QualityGateDecision",
     "SuiteAggregateResult", "EvaluationReference",

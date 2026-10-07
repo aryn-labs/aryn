@@ -76,6 +76,7 @@ class DatabaseManager:
     def session(self, write: bool = False) -> Generator[Session, None, None]:
         session: Session = self.session_factory()
         session.info["write"] = write
+        session.info["db_manager"] = self
         try:
             if write and self.engine.dialect.name == "sqlite":
                 session.execute(text("BEGIN IMMEDIATE"))

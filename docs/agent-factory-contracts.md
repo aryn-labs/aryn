@@ -254,3 +254,175 @@ Service layer di `modules/agent_factory/service.py` mengorkestrasi:
 - **Frontend Types (`apps/web/src/lib/types.ts`)**:
   - Interface TypeScript `OutputContract`, `Constraints`, `ToolPolicy`, `ModelPolicy`, `BudgetPolicy`, `EvaluationReference`.
   - Menyediakan pengetikan untuk antarmuka Studio Workbench dan Canvas Inspector.
+
+## 8. Version Registry dan known-good rollback (AF-07)
+
+Audit pada `development` dimulai dari `48f97592024ada1aad8f5a7906a6d84f1207c86a`.
+AgentVersion sudah immutable, Core approval sudah mengikat payload/evaluation/comparison,
+dan publication sudah memajukan accepted Bench baseline secara atomik. Assignment hanya
+menyimpan `version_id`; run request membawa metadata versi tetapi durable run row belum
+menyimpannya, dan UI historical run memakai pointer assignment saat ini. Dokumen korporat
+PRD/architecture/security pada sibling `aryn-docs` masih scaffold; implementasi mengikuti
+contracts, security tests dan technical documentation aktual repository.
+
+Registry tetap merupakan projection AgentVersion dan authority existing, bukan registry
+kedua. `VersionRegistryEntry` memuat lifecycle, SHA-256 checksum, created/published time,
+publisher, Bench verification/pass state, approval, historical baseline/publication/comparison
+references, current baseline indicator, active assignment count dan derived rollback eligibility.
+Tidak ada kolom atau endpoint `known_good=true`.
+
+### Known-good authority
+
+`AgentActivationRepository.known_good()` memverifikasi ulang:
+
+- organization/project/blueprint, canonical payload format 3 dan checksum;
+- status **published**, publication timestamps dan human publisher yang mempunyai Core authority;
+- latest passing persisted Bench evaluation, exact version evaluation reference, evidence HMAC,
+  deterministic graders/aggregate dan quality gate;
+- exact-payload/evaluation human Core approval, signature dan current approver authority;
+- accepted historical baseline receipt, evaluation/configuration hashes dan predecessor chain;
+- signed comparison yang direview pada publication, dengan deterministic recomputation terhadap
+  baseline historisnya, bukan current baseline;
+- immutable HMAC publication receipt yang mengikat semua reference di atas serta publisher/time.
+
+Receipt publication baru ditulis hanya di transaction Factory yang sudah melewati approval
+dan publish gates. ORM melindungi publication dan activation records dari update/delete.
+Direct repository activation memeriksa permission dan verified target kembali; client flags
+dan fabricated evidence tidak dapat menjadi authority. Immutable published/deprecated version
+configuration dan status machine tetap berlaku. **Deprecated tetap terminal dan tidak eligible**.
+
+Accepted baseline sebelum publication tidak cukup untuk known-good. Historical superseded
+publication baseline tetap dapat digunakan. Evaluator yang tidak lagi supported, latest failure,
+approval authority yang dicabut, kehilangan signing key atau evidence tampering menolak target.
+
+### Operational activation dan rollback
+
+Assignment adalah scope operasi. Version baru tetap di-publish melalui BN-06; creation assignment
+tetap mekanisme existing untuk memakai publication baru. Scope ini tidak menambahkan deployment
+orchestration atau forward-upgrade otomatis terhadap assignment yang sudah ada.
+
+Assignment baru mempunyai initial signed activation origin. Table `assignment_transitions`
+menyimpan append-only generation, from/to version IDs, actor, reason, requested/committed time,
+idempotency identity/fingerprint, previous receipt/hash, stable assignment scope hash dan exact
+known-good publication reference. `agent_assignments.current_transition_id` menunjuk history head.
+History/pointer mismatch, missing origin atau HMAC mismatch ditolak. Assignment scope fields dan
+version pointer tidak dapat diedit melalui ORM biasa tanpa governed transition.
+
+Rollback:
+
+1. Human admin mengirim target, **expected current version + expected transition**, reason dan key.
+2. Core `agent:rollback` permission memverifikasi trusted USER identity dan active admin membership.
+3. Server mengunci blueprint → assignment → target version → membership; memvalidasi history,
+   expected state, same scope, target publication yang lebih awal dan known-good evidence.
+4. Server menulis signed transition, mengganti assignment pointer dan mencatat requested,
+   activated/committed audit dalam satu transaction. Kegagalan audit juga membatalkan pointer/history.
+5. Duplicate exact actor/intent/key mengembalikan transition semula. Key dengan actor/target/reason
+   atau reviewed state berbeda conflict. Review stale tidak diterapkan ke versi/activation lain.
+6. Denial event disimpan setelah mutation transaction rollback, tanpa raw prompt atau credential.
+
+Key scoped pada assignment. Repeating committed intent tidak mengaktifkan target lagi jika pointer
+sudah berubah melalui operasi berikutnya. Retry tetap memverifikasi authority/evidence; permission
+yang dicabut atau evidence yang berubah tidak diloloskan hanya karena key pernah berhasil.
+
+Rollback A dari v2 ke v1 tidak mengubah assignment B, v1/v2 configuration, evaluation, approval,
+comparison, lifecycle status atau Bench baseline. Baseline tetap evolution reference v2; runtime
+assignment A memakai exact original v1. Tidak ada Bench run, reverse comparison atau fake PASS baru.
+
+### Run provenance dan in-flight semantics
+
+Pemilihan assignment/version dan durable Core claim dilakukan pada transaction/lock yang sama.
+Claim menyimpan assignment ID, version ID, payload hash, transition reference, publication reference,
+requested model dan request fingerprint dengan HMAC `assignment_run`. Tidak ada lock yang ditahan
+saat inference. Run yang sudah di-claim tetap memakai request/config versi semula; rollback berlaku
+untuk claim berikutnya. Duplicate run key terhadap configuration/activation berbeda tetap conflict.
+
+RunResult dan snapshot memuat captured version identity. Repository memeriksa provenance dan ORM
+melindungi field tersebut. Historical UI menggunakan signed captured version/hash, tidak mengambil
+configuration dari mutable current assignment. Run lama tanpa captured provenance tetap readable,
+tetapi konfigurasi historis ditampilkan unavailable. Tidak ada backfill identitas yang ditebak.
+
+### Persistence dan compatibility
+
+Migration `012_assignment_activation` melanjutkan `011_bench_baseline_regression`:
+
+- `agent_publications`: satu immutable signed publication receipt per version, scoped index;
+- `assignment_transitions`: scoped history, unique assignment/generation dan assignment/request key;
+- assignment pointer dan `activation_origin` (`tracked` untuk writes baru, `legacy` untuk rows lama);
+- nullable captured provenance columns/indexes pada `run_states`.
+
+Migration tidak mengubah AgentVersion, Bench, baseline, comparison atau approval payload/history,
+dan tidak mengarang signed receipts. Legacy assignment tanpa history dapat menerima present-time
+**adoption** origin dalam rollback transaction; receipt secara eksplisit mencatat bahwa prior
+activations unknown. Target rollback tetap wajib known-good; current bad version tidak harus lolos
+Bench lagi untuk ditinggalkan. Tracked assignment yang kehilangan history tidak dianggap legacy.
+
+Publication sebelum migration hanya eligible jika signed publication baseline, exact Core approval,
+historical comparison jika tersedia, verified evaluation dan existing matching publication audit
+masih dapat dibuktikan. Registry menandai `historical_publication_audit` dan
+`no_signed_publication_receipt`; audit lama memakai integrity SHA-256 existing, bukan receipt HMAC
+baru yang difabricate. Explicit baseline tanpa proof publication, legacy canonical format 2 atau
+insufficient historical authority tetap readable tetapi ineligible. Existing Bench evidence format
+1 tidak diberi grader evidence baru; validator existing tetap source of truth.
+
+SQLite memakai existing `BEGIN IMMEDIATE`; PostgreSQL memakai row locks. Unique constraints
+melindungi generation/idempotency. Downgrade 012 menghapus operational receipts/provenance baru,
+tetapi mempertahankan artifact/governance lama; backup database beserta evidence key sebelum
+downgrade. Upgrade ulang tidak merekonstruksi histori yang telah dihapus.
+
+### API dan UI
+
+- `GET /api/projects/{project_id}/blueprints/{blueprint_id}/registry`: derived read-only registry.
+- `POST /api/projects/{project_id}/assignments/{assignment_id}/rollback`: strict `RollbackIntent`,
+  dengan `target_version_id`, `expected_current_version_id`, nullable `expected_transition_id`,
+  `reason` dan `idempotency_key`; extra authority flags ditolak.
+- Snapshot version mempunyai `registry`; assignment mempunyai verified activation history/current
+  head/reason; run mempunyai captured identity dan `assignment_provenance_verified`.
+- Factory menampilkan lifecycle/checksum/publication/Bench/approval, known-good reason, active count,
+  current Bench baseline serta assignment transition history. Dialog mereview current/target,
+  target checksum/evidence dan reason. Backend tetap menentukan keputusan final.
+
+### Validation dan residual limits
+
+Dedicated tests berada di `tests/unit/test_agent_registry_contracts.py`,
+`tests/integration/test_agent_registry_rollback.py`, `test_agent_registry_api.py`,
+`test_assignment_activation_migration.py`, dan `tests/security/test_agent_rollback_authority.py`.
+Positive/negative coverage mencakup actual Factory/Bench/Core publication, generic suite,
+two-assignment isolation, before/after/in-flight run provenance, duplicate/conflicting/stale intent,
+two concurrent writers, atomic audit failure, legacy adoption, upgrade/downgrade dan tampering pada
+payload, Bench, approval, baseline, comparison, publication, activation dan run identity.
+
+Frontend tests mencakup server eligibility, reason review, CAS/key persistence pada retry dan
+historical context setelah pointer berubah. Playwright menjalankan real HTTP/backend/SQLite dengan
+isolated runtime, termasuk rollback UI dan histori run/baseline yang tetap utuh. Hasil command
+aktual delivery dicatat pada STATUS.md setelah selesai dijalankan.
+
+Validation commands pada 8 Oktober 2026 (isolated runtimes, tanpa live model submission):
+
+| Command | Hasil aktual |
+| --- | --- |
+| `python -m pytest tests/unit/test_agent_registry_contracts.py tests/integration/test_agent_registry_rollback.py tests/security/test_agent_rollback_authority.py tests/integration/test_agent_registry_api.py tests/integration/test_assignment_activation_migration.py -q --tb=short` | 57 passed |
+| `python -m pytest tests/integration/test_schema_migration_compatibility.py tests/integration/test_assignment_activation_migration.py -q --tb=short` | 6 passed; SQLite upgrade/downgrade, retained governance, metadata parity, PostgreSQL offline SQL, Alembic revision length |
+| `python -m pytest -q --tb=short` | 580 passed, 5 skipped; includes Factory/Bench/regression/Core approval/security/integration/E2E backend |
+| `npm.cmd run test` | 67 passed, 12 files |
+| `npm.cmd run build` | TypeScript/Vite successful; existing bundle-size warning remains |
+| `npm.cmd run test:e2e` | 16 passed, 0 flaky, 0 skipped; real HTTP/backend rollback and historical run UI |
+| `python -m ruff check --select E4,E7,E9,F` on new repository/migration/test files | All checks passed |
+| `git -c core.safecrlf=false diff --check` | Clean |
+
+Historical corrupted assignment blueprint tetap ditolak dengan existing `PermissionDeniedError`
+contract; assertion security existing dipertahankan. Browser keyboard test menunggu initial focus
+effect yang nyata sebelum memberi keyboard intent, dengan assertion tambahan dan tanpa sleep.
+
+PostgreSQL DDL dikompilasi offline; live PostgreSQL locking belum diuji. Live model dispatch tetap
+opt-in. No production authentication baru, automatic rollback, monitoring, incident replay, canary,
+traffic control, cancellation/migration in-flight, atau model comparison BN-08 di scope ini.
+Signing key dan server process adalah trusted boundary seperti authority existing. Legacy audit
+provenance memiliki keterbatasan di atas; snapshot registry verification masih per-version query,
+bukan pagination/cache untuk registry besar.
+
+File implementation yang berubah: `packages/contracts/{agent,runtime,__init__}.py`,
+`database/{connection,schema}.py`, `database/repositories/{agent_repo,agent_activation_repo,
+bench_regression_repo,run_state_repo}.py`, migration 012, `modules/agent_factory/service.py`,
+`modules/core/{permissions/engine,workflows/coordinator}.py`, `services/api/studio.py`, Factory UI,
+frontend `types`/`studio-state`, component fixtures/tests, Playwright, migration compatibility tests,
+README, STATUS dan existing Factory/Bench/Studio documentation.

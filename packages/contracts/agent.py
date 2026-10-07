@@ -14,8 +14,8 @@ import datetime
 from enum import Enum
 import hashlib
 import json
-from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field, model_validator
+from typing import Any, Dict, List, Literal, Optional
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from packages.contracts.bench import (
     OutputContract as AgentOutputContract,
@@ -25,6 +25,86 @@ from packages.contracts.bench import (
 
 class VersionIntegrityError(ValueError):
     """Stored configuration does not match its canonical hash."""
+
+
+class RollbackIntent(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True, revalidate_instances="always")
+    target_version_id: str = Field(min_length=1, max_length=64)
+    expected_current_version_id: str = Field(min_length=1, max_length=64)
+    expected_transition_id: Optional[str] = Field(default=None, max_length=64)
+    reason: str = Field(min_length=5, max_length=2000)
+    idempotency_key: str = Field(min_length=16, max_length=100, pattern=r"^[a-zA-Z0-9_-]+$")
+
+
+class PublicationEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    schema_version: Literal["1.0.0"] = "1.0.0"
+    publication_id: str
+    organization_id: str
+    project_id: str
+    blueprint_id: str
+    version_id: str
+    payload_hash: str
+    evaluation_id: str
+    evaluation_hash: str
+    approval_id: str
+    approval_hash: str
+    baseline_id: str
+    baseline_hash: str
+    comparison_id: Optional[str] = None
+    comparison_hash: Optional[str] = None
+    published_by: str
+    published_at: str
+    attestation: str = ""
+
+
+class VersionRegistryEntry(BaseModel):
+    version_id: str
+    blueprint_id: str
+    version_number: str
+    status: str
+    payload_hash: str
+    created_at: str
+    published_at: Optional[str] = None
+    published_by: Optional[str] = None
+    evaluation_id: Optional[str] = None
+    bench_verified: bool = False
+    bench_passed: bool = False
+    approval_id: Optional[str] = None
+    approval_status: Optional[str] = None
+    baseline_id: Optional[str] = None
+    publication_id: Optional[str] = None
+    regression_comparison_id: Optional[str] = None
+    current_baseline: bool = False
+    active_assignment_count: int = 0
+    rollback_eligible: bool = False
+    reason: str = "publication_not_verified"
+    limitations: List[str] = Field(default_factory=list)
+
+
+class AssignmentTransition(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    schema_version: Literal["1.0.0"] = "1.0.0"
+    transition_id: str
+    organization_id: str
+    project_id: str
+    assignment_id: str
+    blueprint_id: str
+    generation: int = Field(ge=1)
+    from_version_id: Optional[str] = None
+    to_version_id: str
+    transition_type: Literal["initial", "adoption", "rollback"]
+    actor_id: str
+    reason: str
+    requested_at: str
+    committed_at: str
+    idempotency_key: Optional[str] = None
+    request_hash: str
+    previous_transition_id: Optional[str] = None
+    previous_hash: Optional[str] = None
+    publication_reference: Dict[str, Any]
+    assignment_hash: str
+    attestation: str = ""
 
 
 class ForbiddenToolError(ValueError):
@@ -472,6 +552,7 @@ class AgentAssignment(BaseModel):
     division_id: Optional[str] = None
     blueprint_id: str
     version_id: str
+    current_transition_id: Optional[str] = None
     role_name: str
     status: str = "active"
     created_at: str = Field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())

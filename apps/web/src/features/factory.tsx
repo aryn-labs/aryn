@@ -13,7 +13,7 @@ import {
   Plus,
   Search,
 } from "lucide-react";
-import type { Blueprint } from "../lib/types";
+import type { Blueprint, Assignment, Version } from "../lib/types";
 import { date, number } from "../lib/utils";
 import { Button } from "../components/ui/button";
 import { Modal } from "../components/ui/dialog";
@@ -421,6 +421,14 @@ export function AgentDetail({
       </div>
 
       {/* Secondary Information Panels */}
+      <VersionRegistry
+        data={data}
+        blueprintId={blueprint.id}
+        pending={pending}
+        act={act}
+        error={error}
+        resetError={resetError}
+      />
       {selected && (
         <div className="factory-secondary-panels grid grid-cols-1 gap-6">
           <Panel
@@ -671,6 +679,317 @@ export function AgentDetail({
               </Button>
             </div>
           </div>
+        )}
+      </Modal>
+    </>
+  );
+}
+
+export function VersionRegistry({
+  data,
+  blueprintId,
+  pending,
+  act,
+  error,
+  resetError,
+}: Pick<Shared, "data" | "pending" | "act" | "error" | "resetError"> & {
+  blueprintId: string;
+}) {
+  const versions = data.versions.filter((v) => v.blueprint_id === blueprintId);
+  const assignments = data.assignments.filter(
+    (a) => a.blueprint_id === blueprintId,
+  );
+  const [review, setReview] = useState<{
+    assignment: Assignment;
+    target: Version;
+    key: string;
+  } | null>(null);
+  const [reason, setReason] = useState("");
+  const targets = (assignment: Assignment) => {
+    const current = versions.find((v) => v.id === assignment.version_id);
+    return versions.filter(
+      (v) =>
+        v.id !== current?.id &&
+        v.registry?.rollback_eligible &&
+        v.registry.published_at &&
+        current?.registry?.published_at &&
+        new Date(v.registry.published_at) <
+          new Date(current.registry.published_at),
+    );
+  };
+  return (
+    <>
+      <Panel
+        title="Version Registry"
+        subtitle="Artefak versi immutable; kelayakan known-good diverifikasi server dari publication, Bench, dan Core approval."
+      >
+        <div
+          className="table-scroll"
+          tabIndex={0}
+          role="region"
+          aria-label="Version Registry"
+        >
+          <table>
+            <thead>
+              <tr>
+                <th>Versi / lifecycle</th>
+                <th>Checksum</th>
+                <th>Publication / governance</th>
+                <th>Aktif</th>
+                <th>Known-good</th>
+              </tr>
+            </thead>
+            <tbody>
+              {versions.map((v) => (
+                <tr key={v.id}>
+                  <td>
+                    <strong>v{v.version_number}</strong>
+                    <Status value={v.status} />
+                    <small>{date(v.created_at)}</small>
+                  </td>
+                  <td>
+                    <code title={v.payload_hash}>
+                      {v.payload_hash.slice(0, 12)}
+                    </code>
+                  </td>
+                  <td>
+                    {v.registry?.published_at ? (
+                      <>
+                        <span>
+                          {date(v.registry.published_at)} ·{" "}
+                          {v.registry.published_by}
+                        </span>
+                        <small>Bench {v.registry.evaluation_id}</small>
+                        <small>
+                          Approval{" "}
+                          {v.registry.approval_id || "Belum terverifikasi"}
+                        </small>
+                        <small>
+                          Publication{" "}
+                          {v.registry.publication_id || "Belum terverifikasi"}
+                        </small>
+                        <small>
+                          Comparison{" "}
+                          {v.registry.regression_comparison_id ||
+                            "Tidak tersedia"}
+                        </small>
+                      </>
+                    ) : (
+                      "Belum dipublikasikan"
+                    )}
+                    <small>
+                      Bench:{" "}
+                      {v.registry?.bench_verified
+                        ? v.registry.bench_passed
+                          ? "Terverifikasi / lulus"
+                          : "Terverifikasi / gagal"
+                        : "Belum terverifikasi"}
+                    </small>
+                    {v.registry?.approval_id && (
+                      <small>
+                        Core approval: {v.registry.approval_status} ·{" "}
+                        {v.registry.approval_id}
+                      </small>
+                    )}
+                    {v.registry?.current_baseline && (
+                      <strong>Current Bench baseline</strong>
+                    )}
+                  </td>
+                  <td>
+                    {v.registry?.active_assignment_count ??
+                      assignments.filter((a) => a.version_id === v.id).length}
+                  </td>
+                  <td>
+                    {v.registry?.rollback_eligible
+                      ? "Known-good terverifikasi"
+                      : "Tidak eligible"}
+                    <small>
+                      {v.registry?.reason || "Evidence belum terverifikasi"}
+                    </small>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
+      <Panel
+        title="Aktivasi assignment"
+        subtitle="Rollback hanya memindahkan versi aktif satu assignment. Current Bench baseline dan histori versi tetap."
+      >
+        {assignments.length ? (
+          assignments.map((a) => {
+            const current = versions.find((v) => v.id === a.version_id);
+            const eligible = targets(a);
+            return (
+              <div key={a.id} className="form-fields">
+                <strong>
+                  {a.role_name} · aktif v
+                  {current?.version_number || a.version_id}
+                </strong>
+                <small className="mono">{a.id}</small>
+                {(a.activation_history || []).map((t) => (
+                  <div key={t.transition_id}>
+                    <span>
+                      {t.transition_type}:{" "}
+                      {t.from_version_id
+                        ? `v${versions.find((v) => v.id === t.from_version_id)?.version_number || t.from_version_id} → `
+                        : ""}
+                      v
+                      {versions.find((v) => v.id === t.to_version_id)
+                        ?.version_number || t.to_version_id}
+                    </span>
+                    <small>
+                      {date(t.committed_at)} · {t.actor_id} · {t.reason}
+                    </small>
+                  </div>
+                ))}
+                {!a.activation_verified && (
+                  <Notice>
+                    {a.activation_reason === "activation_integrity_invalid"
+                      ? "Integritas histori aktivasi tidak valid."
+                      : "Assignment historis: origin aktivasi sebelumnya tidak tersedia. Server mencatat adoption saat rollback."}
+                  </Notice>
+                )}
+                <Button
+                  variant="secondary"
+                  disabled={
+                    pending ||
+                    a.status !== "active" ||
+                    !eligible.length ||
+                    !data.permissions["agent:rollback"] ||
+                    a.activation_reason === "activation_integrity_invalid"
+                  }
+                  onClick={() => {
+                    resetError();
+                    setReason("");
+                    setReview({
+                      assignment: { ...a },
+                      target: eligible[0],
+                      key: crypto.randomUUID(),
+                    });
+                  }}
+                >
+                  Tinjau rollback {a.role_name}
+                </Button>
+                {!eligible.length && (
+                  <small>
+                    Tidak ada publication sebelumnya yang eligible sebagai
+                    target.
+                  </small>
+                )}
+              </div>
+            );
+          })
+        ) : (
+          <Empty
+            title="Belum ada aktivasi"
+            description="Buat assignment dari versi published yang terverifikasi."
+          />
+        )}
+      </Panel>
+      <Modal
+        open={!!review}
+        busy={pending}
+        onOpenChange={(v) => {
+          if (!pending && !v) setReview(null);
+        }}
+        title="Rollback assignment"
+        description="Tinjau versi aktif dan previous known-good publication sebelum mengubah assignment."
+      >
+        {review && (
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              try {
+                await act(
+                  `/assignments/${review.assignment.id}/rollback`,
+                  {
+                    target_version_id: review.target.id,
+                    expected_current_version_id: review.assignment.version_id,
+                    expected_transition_id:
+                      review.assignment.current_transition_id || null,
+                    reason,
+                    idempotency_key: review.key,
+                  },
+                  "Rollback assignment tercatat. Eksekusi berikutnya memakai versi target.",
+                );
+                setReview(null);
+              } catch {
+                /* server error remains visible; retry preserves intent/key */
+              }
+            }}
+          >
+            <div className="form-fields">
+              {error && <Notice tone="error">{error}</Notice>}
+              <strong>
+                Current: v
+                {
+                  versions.find((v) => v.id === review.assignment.version_id)
+                    ?.version_number
+                }
+              </strong>
+              <label>
+                Target known-good
+                <select
+                  value={review.target.id}
+                  disabled={pending}
+                  onChange={(e) =>
+                    setReview({
+                      ...review,
+                      target: versions.find((v) => v.id === e.target.value)!,
+                      key: crypto.randomUUID(),
+                    })
+                  }
+                >
+                  {targets(review.assignment).map((v) => (
+                    <option key={v.id} value={v.id}>
+                      v{v.version_number}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <strong>Target: v{review.target.version_number}</strong>
+              <code className="hash-review wrap">
+                {review.target.payload_hash}
+              </code>
+              <small>Evaluation: {review.target.registry?.evaluation_id}</small>
+              <small>
+                Publication: {review.target.registry?.publication_id}
+              </small>
+              <small>Approval: {review.target.registry?.approval_id}</small>
+              <label>
+                Alasan rollback
+                <textarea
+                  required
+                  minLength={5}
+                  maxLength={2000}
+                  value={reason}
+                  onChange={(e) => {
+                    setReason(e.target.value);
+                    setReview({ ...review, key: crypto.randomUUID() });
+                  }}
+                />
+              </label>
+              <Notice>
+                Operasi mengubah versi aktif assignment, tanpa mengedit
+                konfigurasi versi. Run yang sudah dimulai memakai versi semula;
+                Bench baseline tetap.
+              </Notice>
+            </div>
+            <div className="dialog-footer">
+              <Button
+                variant="ghost"
+                disabled={pending}
+                onClick={() => setReview(null)}
+              >
+                Batal
+              </Button>
+              <Button disabled={pending || reason.trim().length < 5}>
+                Konfirmasi rollback assignment
+              </Button>
+            </div>
+          </form>
         )}
       </Modal>
     </>

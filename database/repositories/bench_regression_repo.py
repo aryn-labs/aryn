@@ -236,6 +236,38 @@ class BenchRegressionRepository:
             raise RegressionGateFailedError(comparison)
         return comparison
 
+    def verify_publication_comparison(self, context, comparison_id, version):
+        """Revalidate frozen publication evidence without requiring today's baseline."""
+        row = self.session.get(BenchComparisonModel, comparison_id)
+        if row is None:
+            raise QualityGateFailedError("Publication comparison is missing.")
+        stored = RegressionComparison.model_validate_json(row.details_json)
+        candidate_row = self.bench.get_evaluation(context, version.evaluation_id)
+        candidate = self.bench.validate_stored(context, candidate_row, version)
+        if stored.candidate != self.identity(candidate_row, version, candidate.evidence_format):
+            raise QualityGateFailedError("Publication candidate evidence changed.")
+        suite = get_bench_suite(version.evaluation_reference.suite_id)
+        if (stored.suite_id, stored.evaluation_version, stored.suite_hash) != (suite.suite_id, suite.evaluation_version, suite.suite_hash):
+            raise QualityGateFailedError("Publication evaluator configuration is no longer supported.")
+        expected = stored.model_copy(update={"state": "bootstrap", "reason": "initial_publication_bootstrap",
+            "promotion_blocked": False, "baseline_score": None, "candidate_score": candidate.score,
+            "score_delta": None, "scenarios": [], "metrics": {}, "provenance_differences": {},
+            "regressions": [], "critical_regressions": []})
+        if stored.baseline_id:
+            baseline = self.receipt(context, stored.baseline_id, version.blueprint_id)
+            if stored.baseline != baseline.evaluation:
+                raise QualityGateFailedError("Publication baseline identity changed.")
+            prior_version = AgentVersion.from_stored(self.agents.get_version(context, baseline.evaluation.version_id))
+            prior = self.bench.validate_stored(context, self.bench.get_evaluation(context, baseline.evaluation.evaluation_id), prior_version)
+            expected = compare_evaluations(expected, prior.model_copy(update={"suite_id": suite.suite_id}),
+                candidate.model_copy(update={"suite_id": suite.suite_id}), suite)
+        elif stored.baseline is not None:
+            raise QualityGateFailedError("Publication bootstrap has an unexpected baseline.")
+        self.validate_cached(context, row, expected)
+        if expected.promotion_blocked:
+            raise QualityGateFailedError("Publication comparison does not permit promotion.")
+        return stored
+
     def accept(self, context, evaluation_id, *, expected_baseline_id=None, reason, transition=False, approval=None):
         action = "version:publish" if approval else "bench:accept_baseline"
         self.permissions.enforce(action, context, context.organization_id, context.project_id)

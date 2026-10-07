@@ -31,7 +31,7 @@ def test_upgrade_from_005_retains_legacy_governance_and_run_data(tmp_path):
         assert tuple(run) == ("Original", 3, "", None, "legacy")
         assert connection.exec_driver_sql("PRAGMA integrity_check").scalar() == "ok"
         assert connection.exec_driver_sql("PRAGMA foreign_key_check").all() == []
-        assert connection.exec_driver_sql("SELECT version_num FROM alembic_version").scalar() == "011_bench_baseline_regression"
+        assert connection.exec_driver_sql("SELECT version_num FROM alembic_version").scalar() == "012_assignment_activation"
         assert tuple(connection.exec_driver_sql("SELECT actual_model,gateway,runtime_backend,actual_provider FROM run_states WHERE id='legacy'").one()) == (None, None, None, None)
         assert any(index["unique"] and index["column_names"] == ["project_id", "idempotency_key"]
                    for index in inspect(engine).get_indexes("run_states"))
@@ -46,6 +46,8 @@ def test_postgresql_migrations_compile_offline_without_cloud_connection(monkeypa
     config = Config(str(ROOT / "alembic.ini"), output_buffer=output)
     config.set_main_option("script_location", str(ROOT / "database/migrations"))
     command.upgrade(config, "head", sql=True)
+    from alembic.script import ScriptDirectory
+    assert len(ScriptDirectory.from_config(config).get_current_head()) <= 32
     sql = output.getvalue()
     assert "ADD COLUMN attestation VARCHAR(64)" in sql
     assert "ADD COLUMN request_hash VARCHAR(64)" in sql
@@ -59,6 +61,11 @@ def test_postgresql_migrations_compile_offline_without_cloud_connection(monkeypa
     assert "CREATE TABLE bench_comparisons" in sql
     assert "uq_bench_baseline_generation" in sql
     assert "ADD COLUMN regression_comparison_id VARCHAR(64)" in sql
+    assert "CREATE TABLE agent_publications" in sql
+    assert "CREATE TABLE assignment_transitions" in sql
+    assert "ADD COLUMN agent_payload_hash VARCHAR(64)" in sql
+    assert "uq_assignment_transition_request" in sql
+    assert "uq_assignment_transition_generation" in sql
 
 
 def test_baseline_migration_upgrade_downgrade_preserves_existing_evaluations(tmp_path):

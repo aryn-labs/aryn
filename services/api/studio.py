@@ -24,6 +24,7 @@ from sqlalchemy.exc import IntegrityError
 
 from database.connection import DatabaseManager, create_db_engine
 from database.repositories.agent_repo import AgentRepository
+from database.repositories.agent_activation_repo import AgentActivationRepository
 from database.repositories.bench_repo import BenchRepository
 from database.repositories.bench_regression_repo import BenchRegressionRepository, RegressionGateFailedError
 from database.repositories.budget_repo import BudgetRepository
@@ -61,7 +62,7 @@ from modules.core.workflows.coordinator import (
     RunCoordinator,
     RunInProgressError,
 )
-from packages.contracts.agent import AgentVersion, VersionIntegrityError
+from packages.contracts.agent import AgentVersion, VersionIntegrityError, RollbackIntent
 from packages.contracts.core import AuditStatus
 from packages.contracts.runtime import (ModelUnavailableError, GatewayUnavailableError, ModelIdentityError, RuntimeGatewayError)
 from packages.contracts.model import ModelProviderType, ModelSpec
@@ -626,6 +627,7 @@ def create_app(
             # eligibility so Studio cannot present a fabricated PASS as actionable.
             for version in data["versions"]:
                 stored = s.get(AgentVersionModel, version["id"])
+                version["registry"] = AgentActivationRepository(s, db.evidence_signer, permissions).registry_entry(ctx, stored).model_dump(mode="json")
                 version["integrity_valid"] = True
                 version["bench_eligible"] = False
                 version["governance_valid"] = False
@@ -680,6 +682,24 @@ def create_app(
                     except ApprovalRequiredError:
                         approval["verified"] = False
             budget = BudgetRepository(s).get_budget(ctx)
+            activation_repo = AgentActivationRepository(s, db.evidence_signer, permissions)
+            for assignment in data["assignments"]:
+                assignment["activation_verified"] = False
+                assignment["activation_history"] = []
+                assignment["activation_reason"] = "pre_existing_assignment_origin"
+                try:
+                    history = activation_repo.history(ctx, AgentRepository(s).get_assignment(ctx, assignment["id"]))
+                    assignment["activation_history"] = [x.model_dump(mode="json", exclude={"attestation"}) for x in history]
+                    assignment["activation_verified"] = bool(history)
+                    assignment["activation_reason"] = "verified_activation_history" if history else "pre_existing_assignment_origin"
+                except (ValueError, RuntimeError):
+                    assignment["activation_reason"] = "activation_integrity_invalid"
+            from database.repositories.run_state_repo import RunStateRepository
+            for run in data["runs"]:
+                try:
+                    run["assignment_provenance_verified"] = RunStateRepository(s).verify_assignment_provenance(s.get(RunStateModel, run["id"]))
+                except (ValueError, RuntimeError):
+                    run["assignment_provenance_verified"] = False
             data["budget"] = row(budget) if budget else None
             data["permissions"] = {
                 action: permissions.evaluate(action, ctx, DEV_ORG, project_id).allowed
@@ -689,6 +709,7 @@ def create_app(
                     "version:publish",
                     "bench:accept_baseline",
                     "agent:assign",
+                    "agent:rollback",
                 )
             }
         return data
@@ -826,6 +847,14 @@ def create_app(
     async def assign(project_id: str, body: AssignmentInput):
         ctx = context(project_id, "agent:assign")
         return factory.assign_agent(ctx, **body.model_dump())
+
+    @app.get("/api/projects/{project_id}/blueprints/{blueprint_id}/registry")
+    async def registry(project_id: str, blueprint_id: str):
+        return factory.version_registry(context(project_id), blueprint_id)
+
+    @app.post("/api/projects/{project_id}/assignments/{assignment_id}/rollback")
+    async def rollback(project_id: str, assignment_id: str, body: RollbackIntent):
+        return factory.rollback_assignment(context(project_id), assignment_id, body)
 
     @app.post("/api/projects/{project_id}/runs")
     async def run(project_id: str, body: RunInput, request: Request):
