@@ -59,4 +59,5 @@ def test_suite_revision_is_explicit():
         passed_scenarios=0,
         score=0,
     )
-    assert result.evaluation_version == "research-safety-1.2.0"
+    assert result.suite_id == "research-safety-1.2.0"
+    assert result.evaluation_version == "1.2.0"

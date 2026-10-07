@@ -181,15 +181,9 @@ class AgentFactoryService:
             parsed_eval_ref = (
                 AgentEvaluationReference.model_validate(evaluation_reference)
                 if isinstance(evaluation_reference, dict)
-                else evaluation_reference
+                else AgentEvaluationReference.model_validate(evaluation_reference.model_dump())
             )
-            from modules.bench.scenarios import get_bench_suite
-            suite = get_bench_suite(parsed_eval_ref.suite_id)
-            if suite is None:
-                raise ValueError(f"Unsupported evaluation suite '{parsed_eval_ref.suite_id}'.")
-            for req_scen in parsed_eval_ref.required_scenarios:
-                if req_scen not in suite.scenario_ids:
-                    raise ValueError(f"Required scenario '{req_scen}' is not part of suite '{suite.suite_id}'.")
+            evaluation_reference = parsed_eval_ref
 
         version_id = f"av_{uuid.uuid4().hex[:16]}"
 

@@ -9,29 +9,20 @@ from typing import Dict, List, Optional
 import hashlib
 import json
 from pydantic import BaseModel, Field
-from packages.contracts.bench import BenchCategory, BenchScenario
-
-RESEARCH_SAFETY_SUITE_ID = "research-safety-1.2.0"
-RESEARCH_SAFETY_SUITE_ALIAS = "research-safety"
-RESEARCH_SAFETY_EVALUATION_VERSION = "1.2.0"
-
-RESEARCH_SAFETY_SCENARIO_IDS: List[str] = [
-    "scen_safety_injection_defense",
-    "scen_tool_confinement_defense",
-    "scen_research_accuracy_synthesis",
-    "scen_grounded_abstention",
-]
-
-
-class BenchSuiteDefinition(BaseModel):
-    """Authoritative Bench evaluation suite definition."""
-    suite_id: str
-    evaluation_version: str
-    name: str
-    description: str
-    scenarios: List[BenchScenario]
-    scenario_ids: List[str]
-    suite_hash: str
+from packages.contracts.bench import (
+    BenchCategory,
+    BenchScenario,
+    BenchSuiteDefinition,
+    BenchSuiteManifest,
+    RESEARCH_SAFETY_SUITE_ID,
+    RESEARCH_SAFETY_SUITE_ALIAS,
+    RESEARCH_SAFETY_EVALUATION_VERSION,
+    RESEARCH_SAFETY_SCENARIO_IDS,
+    RESEARCH_BENCH_SUITE_ID,
+    RESEARCH_BENCH_VERSION,
+    resolve_bench_suite_manifest,
+    get_supported_bench_suite_ids,
+)
 
 
 def research_suite_hash() -> str:
@@ -41,23 +32,20 @@ def research_suite_hash() -> str:
 
 def get_bench_suite(suite_id: str) -> Optional[BenchSuiteDefinition]:
     """Resolves an authoritative Bench suite by its canonical identifier or registered alias."""
-    if suite_id in (RESEARCH_SAFETY_SUITE_ID, RESEARCH_SAFETY_SUITE_ALIAS):
+    manifest = resolve_bench_suite_manifest(suite_id)
+    if manifest is not None and manifest.suite_id == RESEARCH_SAFETY_SUITE_ID:
         scenarios = get_standard_research_bench_scenarios()
         return BenchSuiteDefinition(
-            suite_id=RESEARCH_SAFETY_SUITE_ID,
-            evaluation_version=RESEARCH_SAFETY_EVALUATION_VERSION,
+            suite_id=manifest.suite_id,
+            evaluation_version=manifest.evaluation_version,
             name="Research Safety Benchmark Suite",
             description="Four-pillar deterministic verification: injection defense, tool confinement, accuracy, and abstention.",
             scenarios=scenarios,
-            scenario_ids=list(RESEARCH_SAFETY_SCENARIO_IDS),
+            scenario_ids=list(manifest.scenario_ids),
             suite_hash=research_suite_hash(),
+            aliases=list(manifest.aliases),
         )
     return None
-
-
-def get_supported_bench_suite_ids() -> List[str]:
-    """Returns all recognized suite identifiers including aliases."""
-    return [RESEARCH_SAFETY_SUITE_ID, RESEARCH_SAFETY_SUITE_ALIAS]
 
 
 def get_standard_research_bench_scenarios() -> List[BenchScenario]:

@@ -7,8 +7,11 @@ Complies with ARYN-ARCH-001 Section 06 and AGENTS.md rule 6.
 from __future__ import annotations
 
 from typing import Optional
-from packages.contracts.bench import BenchEvaluationResult
-from packages.contracts.bench import RESEARCH_BENCH_VERSION
+from packages.contracts.bench import (
+    BenchEvaluationResult,
+    RESEARCH_SAFETY_SUITE_ID,
+    RESEARCH_SAFETY_EVALUATION_VERSION,
+)
 from packages.contracts.agent import AgentEvaluationReference
 from modules.bench.scenarios import (
     get_bench_suite,
@@ -67,13 +70,13 @@ class BenchQualityGate:
         evaluation_reference: Optional[AgentEvaluationReference] = None,
     ) -> None:
         """Recompute every scenario and aggregate; booleans and scores are not authority."""
-        suite_id = getattr(evaluation, "suite_id", "research-safety-1.2.0") or "research-safety-1.2.0"
+        suite_id = getattr(evaluation, "suite_id", RESEARCH_SAFETY_SUITE_ID) or RESEARCH_SAFETY_SUITE_ID
         suite_def = get_bench_suite(suite_id)
         if suite_def is None:
             raise QualityGateFailedError(f"Quality gate rejected unknown Bench suite '{suite_id}'.")
         suite = suite_def.scenarios
         valid = (
-            evaluation.evaluation_version in (suite_def.evaluation_version, RESEARCH_BENCH_VERSION)
+            evaluation.evaluation_version in (suite_def.evaluation_version, "research-safety-1.2.0")
             and evaluation.suite_hash == suite_def.suite_hash
             and bool(evaluation.runtime_adapter)
             and bool(evaluation.payload_hash)

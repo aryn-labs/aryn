@@ -140,6 +140,56 @@ def test_agent_evaluation_reference_rejection_of_invalid_suite_and_scenarios():
     with pytest.raises(ValueError, match="Unknown scenario ID"):
         AgentEvaluationReference(required_scenarios=["invalid_scenario_id"])
 
+    with pytest.raises(ValueError, match="Invalid evaluation_version"):
+        AgentEvaluationReference(suite_id="research-safety-1.2.0", evaluation_version="9.9.9")
+
+    with pytest.raises(ValueError, match="Invalid evaluation_version"):
+        AgentEvaluationReference(suite_id="research-safety", evaluation_version="wrong-version")
+
+
+def test_bench_suite_authority_and_alias_resolution():
+    from packages.contracts.bench import (
+        RESEARCH_SAFETY_SUITE_ID,
+        RESEARCH_SAFETY_SUITE_ALIAS,
+        RESEARCH_SAFETY_EVALUATION_VERSION,
+        RESEARCH_SAFETY_SCENARIO_IDS,
+        resolve_bench_suite_manifest,
+    )
+    from modules.bench.scenarios import get_bench_suite
+
+    # Canonical ID and alias resolve to the exact same manifest
+    manifest_canonical = resolve_bench_suite_manifest(RESEARCH_SAFETY_SUITE_ID)
+    manifest_alias = resolve_bench_suite_manifest(RESEARCH_SAFETY_SUITE_ALIAS)
+    assert manifest_canonical is not None
+    assert manifest_alias is not None
+    assert manifest_canonical.suite_id == manifest_alias.suite_id == RESEARCH_SAFETY_SUITE_ID
+    assert manifest_canonical.evaluation_version == manifest_alias.evaluation_version == RESEARCH_SAFETY_EVALUATION_VERSION
+    assert manifest_canonical.scenario_ids == manifest_alias.scenario_ids == list(RESEARCH_SAFETY_SCENARIO_IDS)
+
+    # Scenarios originate strictly from canonical authority
+    suite_canonical = get_bench_suite(RESEARCH_SAFETY_SUITE_ID)
+    suite_alias = get_bench_suite(RESEARCH_SAFETY_SUITE_ALIAS)
+    assert suite_canonical is not None
+    assert suite_alias is not None
+    assert suite_canonical.suite_id == suite_alias.suite_id == RESEARCH_SAFETY_SUITE_ID
+    assert suite_canonical.evaluation_version == suite_alias.evaluation_version == RESEARCH_SAFETY_EVALUATION_VERSION
+    assert suite_canonical.scenario_ids == suite_alias.scenario_ids == list(RESEARCH_SAFETY_SCENARIO_IDS)
+
+    # Valid evaluation references with canonical ID and alias both succeed
+    ref_canonical = AgentEvaluationReference(
+        suite_id=RESEARCH_SAFETY_SUITE_ID,
+        evaluation_version=RESEARCH_SAFETY_EVALUATION_VERSION,
+    )
+    assert ref_canonical.suite_id == RESEARCH_SAFETY_SUITE_ID
+    assert ref_canonical.evaluation_version == RESEARCH_SAFETY_EVALUATION_VERSION
+
+    ref_alias = AgentEvaluationReference(
+        suite_id=RESEARCH_SAFETY_SUITE_ALIAS,
+        evaluation_version=RESEARCH_SAFETY_EVALUATION_VERSION,
+    )
+    assert ref_alias.suite_id == RESEARCH_SAFETY_SUITE_ALIAS
+    assert ref_alias.evaluation_version == RESEARCH_SAFETY_EVALUATION_VERSION
+
 
 def test_agent_definition_composition():
     definition = AgentDefinition(
@@ -369,7 +419,7 @@ def test_bench_quality_gate_enforces_evaluation_reference():
         score=1.0,
         scenario_results=scenarios,
         suite_id="research-safety-1.2.0",
-        evaluation_version="research-safety-1.2.0",
+        evaluation_version="1.2.0",
         requested_model="mock-fast",
         payload_hash="some_hash",
         suite_hash=research_suite_hash(),
