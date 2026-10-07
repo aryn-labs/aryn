@@ -44,7 +44,7 @@ pengujian dan bukti historis sebelum migrasi gateway; perilaku gateway terbaru d
 
 1. Buka **Agent Factory**, buat blueprint, lalu simpan versi. Blueprint dan versi merupakan data berbeda. Versi baru tidak menimpa konfigurasi lama.
 2. Pilih model yang terdaftar dan instruksi sistem. Studio saat ini hanya mendukung agent teks tanpa tool runtime. Temperature dan batas output diteruskan ke adapter.
-3. Jalankan **Bench**. Dialog mengungkap penggunaan penyedia model jarak jauh melalui Hermes dan memerlukan pilihan eksplisit pengguna. Suite berisi empat skenario tetap; request browser tidak dapat mengganti skenario atau menyuntikkan skor.
+3. Jalankan **Bench**. Dialog mengungkap penggunaan penyedia model jarak jauh melalui Hermes dan memerlukan pilihan eksplisit pengguna. Suite ditentukan oleh evaluation reference versi agent; Research Safety default berisi empat skenario. Request browser tidak dapat mengganti skenario atau menyuntikkan skor.
 4. Buka setiap hasil skenario untuk melihat respons aktual, model, token, durasi, dan alasan kegagalan. Skor harus 100%; kegagalan terakhir membatalkan kelayakan hasil lama.
 5. **Tinjau dan setujui** dengan catatan keputusan. Core mengikat approval ke SHA-256 konfigurasi aktual, organisasi/proyek, serta evaluation ID Bench terverifikasi. Hash dari tinjauan browser harus cocok dengan database. Persetujuan hanya diizinkan untuk admin manusia development yang aktif.
 6. **Publikasikan versi**. Core memeriksa evaluasi dan approval. Versi yang dipublikasikan tidak dapat diubah.
@@ -54,7 +54,7 @@ pengujian dan bukti historis sebelum migrasi gateway; perilaku gateway terbaru d
 
 ## Keamanan dan ruang lingkup
 
-Alur operasional: **Web → ARYN API → ARYN Core → Hermes Runtime Adapter → Hermes → 9Router → provider**. Bench menggunakan Factory dan runner yang ada dengan adapter teks terbatas. Semua toolset Hermes harus nonaktif sebelum evaluasi maupun eksekusi Studio. Studio tidak mengubah hardening Hermes dan tidak membuka host tools.
+Alur operasional: **Web → ARYN API → ARYN Core → Hermes Runtime Adapter → Hermes → 9Router → provider**. Bench menggunakan generic engine melalui Factory dengan adapter teks terbatas. Lihat [kontrak dan validasi Bench](bench-engine.md). Semua toolset Hermes harus nonaktif sebelum evaluasi maupun eksekusi Studio. Studio tidak mengubah hardening Hermes dan tidak membuka host tools.
 
 API hanya mendengarkan loopback. Host harus cocok dengan alamat launcher; permintaan dari IP lain ditolak. Tidak ada endpoint penerbitan identity binding untuk browser. Server memiliki signing key acak per proses dan membuat konteks Core untuk principal development tetap yang diprovisikan pada organisasi/proyek lokal. Keanggotaan tersimpan pada DB; restart tidak mengembalikan membership yang dicabut.
 

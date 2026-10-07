@@ -1,5 +1,7 @@
 import type { Node, Edge } from "@xyflow/react";
 import type {
+  ScenarioDefinition,
+  EvaluationSuite,
   Blueprint,
   Evaluation,
   Run,
@@ -7,7 +9,7 @@ import type {
   Workspace,
 } from "../../lib/types";
 import { scenarioNames, statusLabel } from "../shared";
-import { availabilityLabel } from "../../lib/studio-state";
+import { availabilityLabel, evaluationStatus } from "../../lib/studio-state";
 import type { BaseNodeData, NodeStatus } from "./types";
 
 const node = (
@@ -383,20 +385,24 @@ export function buildBenchNodesAndEdges(
     scenarioId?: string;
     data?: any;
     scenarioStatuses?: Record<number, { passed?: boolean; status: NodeStatus }>;
+    scenarios?: ScenarioDefinition[];
   } | null,
+  suite?: EvaluationSuite,
 ) {
-  const standardScenarioKeys = [
+  const compatibilityScenarioKeys = [
     "scen_safety_injection_defense",
     "scen_tool_confinement_defense",
     "scen_research_accuracy_synthesis",
     "scen_grounded_abstention",
   ];
 
-  const scenarios = standardScenarioKeys.map((key) => {
+  const definitions = liveBenchEvent?.scenarios || (evaluation?.details.length ? evaluation.details : suite?.scenarios);
+  const scenarioKeys = definitions?.map((s) => s.scenario_id) || compatibilityScenarioKeys;
+  const scenarios = scenarioKeys.map((key) => {
     const detail = evaluation?.details.find((d) => d.scenario_id === key);
     return {
       scenario_id: key,
-      name: scenarioNames[key] || key,
+      name: scenarioNames[key] || definitions?.find((s) => s.scenario_id === key)?.name || key,
       passed: detail?.passed,
       actual_output: detail?.actual_output || "",
       failure_reason: detail?.failure_reason || "",
@@ -410,7 +416,7 @@ export function buildBenchNodesAndEdges(
     typeof liveBenchEvent?.scenarioIndex === "number"
       ? liveBenchEvent.scenarioIndex
       : liveBenchEvent?.scenarioId
-        ? standardScenarioKeys.indexOf(liveBenchEvent.scenarioId)
+        ? scenarioKeys.indexOf(liveBenchEvent.scenarioId)
         : undefined;
   const isScenarioActive = liveBenchEvent?.step === "scenario.started";
 
@@ -503,8 +509,10 @@ export function buildBenchNodesAndEdges(
         Object.values(liveBenchEvent.scenarioStatuses || {}).filter(
           (st) => st.passed,
         ).length;
-      const totalCount = evalData?.total_scenarios ?? 4;
-      const isVerified = evalData?.verified ?? true;
+      const totalCount = evalData?.total_scenarios ?? scenarios.length;
+      const isVerified = evalData?.verified ?? false;
+      const completionStatus = evalData?.provenance ? evaluationStatus(evalData) :
+        (evalData?.passed && passedCount === totalCount ? (isVerified ? "bench_passed" : "bench_unverified") : "failed");
 
       evalSublabel = `${passedCount}/${totalCount} skenario`;
       evalScore =
@@ -512,10 +520,10 @@ export function buildBenchNodesAndEdges(
           ? `${Math.round(evalData.score * 100)}%`
           : `${Math.round((passedCount / totalCount) * 100)}%`;
 
-      if (passedCount === totalCount && isVerified) {
+      if (completionStatus === "bench_passed") {
         evalStatus = "completed";
         evalBadge = "LULUS";
-      } else if (passedCount === totalCount && !isVerified) {
+      } else if (completionStatus === "bench_unverified") {
         evalStatus = "unverified";
         evalBadge = "TIDAK TERVERIFIKASI";
       } else {
@@ -530,10 +538,10 @@ export function buildBenchNodesAndEdges(
   } else if (evaluation) {
     evalSublabel = `${evaluation.passed_scenarios}/${evaluation.total_scenarios} skenario`;
     evalScore = `${Math.round(evaluation.score * 100)}%`;
-    if (evaluation.passed_scenarios === 4 && evaluation.verified) {
+    if (evaluationStatus(evaluation) === "bench_passed") {
       evalStatus = "completed";
       evalBadge = "LULUS";
-    } else if (evaluation.passed_scenarios === 4 && !evaluation.verified) {
+    } else if (evaluationStatus(evaluation) === "bench_unverified") {
       evalStatus = "unverified";
       evalBadge = "TIDAK TERVERIFIKASI";
     } else {

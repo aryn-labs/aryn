@@ -83,7 +83,29 @@ export type Version = {
   budget_policy?: BudgetPolicy;
   evaluation_reference?: EvaluationReference;
 };
+export type EvaluationState = "passed" | "failed" | "policy_violation" | "unverifiable" | "invalid_evidence" | "runtime_error";
+export type GraderResult = {
+  grader_id: string;
+  grader_type: string;
+  grader_version: string;
+  state: EvaluationState;
+  passed: boolean;
+  reason: string;
+  details: Record<string, unknown>;
+};
+export type ScenarioDefinition = { scenario_id: string; name: string; category: string };
+export type EvaluationSuite = {
+  suite_id: string;
+  evaluation_version: string;
+  aliases: string[];
+  name: string;
+  scenarios: ScenarioDefinition[];
+};
 export type Scenario = {
+  scenario_version?: string;
+  state?: EvaluationState;
+  grader_results?: GraderResult[];
+  execution?: Record<string, unknown>;
   scenario_id: string;
   name: string;
   category: string;
@@ -107,6 +129,14 @@ export type Evaluation = {
   details: Scenario[];
   evaluated_at: string;
   provenance: {
+    suite_id?: string;
+    suite_hash?: string;
+    runtime_adapter?: string;
+    evidence_format?: number;
+    state?: EvaluationState;
+    suite_aggregate?: { passed: boolean; total_scenarios: number; passed_scenarios: number; score: number; state: EvaluationState };
+    evaluation_reference?: EvaluationReference;
+    quality_gate?: { passed: boolean; reason: string; min_score_threshold: number; required_scenarios: string[] };
     evaluation_version: string;
     requested_model: string;
     payload_hash: string;
@@ -169,6 +199,7 @@ export type Audit = {
   integrity_reference: string;
 };
 export type Snapshot = {
+  evaluation_suites?: EvaluationSuite[];
   blueprints: Blueprint[];
   versions: Version[];
   evaluations: Evaluation[];

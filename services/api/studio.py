@@ -45,7 +45,7 @@ from database.schema import (
 from modules.agent_factory.service import AgentFactoryService, ForbiddenToolError
 from modules.bench.quality_gate import QualityGateFailedError
 from modules.bench.runner import BenchRunner
-from modules.bench.scenarios import get_standard_research_bench_scenarios
+from modules.bench.scenarios import get_bench_suite_registry
 from modules.core.approvals.engine import (
     ApprovalRequiredError,
     PayloadHashMismatchError,
@@ -61,7 +61,6 @@ from modules.core.workflows.coordinator import (
     RunInProgressError,
 )
 from packages.contracts.agent import AgentVersion, VersionIntegrityError
-from packages.contracts.bench import RESEARCH_BENCH_VERSION
 from packages.contracts.core import AuditStatus
 from packages.contracts.runtime import (ModelUnavailableError, GatewayUnavailableError, ModelIdentityError, RuntimeGatewayError)
 from packages.contracts.model import ModelProviderType, ModelSpec
@@ -74,7 +73,6 @@ DEV_ACTOR = "studio_local_owner"
 DEV_PROJECT = "proj_studio_research"
 COOKIE = "aryn_studio_session"
 SESSION_TTL = 8 * 3600
-SUITE_VERSION = RESEARCH_BENCH_VERSION
 
 
 class BlueprintInput(BaseModel):
@@ -588,6 +586,13 @@ def create_app(
                 .all()
             ]
             data = {
+                "evaluation_suites": [
+                    {"suite_id": suite.suite_id, "evaluation_version": suite.evaluation_version,
+                     "aliases": suite.aliases, "name": suite.name,
+                     "scenarios": [{"scenario_id": scenario.scenario_id, "name": scenario.name,
+                                    "category": scenario.category} for scenario in suite.scenarios]}
+                    for suite in get_bench_suite_registry().suites()
+                ],
                 "blueprints": blueprints,
                 "versions": versions,
                 "assignments": [
@@ -710,15 +715,16 @@ def create_app(
         ):
             raise HTTPException(
                 422,
-                "Konfirmasi penggunaan model jarak jauh untuk empat skenario Bench diperlukan.",
+                "Konfirmasi penggunaan model jarak jauh untuk suite evaluasi Bench diperlukan.",
             )
         ctx = context(project_id, "run:create")
         await require_runtime()
         with db.session() as s:
             v = AgentRepository(s).get_version(ctx, version_id)
-            # The existing budget is per runtime turn, not per suite. Include
-            # input for every fixed scenario before dispatching any of them.
-            for scenario in get_standard_research_bench_scenarios():
+            contract = AgentVersion.from_stored(v)
+            suite = factory.bench_runner.resolve_suite(contract)
+            # Core budget preflight covers every scenario in the authoritative suite.
+            for scenario in suite.scenarios:
                 coordinator.budget_engine.check_preflight(
                     ctx,
                     v.max_tokens + (len(scenario.prompt) + len(v.system_prompt)) // 3,

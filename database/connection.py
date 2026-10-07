@@ -60,10 +60,10 @@ def check_db_health(engine: Engine) -> bool:
 class DatabaseManager:
     """Singleton-like or contextual manager for DB sessions."""
 
-    def __init__(self, engine: Engine | None = None) -> None:
+    def __init__(self, engine: Engine | None = None, evidence_signer=None) -> None:
         self.engine = engine or create_db_engine()
         self.session_factory = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
-        self._evidence_signer = None
+        self._evidence_signer = evidence_signer
 
     @property
     def evidence_signer(self):

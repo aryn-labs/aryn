@@ -78,6 +78,7 @@ class AgentFactoryService:
         self.model_router = model_router or ModelRouter()
         self.quality_gate = BenchQualityGate(min_score_threshold=1.0)
         self.bench_runner.evidence_signer = db_manager.evidence_signer
+        self.bench_runner.approval_authority = self.approval_engine
 
     # -------------------------------------------------------------------------
     # 1. Blueprint Management
@@ -272,10 +273,6 @@ class AgentFactoryService:
         on_event: Optional[Callable[[str, Dict[str, Any]], Any]] = None,
     ) -> BenchEvaluationResult:
         self.permission_engine.enforce("run:create", context, context.organization_id, context.project_id)
-        if scenarios is not None:
-            from modules.bench.scenarios import get_standard_research_bench_scenarios
-            if scenarios != get_standard_research_bench_scenarios():
-                raise QualityGateFailedError("The complete current research suite is mandatory.")
         # Retrieve version
         with self.db_manager.session(write=True) as session:
             repo = AgentRepository(session)
@@ -288,6 +285,7 @@ class AgentFactoryService:
                 )
             if m.status not in {"draft", "rejected", "approved"}:
                 raise InvalidStateTransitionError("Bench evaluation is already active or version is immutable.")
+            self.bench_runner.resolve_suite(version_contract, scenarios)
             # Mark version as evaluating
             repo.update_version_status(context, version_id, "evaluating")
 

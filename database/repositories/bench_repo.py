@@ -33,9 +33,11 @@ class BenchRepository:
         context: SecurityContext,
         eval_result: BenchEvaluationResult,
     ) -> BenchEvaluationModel:
+        if eval_result.evidence_format != 2:
+            raise QualityGateFailedError("New evaluations require complete generic execution evidence.")
         version = AgentVersion.from_stored(AgentRepository(self.session).get_version(context, eval_result.version_id))
         self.verify_result(context, eval_result, version, context.actor.actor_id)
-        details_str = json.dumps([r.model_dump() for r in eval_result.scenario_results], sort_keys=True)
+        details_str = json.dumps([r.model_dump(mode="json") for r in eval_result.scenario_results], sort_keys=True, allow_nan=False)
         model = BenchEvaluationModel(
             id=eval_result.evaluation_id,
             organization_id=context.organization_id,
@@ -49,16 +51,10 @@ class BenchRepository:
             details_json=details_str,
             evaluated_by=context.actor.actor_id,
             evaluated_at=datetime.datetime.fromisoformat(eval_result.evaluated_at),
-            provenance_json=json.dumps({
-                "suite_id": getattr(eval_result, "suite_id", "research-safety-1.2.0"),
-                "evaluation_version": eval_result.evaluation_version,
-                "requested_model": eval_result.requested_model,
-                "payload_hash": eval_result.payload_hash,
-                "suite_hash": eval_result.suite_hash,
-                "runtime_adapter": eval_result.runtime_adapter,
-                "attestation": eval_result.attestation,
-                "evaluated_at": eval_result.evaluated_at,
-            }, sort_keys=True),
+            provenance_json=json.dumps(eval_result.model_dump(mode="json", exclude={
+                "evaluation_id", "blueprint_id", "version_id", "passed", "total_scenarios",
+                "passed_scenarios", "score", "scenario_results",
+            }), sort_keys=True, allow_nan=False),
         )
         self.session.add(model)
         try:
@@ -70,21 +66,40 @@ class BenchRepository:
             ) from exc
         return model
 
+    def approval_authority(self):
+        from database.connection import DatabaseManager
+        from modules.core.approvals.engine import ApprovalEngine
+        return ApprovalEngine(DatabaseManager(self.session.get_bind(), evidence_signer=self.evidence_signer))
+
     def verify_result(self, context, result, version, evaluated_by):
-        BenchQualityGate.validate_evidence(result, evaluation_reference=version.evaluation_reference)
         if (result.blueprint_id != version.blueprint_id or result.version_id != version.id
                 or result.payload_hash != version.payload_hash or result.requested_model != version.model
                 or not self.evidence_signer
                 or not self.evidence_signer.verify("bench", result.evidence_payload(
                     context.organization_id, context.project_id, evaluated_by), result.attestation)):
             raise QualityGateFailedError("Bench provenance is unverified or configuration differs.")
+        if result.evidence_format == 2:
+            if (result.output_contract != version.output_contract or result.agent_tool_grants != version.tool_grants
+                    or result.agent_forbidden_actions != list(dict.fromkeys(version.constraints.disallowed_actions))):
+                raise QualityGateFailedError("Evaluation policies differ from the current agent configuration.")
+            for scenario in result.scenario_results:
+                execution = scenario.execution
+                if (execution is None or not execution.attestation
+                        or execution.organization_id != context.organization_id or execution.project_id != context.project_id):
+                    raise QualityGateFailedError("Execution attestation or tenant boundary differs.")
+        BenchQualityGate.validate_evidence(result, evaluation_reference=version.evaluation_reference,
+            signer=self.evidence_signer, approval_authority=self.approval_authority())
 
     def validate_stored(self, context, row, version):
         try:
+            if row.organization_id != context.organization_id or row.project_id != context.project_id:
+                raise QualityGateFailedError("Stored Bench evidence belongs to a different tenant/project.")
             if row.passed not in {0, 1}:
                 raise ValueError("Invalid stored pass indicator.")
             provenance = json.loads(row.provenance_json)
-            provenance.setdefault("suite_id", "research-safety-1.2.0")
+            if "suite_id" not in provenance:
+                from packages.contracts.bench import RESEARCH_SAFETY_SUITE_ID
+                provenance["suite_id"] = RESEARCH_SAFETY_SUITE_ID
             result = BenchEvaluationResult(
                 evaluation_id=row.id, blueprint_id=row.blueprint_id, version_id=row.version_id,
                 passed=bool(row.passed), total_scenarios=row.total_scenarios,
@@ -136,5 +151,7 @@ class BenchRepository:
             return None
         if version.evaluation_id != latest.id:
             raise QualityGateFailedError("Latest evaluation differs from the version evidence reference.")
-        BenchQualityGate().enforce(self.validate_stored(context, latest, version), evaluation_reference=version.evaluation_reference)
+        BenchQualityGate().enforce(self.validate_stored(context, latest, version),
+            evaluation_reference=version.evaluation_reference, signer=self.evidence_signer,
+            approval_authority=self.approval_authority())
         return latest

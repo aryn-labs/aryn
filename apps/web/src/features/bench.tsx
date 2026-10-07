@@ -98,7 +98,7 @@ export function EvaluationPanel({
               </div>
               <div>
                 <strong>
-                  {scenarioNames[s.scenario_id] || "Skenario evaluasi"}
+                  {scenarioNames[s.scenario_id] || s.name || "Skenario evaluasi"}
                 </strong>
                 <small>{failureReason(s.failure_reason)}</small>
               </div>
@@ -196,15 +196,20 @@ export function BenchPage({
     scenarioId?: string;
     data?: any;
     scenarioStatuses?: Record<number, { passed?: boolean; status: NodeStatus }>;
+    scenarios?: import("../lib/types").ScenarioDefinition[];
   } | null>(null);
 
+  const selectedSuite = data.evaluation_suites?.find((suite) =>
+    suite.suite_id === selectedVersion?.evaluation_reference?.suite_id ||
+    suite.aliases.includes(selectedVersion?.evaluation_reference?.suite_id || "research-safety"));
   const { nodes: benchNodes, edges: benchEdges } = useMemo(() => {
     return buildBenchNodesAndEdges(
       selectedEvaluation,
       selectedVersion,
       liveBenchEvent,
+      selectedSuite,
     );
-  }, [selectedEvaluation, selectedVersion, liveBenchEvent]);
+  }, [selectedEvaluation, selectedVersion, liveBenchEvent, selectedSuite]);
 
   const runBench = async () => {
     if (!activeVersionId || !act) return;
@@ -222,13 +227,7 @@ export function BenchPage({
       number,
       { passed?: boolean; status: NodeStatus }
     > = {};
-    const scenarioIndexMap: Record<string, number> = {
-      scen_safety_injection_defense: 0,
-      scen_tool_confinement_defense: 1,
-      scen_research_accuracy_synthesis: 2,
-      scen_grounded_abstention: 3,
-    };
-
+    let scenarioDefinitions = selectedSuite?.scenarios;
     setLiveBenchEvent({
       step: "bench.started",
       scenarioStatuses: {},
@@ -243,19 +242,20 @@ export function BenchPage({
         (evt: any) => {
           if (!evt) return;
           if (evt.type === "bench.started") {
+            scenarioDefinitions = evt.data?.scenarios;
             setLiveBenchEvent({
               step: "bench.started",
+              scenarios: evt.data?.scenarios,
               scenarioStatuses: { ...scenarioStatuses },
             });
           } else if (evt.type === "scenario.started") {
             const sId = evt.data?.scenario_id;
-            const idx =
-              sId !== undefined && scenarioIndexMap[sId] !== undefined
-                ? scenarioIndexMap[sId]
-                : -1;
+            const idx = Number.isInteger(evt.data?.index) ? evt.data.index :
+              scenarioDefinitions?.findIndex((s) => s.scenario_id === sId) ?? -1;
             if (idx >= 0) {
               setLiveBenchEvent({
                 step: "scenario.started",
+                scenarios: scenarioDefinitions,
                 scenarioId: sId,
                 scenarioIndex: idx,
                 scenarioStatuses: { ...scenarioStatuses },
@@ -263,10 +263,8 @@ export function BenchPage({
             }
           } else if (evt.type === "scenario.completed") {
             const sId = evt.data?.scenario_id;
-            const idx =
-              sId !== undefined && scenarioIndexMap[sId] !== undefined
-                ? scenarioIndexMap[sId]
-                : -1;
+            const idx = Number.isInteger(evt.data?.index) ? evt.data.index :
+              scenarioDefinitions?.findIndex((s) => s.scenario_id === sId) ?? -1;
             if (idx >= 0) {
               scenarioStatuses[idx] = {
                 passed: evt.data?.passed,
@@ -274,6 +272,7 @@ export function BenchPage({
               };
               setLiveBenchEvent({
                 step: "scenario.completed",
+                scenarios: scenarioDefinitions,
                 scenarioId: sId,
                 scenarioIndex: idx,
                 scenarioStatuses: { ...scenarioStatuses },
@@ -366,20 +365,20 @@ export function BenchPage({
       {benchError && <Notice tone="error">{benchError}</Notice>}
       {benchRunning && (
         <Notice tone="info">
-          Uji kepatuhan Bench sedang berlangsung… Memvalidasi 4 skenario
-          keamanan dan akurasi.
+          Uji kepatuhan Bench sedang berlangsung… Memvalidasi skenario suite
+          yang direferensikan versi agent.
         </Notice>
       )}
       {!selectedEvaluation && selectedVersion && !benchRunning && (
         <Notice tone="info">
           Versi ini belum pernah dievaluasi di Bench Laboratory. Klik 'Jalankan
-          Bench' di atas untuk memulai uji keamanan dan akurasi 4 skenario
-          standar.
+          Bench' di atas untuk menjalankan suite evaluasi yang direferensikan versi
+          agent.
         </Notice>
       )}
       {selectedEvaluation && !selectedEvaluation.verified && (
         <Notice tone="warning">
-          Hasil evaluasi tidak terverifikasi (HMAC attestation tidak valid).
+          Bukti evaluasi belum lolos validasi integritas dan konfigurasi saat ini.
           Evidence tidak dapat digunakan untuk pengajuan persetujuan Core.
         </Notice>
       )}
@@ -466,7 +465,7 @@ export function BenchPage({
         ) : (
           <Empty
             title="Belum ada evaluasi Bench"
-            description="Pilih versi pada bilah alat di atas, lalu klik 'Jalankan Bench' untuk mengevaluasi empat skenario keselamatan dan kualitas."
+            description="Pilih versi pada bilah alat di atas, lalu klik 'Jalankan Bench' untuk menjalankan suite evaluasi versi tersebut."
           />
         )}
       </Panel>

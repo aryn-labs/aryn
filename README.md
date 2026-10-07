@@ -8,7 +8,7 @@ This is the private primary monorepo for ARYN Cloud and ARYN Local.
 - `modules/core/`: identity, organization/project scoping, divisions, workflows, permissions, approvals, audit, and usage authority.
 - `modules/agent_factory/`: agent blueprints, immutable versions, promotion and assignments.
 - `modules/brief/`: evidence bundles, provenance, contradiction, and abstention.
-- `modules/bench/`: safety evaluation, replay, regression gates.
+- `modules/bench/`: generic scenario execution, deterministic graders, evidence validation and quality gates. Research Safety is the first suite.
 - `modules/relay/`: incident investigation, approved remediation, recovery proof.
 - `modules/commercial/`: plans, subscriptions, entitlements and billing usage policy.
 
@@ -35,5 +35,7 @@ Set-Location D:\ARYN\aryn-labs\aryn
 ```
 
 9Router must already listen at `http://127.0.0.1:20128/v1`; the combined launcher starts runtime and Studio with matching ephemeral authentication. See [9Router routing, readiness limitations and validation](docs/9router-gateway.md). Open `http://127.0.0.1:8710`. See [Studio setup, security, and capabilities](docs/studio.md) and [validation evidence](docs/studio-validation.md). Brief and Relay are not implemented in Studio.
+
+See [Bench engine contracts and validation](docs/bench-engine.md).
 
 References: ARYN-PRD-001, ARYN-ARCH-001, ARYN-TECH-001, ARYN-SEC-001 and ARYN-PLAN-001 in private `aryn-docs`.

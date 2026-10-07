@@ -115,6 +115,7 @@ class RunResult(BaseModel):
     completed_at: Optional[float] = None
     error_message: Optional[str] = None
     raw_response: Dict[str, Any] = Field(default_factory=dict)
+    execution_evidence: Optional[Dict[str, Any]] = None
     requested_model: Optional[str] = None
     actual_model: Optional[str] = None
     gateway: Optional[Literal["9Router"]] = None

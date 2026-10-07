@@ -49,7 +49,14 @@ class ApprovalEngine:
         )
 
     def verify_signature(self, row):
-        record = self.contract(row)
+        return self.verify_record(self.contract(row))
+
+    def verify_record(self, record):
+        """Verify a captured approval through existing durable Core authority."""
+        with self.db_manager.session() as session:
+            stored = session.get(ApprovalModel, record.approval_id)
+            if stored is None or self.contract(stored) != record:
+                raise ApprovalRequiredError("Approval no longer matches current Core evidence.")
         payload = record.model_dump(mode="json", exclude={"attestation"})
         if not self.db_manager.evidence_signer.verify("human_approval", payload, record.attestation):
             raise ApprovalRequiredError("Approval provenance is not verified.")

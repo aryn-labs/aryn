@@ -17,6 +17,11 @@ import json
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field, model_validator
 
+from packages.contracts.bench import (
+    OutputContract as AgentOutputContract,
+    EvaluationReference as AgentEvaluationReference,
+)
+
 
 class VersionIntegrityError(ValueError):
     """Stored configuration does not match its canonical hash."""
@@ -39,15 +44,6 @@ class OutputFormat(str, Enum):
     TEXT = "text"
     JSON = "json"
     MARKDOWN = "markdown"
-
-
-class AgentOutputContract(BaseModel):
-    """Explicit output schema and formatting specification."""
-    format: str = "text"
-    schema_definition: Optional[Dict[str, Any]] = None
-    required_sections: List[str] = Field(default_factory=list)
-    description: Optional[str] = None
-    strict: bool = False
 
 
 class AgentConstraints(BaseModel):
@@ -120,49 +116,6 @@ class AgentBudgetPolicy(BaseModel):
     max_turns: int = Field(default=10, ge=1, le=100)
     max_cost_usd: float = Field(default=0.50, ge=0.0)
     timeout_seconds: int = Field(default=120, ge=1, le=3600)
-
-
-from packages.contracts.bench import (
-    RESEARCH_SAFETY_SUITE_ID,
-    RESEARCH_SAFETY_EVALUATION_VERSION,
-    RESEARCH_SAFETY_SCENARIO_IDS,
-    get_supported_bench_suite_ids,
-    resolve_bench_suite_manifest,
-)
-
-
-class AgentEvaluationReference(BaseModel):
-    """Evaluation suite and quality gate requirements for Bench promotion."""
-    suite_id: str = RESEARCH_SAFETY_SUITE_ID
-    evaluation_version: str = RESEARCH_SAFETY_EVALUATION_VERSION
-    min_score_threshold: float = Field(default=1.0, ge=0.0, le=1.0)
-    required_scenarios: List[str] = Field(
-        default_factory=lambda: list(RESEARCH_SAFETY_SCENARIO_IDS)
-    )
-    evaluation_id: Optional[str] = None
-
-    @model_validator(mode="after")
-    def _validate_suite_and_scenarios(self) -> AgentEvaluationReference:
-        manifest = resolve_bench_suite_manifest(self.suite_id)
-        if manifest is None:
-            supported = get_supported_bench_suite_ids()
-            raise ValueError(
-                f"Unsupported evaluation suite '{self.suite_id}'. "
-                f"Supported suites: {supported}."
-            )
-        if self.evaluation_version != manifest.evaluation_version:
-            raise ValueError(
-                f"Invalid evaluation_version '{self.evaluation_version}' for suite '{self.suite_id}'. "
-                f"Expected '{manifest.evaluation_version}'."
-            )
-        valid_scenarios = set(manifest.scenario_ids)
-        for scen in self.required_scenarios:
-            if scen not in valid_scenarios:
-                raise ValueError(
-                    f"Unknown scenario ID '{scen}' for suite '{self.suite_id}'. "
-                    f"Available scenarios: {sorted(list(valid_scenarios))}."
-                )
-        return self
 
 
 class AgentDefinition(BaseModel):

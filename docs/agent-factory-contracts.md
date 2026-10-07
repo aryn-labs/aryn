@@ -107,26 +107,16 @@ Representasi versi agent immutable yang memiliki hash kanonikal:
 
 ## 3. Bench Authority & Suite Registry
 
-Seluruh pengenal suite, versi evaluasi, dan skenario Bench memiliki **satu canonical source of truth** pada `packages/contracts/bench.py`:
+Bench menggunakan generic contracts pada `packages/contracts/bench.py`, immutable server-owned registry pada `modules/bench/registry.py`, dan catalog definisi suite pada `modules/bench/scenarios.py`. Research Safety merupakan suite pertama di atas generic runner, graders, evidence validator dan aggregation.
 
-- **Konstanta Kanonikal**:
-  - `RESEARCH_SAFETY_SUITE_ID = "research-safety-1.2.0"`
-  - `RESEARCH_SAFETY_SUITE_ALIAS = "research-safety"`
-  - `RESEARCH_SAFETY_EVALUATION_VERSION = "1.2.0"`
-  - `RESEARCH_SAFETY_SCENARIO_IDS = ["scen_safety_injection_defense", "scen_tool_confinement_defense", "scen_research_accuracy_synthesis", "scen_grounded_abstention"]`
-  - Alias kompatibilitas: `RESEARCH_BENCH_SUITE_ID = RESEARCH_SAFETY_SUITE_ID`, `RESEARCH_BENCH_VERSION = RESEARCH_SAFETY_EVALUATION_VERSION`.
+- `EvaluationReference` dan `OutputContract` adalah shared contracts. Names `AgentEvaluationReference` dan `AgentOutputContract` tetap tersedia sebagai aliases; canonical format 3 serialization/defaults tidak berubah.
+- `resolve_bench_suite_manifest()` dan `get_supported_bench_suite_ids()` tetap merupakan compatibility entrypoints ke authoritative registry. Constants `RESEARCH_SAFETY_*` tetap tersedia sebagai compatibility defaults, bukan branching rules dalam engine/Factory.
+- Version/reference dan required scenario identities divalidasi terhadap manifest. Untuk reference suite lain, omitted version/required scenarios berasal dari manifest tersebut.
+- Factory meminta Bench menyelesaikan dan menjalankan seluruh suite referenced sebelum promotion. Factory tidak mengetahui isi Research Safety.
+- Quality gate menghitung ulang setiap grader, scenario/suite aggregate dan promotion decision dari execution evidence; stored booleans/scores bukan authority.
+- Generic evidence format 2 menyimpan execution HMAC, individual grader evidence, policy snapshots, suite aggregate dan gate decision dalam kolom JSON persistence existing. Original format 1 serialization/HMAC tetap dapat diverifikasi untuk historical evidence; new evaluation writes wajib format 2.
 
-- **Registry Manifest (`BenchSuiteManifest`)**:
-  - `resolve_bench_suite_manifest(identifier: str) -> Optional[BenchSuiteManifest]`: Menyelesaikan ID kanonikal maupun alias ke manifest suite tunggal.
-  - `get_supported_bench_suite_ids() -> List[str]`: Mengembalikan seluruh identifier yang sah (`["research-safety-1.2.0", "research-safety"]`).
-
-- **Eksekusi Runner (`modules/bench/runner.py`)**:
-  - Mengeksekusi suite yang secara eksplisit ditentukan oleh `version.evaluation_reference.suite_id`.
-  - Menghasilkan bukti evaluasi `BenchEvaluationResult` dengan `suite_id` dan `evaluation_version` yang bersumber dari suite definition.
-
-- **Quality Gate (`modules/bench/quality_gate.py`)**:
-  - `validate_evidence(evaluation, evaluation_reference)`: Memvalidasi integritas struktural bukti Bench terhadap spesifikasi suite.
-  - `enforce(evaluation, evaluation_reference)`: Memeriksa kelulusan evaluasi (`passed`), ambang skor (`min_score_threshold`), dan kelulusan seluruh skenario dalam `required_scenarios`.
+Lihat [generic Bench engine](bench-engine.md) untuk scenario/grader contracts, runtime observation coverage, Research Safety compatibility, fail-closed rules dan validation evidence.
 
 ---
 

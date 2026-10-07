@@ -7,13 +7,12 @@ import type {
 } from "./types";
 
 export function evaluationStatus(e: Evaluation) {
-  if (
-    !e.passed ||
-    e.score < 1 ||
-    e.total_scenarios < 1 ||
-    e.passed_scenarios < e.total_scenarios
-  )
-    return "failed";
+  const policy = e.provenance?.evidence_format === 2 ? e.provenance.quality_gate : undefined;
+  const threshold = policy?.min_score_threshold ?? 1;
+  const consistent = e.total_scenarios > 0 && e.passed_scenarios >= 0 &&
+    e.passed_scenarios <= e.total_scenarios && Number.isFinite(e.score) &&
+    Math.abs(e.score - Math.round(e.passed_scenarios / e.total_scenarios * 10000) / 10000) < 0.00001;
+  if (!e.passed || !consistent || e.score < threshold || (policy && !policy.passed)) return "failed";
   return e.verified ? "bench_passed" : "bench_unverified";
 }
 
