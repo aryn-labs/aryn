@@ -19,6 +19,7 @@ from modules.core.audit.logger import AuditLogger
 from modules.core.approvals.engine import ApprovalEngine, ApprovalRequiredError
 from modules.core.permissions.engine import PermissionDeniedError, PermissionEngine
 from modules.bench.quality_gate import BenchQualityGate, QualityGateFailedError
+from modules.bench.regression import audit_regression_denial
 from modules.bench.runner import BenchRunner
 from packages.contracts.core import ActorType, AuditStatus, SecurityContext
 from packages.contracts.agent import (
@@ -311,6 +312,9 @@ class AgentFactoryService:
                 agent_repo.update_version_status(context, version_id, "draft", evaluation_id=result.evaluation_id)
             else:
                 agent_repo.update_version_status(context, version_id, "rejected", evaluation_id=result.evaluation_id)
+            from database.repositories.bench_regression_repo import BenchRegressionRepository
+            BenchRegressionRepository(session, self.db_manager.evidence_signer).compare(
+                context, version_id, persist=True)
 
         self.audit_logger.record(
             event_type="bench.evaluation.completed",
@@ -331,11 +335,13 @@ class AgentFactoryService:
     # 4. Cryptographic Approval
     # -------------------------------------------------------------------------
 
+    @audit_regression_denial
     def approve_version(
         self,
         context: SecurityContext,
         version_id: str,
         comments: Optional[str] = None,
+        expected_payload_hash: Optional[str] = None,
     ) -> ApprovalRecord:
         """Approve current attested Bench evidence and transition atomically."""
         if context.actor.actor_type == ActorType.AGENT:
@@ -343,6 +349,9 @@ class AgentFactoryService:
         with self.db_manager.session(write=True) as session:
             agent_repo = AgentRepository(session)
             version = agent_repo.get_version(context, version_id, for_update=True)
+            if expected_payload_hash is not None and version.payload_hash != expected_payload_hash:
+                from modules.core.approvals.engine import PayloadHashMismatchError
+                raise PayloadHashMismatchError("Browser review differs from current canonical payload.")
             version_contract = AgentVersion.from_stored(version)
             if version_contract.canonical_format != 3:
                 raise QualityGateFailedError(
@@ -364,6 +373,7 @@ class AgentFactoryService:
     # 5. Publication (Making version immutable)
     # -------------------------------------------------------------------------
 
+    @audit_regression_denial
     def publish_version(
         self,
         context: SecurityContext,
@@ -395,7 +405,7 @@ class AgentFactoryService:
                 )
 
             # 3. Cryptographic approval check (matches exact payload hash)
-            self.approval_engine.verify_approval(
+            approval = self.approval_engine.verify_approval(
                 context=context,
                 target_type="agent_version",
                 target_id=version_id,
@@ -404,6 +414,16 @@ class AgentFactoryService:
             )
             if m.status not in {"approved", "published"}:
                 raise InvalidStateTransitionError("Publication requires the approved state.")
+
+            if m.status == "published":
+                return AgentVersion.from_stored(m)
+            from database.repositories.bench_regression_repo import BenchRegressionRepository
+            regression_repo = BenchRegressionRepository(session, self.db_manager.evidence_signer,
+                self.permission_engine, self.approval_engine)
+            baseline = regression_repo.current(context, m.blueprint_id)
+            regression_repo.accept(context, passing_eval.id,
+                expected_baseline_id=baseline.baseline_id if baseline else None,
+                reason="Publication accepted through exact-payload Core human approval.", approval=approval)
 
             # 4. Transition to published
             published_model = agent_repo.update_version_status(
@@ -415,18 +435,20 @@ class AgentFactoryService:
 
             published_version = AgentVersion.from_stored(published_model)
 
-        self.audit_logger.record(
-            event_type="factory.version.published",
-            context=context,
-            resource_id=version_id,
-            status=AuditStatus.COMPLETED,
-            payload={
-                "blueprint_id": published_version.blueprint_id,
-                "version_number": published_version.version_number,
-                "published_by": context.actor.actor_id,
-                "payload_hash": published_version.payload_hash,
-            },
-        )
+            self.audit_logger.record(
+                event_type="factory.version.published",
+                context=context,
+                resource_id=version_id,
+                status=AuditStatus.COMPLETED,
+                payload={
+                    "blueprint_id": published_version.blueprint_id,
+                    "version_number": published_version.version_number,
+                    "published_by": context.actor.actor_id,
+                    "payload_hash": published_version.payload_hash,
+                    "baseline_id": AgentRepository(session).get_blueprint(context, published_version.blueprint_id).bench_baseline_id,
+                },
+                session=session,
+            )
         return published_version
 
     # -------------------------------------------------------------------------

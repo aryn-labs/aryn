@@ -75,6 +75,7 @@ class DatabaseManager:
     @contextmanager
     def session(self, write: bool = False) -> Generator[Session, None, None]:
         session: Session = self.session_factory()
+        session.info["write"] = write
         try:
             if write and self.engine.dialect.name == "sqlite":
                 session.execute(text("BEGIN IMMEDIATE"))

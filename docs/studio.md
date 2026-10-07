@@ -114,6 +114,8 @@ Ringkasan menampilkan jumlah aktual dari proyek dan aktivitas Core; tidak ada se
 
 Jika Hermes tidak tersedia, kredensial salah, atau toolsets aktif, indikator menjelaskan ketidaksiapan dan server memblokir Bench/Run. Factory dan data tersimpan tetap dapat digunakan. Detail readiness Hermes dapat degraded walaupun jalur teks dapat dipakai; Studio tidak mengklaim runtime keseluruhan bebas masalah.
 
+Bench juga menampilkan current Accepted Baseline vs Candidate, scenario/grader regressions, score serta latency/token/cost deltas dan promotion decision dari server. Admin dapat menerima verified baseline dengan reason/CAS; suite/evidence transition memerlukan intent governance eksplisit. Critical regression memblokir Factory/Core approval dan publish backend. Publication sah memajukan baseline atomik; existing publication tanpa baseline membutuhkan adoption yang diverifikasi, sehingga candidate tidak mendapat no-baseline bypass. [Kontrak dan lifecycle baseline](bench-engine.md#accepted-baseline-dan-regression-governance-bn-06) menjelaskan bootstrap, history, migration dan legacy limits.
+
 ## Pengujian dan traceability
 
 ```powershell

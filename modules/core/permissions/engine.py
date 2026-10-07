@@ -37,6 +37,7 @@ class PermissionEngine:
             "blueprint:create",
             "version:create",
             "version:approve",
+            "bench:accept_baseline",
             "version:publish",
             "agent:assign",
         },
@@ -60,6 +61,7 @@ class PermissionEngine:
 
     # Actions strictly reserved for human actors; autonomous agents are forbidden
     HUMAN_ONLY_ACTIONS: Set[str] = {
+        "bench:accept_baseline",
         "version:approve",
         "version:publish",
     }

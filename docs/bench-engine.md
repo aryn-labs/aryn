@@ -10,7 +10,7 @@ Sebelumnya runner dan quality gate menilai regex Research Safety secara langsung
 
 Alur sekarang:
 
-`EvaluationReference → authoritative suite registry → BenchScenario → runtime execution → deterministic graders → ScenarioResult → suite aggregate → promotion decision → persisted evidence revalidation → Core approval → publish`
+`EvaluationReference → authoritative suite registry → BenchScenario → runtime execution → deterministic graders → ScenarioResult → suite aggregate → persisted evidence revalidation → accepted baseline → deterministic regression comparison → promotion gate → Core approval → publish + baseline advancement`
 
 - `packages/contracts/bench.py`: contracts generik, spesifikasi grader discriminated, dan validasi schema/configuration.
 - `modules/bench/registry.py`: registry immutable yang menyimpan salinan definisi tervalidasi; alias ambigu/duplikat ditolak. Resolution mengembalikan salinan baru, sehingga mutation caller tidak mengubah authority.
@@ -73,7 +73,55 @@ Evidence format 1 yang sudah tersimpan tetap dapat direvalidate dengan original 
 
 Factory hanya menyelesaikan suite reference melalui Bench sebelum mengubah version menjadi evaluating. Factory tidak mengimpor scenario Research Safety. Canonical format 3, immutable published configuration, exact-payload approval, no agent self-approve/publish, tenant/project isolation dan latest-evaluation gate tetap berlaku.
 
-`details_json` menyimpan seluruh execution/grader/scenario evidence. `provenance_json` menyimpan format, suite/config hash, requested model, adapter, output contract, agent boundaries, evaluation reference, suite aggregate, gate decision dan outer attestation. Repository mengikat policy snapshots ke current canonical agent configuration dan tenant, lalu menghitung ulang grader/agregat. HMAC original format historis dipertahankan. Database schema dan Alembic head tidak berubah; tidak diperlukan migration.
+`details_json` menyimpan seluruh execution/grader/scenario evidence. `provenance_json` menyimpan format, suite/config hash, requested model, adapter, output contract, agent boundaries, evaluation reference, suite aggregate, gate decision dan outer attestation. Repository mengikat policy snapshots ke current canonical agent configuration dan tenant, lalu menghitung ulang grader/agregat. HMAC original format historis dipertahankan. Generalization awal tidak mengubah schema; BN-06 menambahkan migration `011_bench_baseline_regression` untuk authority baseline/comparison yang terpisah.
+
+## Accepted baseline dan regression governance (BN-06)
+
+Audit kelanjutan dimulai pada `eb3cc223e9b70fa21e9e77d8d468d2b730353c48` di `development`. Engine generik, suite registry, generic graders, signed execution/evaluation evidence, latest evaluation semantics, Core authority dan canonical Agent payload format 3 dipertahankan. Sebelumnya belum ada baseline governance, durable comparison, atau regression enforcement. Private PRD/ARCH/SEC masih hanya berupa indeks dalam checkout; BN-06 mengikuti requirement yang diberikan pemilik secara langsung.
+
+### Authority dan lifecycle
+
+- `bench_baselines` adalah riwayat append-only. `agent_blueprints.bench_baseline_id` menunjuk satu current baseline untuk organization/project/blueprint. Suite canonical/version/config hash ikut mengikat receipt; pindah suite tetap bertemu baseline blueprint yang sama dan tidak membuka bootstrap baru.
+- `AcceptedBaseline` menyimpan evaluation/version/payload identity, fingerprint seluruh persisted evaluation, fingerprint konfigurasi Agent yang sebelumnya sudah diverifikasi format 3, suite definition snapshot, generation, predecessor hash/ID, accepted actor/time, reason dan Core approval reference bila publication. Receipt ditandatangani HMAC domain `bench_baseline`. Signed evaluation tidak diubah.
+- Admin human dapat menerima **latest verified passing evaluation** melalui permission Core `bench:accept_baseline`. Exact version/evaluation/payload dan registry divalidasi server. Intent browser hanya evaluation ID, reason, expected current baseline ID dan explicit suite-transition intent. CAS yang stale ditolak. Failed/forged/tampered evaluation, unknown suite, wrong tenant/blueprint dan stale configuration tidak dapat diterima.
+- Bootstrap hanya berlaku saat belum ada accepted baseline **dan** belum ada published/deprecated history pada blueprint. Ini mengizinkan promotion pertama dari versi yang mempunyai passing verified evaluation; nomor semver/draft terdahulu tidak menjadi authority. Approval menandai comparison sebagai `bootstrap`. Tidak ada baseline otomatis dari label `passed`.
+- Publish yang melewati current regression gate dan exact-payload Core approval memajukan baseline secara atomik dengan publication dan audit. `accepted_by` berasal dari human approver Core; actor publikasi dicatat di audit. Publication pertama membuat generation 1; publication berikutnya menambah generation dan predecessor receipt tanpa overwrite. Republish idempotent tidak memajukan baseline lagi.
+- Database lama dengan published history tetapi belum memiliki baseline menghasilkan `baseline_required` untuk subsequent candidate. Admin harus secara eksplisit mengadopsi source published/deprecated yang evaluation serta **Core approval**-nya masih dapat diverifikasi. Candidate baru tidak dapat memakai bootstrap dalam keadaan ini.
+- Replacement normal memerlukan comparison tanpa critical regression. Perubahan suite/configuration/evidence format memerlukan intent `suite_transition=true`, reason, active admin authority, CAS dan passing evaluation pada konfigurasi authoritative baru. Exception ini hanya berlaku untuk incompatibility suite/evidence yang nyata; tidak bisa digunakan untuk mengesampingkan critical failure pada konfigurasi yang sama. Acceptance merupakan tindakan governance eksplisit, bukan silent reset.
+
+### Contracts, comparability dan criticality
+
+`EvaluationIdentity`, `AcceptedBaseline`, `RegressionPolicy`, `RegressionComparison`, `ScenarioComparison`, `GraderComparison`, `RegressionFinding` dan `MetricDelta` berada pada shared Bench contract. Comparison menyimpan baseline/candidate identities, tenant/project/blueprint, canonical suite/version/hash, timestamp, scores/delta, scenario/grader state transitions, metric deltas, provenance differences, typed limitations, machine reasons dan promotion decision.
+
+State comparison adalah `bootstrap`, `baseline_required`, `comparable`, `incompatible`, `invalid` atau `unverifiable`. `comparable` hanya menyatakan identities/evidence dapat dibandingkan; `promotion_blocked` dan critical findings tetap harus dibaca. Candidate yang gagal quality gate juga diblokir, walaupun bukan regression baru. Engine membandingkan scenario ID/version dan grader ID/type/version, bukan urutan array. Missing/new scenarios, missing/changed graders, suite/version/config hash change, mixed evidence formats dan wrong execution scope tidak menghasilkan PASS.
+
+Before comparison, repository memverifikasi current receipt/history chain, unchanged source configuration/evaluation, candidate dan baseline HMAC, grader recomputation dan typed aggregate. Evidence dari suite lama tetap terikat pada accepted snapshot; jika registry berevolusi, receipt historis diperiksa tanpa melonggarkan registry current dan comparison dinyatakan incompatible sampai ada governed transition.
+
+Criticality generik menggabungkan required scenarios **dari baseline dan candidate**, required suite scenarios, serta `RegressionPolicy.critical_scenarios/critical_graders`. PASS menjadi POLICY_VIOLATION, INVALID_EVIDENCE, UNVERIFIABLE atau RUNTIME_ERROR kritis; required/critical scenario FAIL juga kritis. Grader integrity/model identity/forbidden action/approval/idempotency tidak boleh menjadi soft regression. Engine tidak mengenal nama/category/ID Research Safety. Optional quality failure dapat dilaporkan tanpa blocking bila reference **dan baseline** memang mengizinkannya.
+
+Score delta dihitung dari verified aggregates. Latency merupakan total scenario seconds; tokens memakai integer usage evidence; cost dan named resources dijumlahkan hanya jika seluruh scenario menyediakan measurement yang valid. Missing evidence menghasilkan `unavailable`, tanpa angka rekaan. Non-finite/negative/malformed measurements menghasilkan `invalid`. Metric increases dilaporkan sebagai soft findings kecuali policy menentukan max increase/drop. Required regression metric yang tidak comparable memblokir gate. Model/provider/backend/gateway change dicatat sebagai provenance difference; ini bukan BN-08 model comparison framework.
+
+Suite policy optional masuk ke suite hash jika dikonfigurasi. Default tanpa policy mempertahankan suite hashes sebelum BN-06, sehingga format-2 evidence existing tetap readable dengan serialization/HMAC yang sama.
+
+### Persistence, locking dan promotion enforcement
+
+`bench_comparisons` menyimpan seluruh typed comparison dengan HMAC domain `bench_regression`, scoped index serta baseline/candidate references. Comparison ID mengikat accepted receipt, candidate persisted evidence fingerprint, current suite hash, current evaluation reference dan bootstrap history. Stored result tidak menjadi authority tunggal: repository menghitung ulang comparison, memeriksa HMAC/row bindings, dan menolak stale result setelah baseline/evaluation berubah. Tampered cached comparison menjadi signed invalid decision yang baru; evidence lama tidak ditulis ulang.
+
+Evaluation completion menyimpan comparison termasuk failed/critical results. Gate di `BenchRepository.get_latest_passing_evaluation` berlaku untuk candidates dan digunakan oleh Factory approve/publish serta `ApprovalEngine.current_evidence`, termasuk direct Core callers. Core approval baru mengikat `regression_comparison_id` di dalam signed approval. Baseline berubah sesudah approval memerlukan human review baru, meskipun recomputation candidate masih non-regressing. Published/deprecated approval verification membaca evidence yang sudah dipublikasikan; advancement baseline tidak mencabut assignment versi lama atau mengizinkan republish untuk mundur ke baseline lama.
+
+Semua governance writer mengunci blueprint sebelum version/membership. SQLite memakai existing `BEGIN IMMEDIATE`; PostgreSQL memakai row locks. Baseline acceptance memakai CAS dan unique scoped generation. Dua publication yang ditinjau terhadap baseline sama diserialisasi: publication pertama memajukan baseline; review kedua menjadi stale. Baseline advancement, current pointer, immutable publication dan audit commit/rollback bersama. Denied Factory/direct Core promotion dicatat sesudah transaksi gagal di-rollback, sehingga blocking evidence/audit tidak hilang.
+
+Events memakai Core audit dengan ID/hash/count/reason, tanpa raw model output: `bench.baseline.accepted`, `bench.baseline.superseded`, `bench.regression.compared`, `bench.regression.critical`, `bench.promotion.blocked`, serta `factory.version.published` yang mengikat baseline ID.
+
+### API, UI dan legacy
+
+Studio menyediakan `POST /api/projects/{project_id}/blueprints/{blueprint_id}/baseline`. Extra client truth fields ditolak. Snapshot menampilkan current `accepted_baselines`, candidate `regression`, serta authoritative `bench_eligible`/`governance_valid`. Bench JSON/SSE completion menyertakan persisted evaluation dan current regression. Approval review hash diperiksa di transaksi Factory yang sama dengan gate; publication endpoint memakai authority Factory langsung.
+
+Bench UI menampilkan Accepted Baseline vs Candidate, versi/evaluation/suite, score delta, scenario/grader regressions, critical count, latency/token/cost/resources availability dan block/eligible/bootstrap state. Acceptance dan suite transition memerlukan intent admin eksplisit. Tabel comparison dapat difokuskan keyboard agar horizontal scrolling tetap accessible di mobile. Client tidak menentukan baseline truth atau regression severity.
+
+Format-1 evidence valid tetap readable dan dapat menjadi **limited baseline**: scenario states serta latency/tokens saja, tanpa fabricated grader/action/cost/resource evidence. Limitations disimpan dalam receipt/comparison. Format 1 dan 2 tidak comparable; upgrade ke generic graders membutuhkan governed suite/evidence transition. Historical Core approval HMAC tanpa comparison field tetap dapat diverifikasi untuk published sources; unpublished promotion memerlukan approval baru yang mengikat current comparison.
+
+Migration `011_bench_baseline_regression` mengikuti head `010_agent_definition_contracts`, menambah dua tables, scoped generation uniqueness/indexes, blueprint current pointer dan approval comparison reference. Upgrade tidak mengubah evaluation historis; downgrade menghapus domain baseline/comparison baru dan kolom referencenya. Tests mencakup SQLite upgrade/downgrade/upgrade, retained historical evaluation, foreign-key integrity, metadata parity, dan PostgreSQL offline SQL compilation. PostgreSQL runtime concurrency belum dijalankan terhadap live cloud database.
 
 API Bench JSON/SSE tetap memakai routes, consent request dan persisted completion yang sama, dengan tambahan typed evidence/result fields. Preflight budget mengikuti semua scenario suite referenced. Snapshot menyediakan `evaluation_suites` berupa catalog metadata/scenario identities tanpa endpoint untuk memasukkan arbitrary suite atau grader. Frontend typing, scenario canvas, stream indexes, aggregate status dan wording mengikuti metadata suite. Compatibility fallback Research Safety hanya mendukung older snapshot/display callers.
 
@@ -90,6 +138,19 @@ API Bench JSON/SSE tetap memakai routes, consent request dan persisted completio
 | Regression tests | `tests/bench_fixtures.py`, `tests/unit/test_bench_graders.py`, `tests/integration/test_bench_engine.py`, `tests/security/test_bench_engine_integrity.py`, `apps/web/src/test/bench-suite-contract.test.tsx` |
 | Documentation | `README.md`, `docs/bench-engine.md`, `docs/agent-factory-contracts.md`, `docs/studio.md` |
 
+Files BN-06 (31 files), terpisah dari daftar generalization historis di atas:
+
+| Area | Files |
+|---|---|
+| Contracts/engine | `packages/contracts/bench.py`, `packages/contracts/approval.py`, `modules/bench/regression.py` |
+| Factory/Core | `modules/agent_factory/service.py`, `modules/core/approvals/engine.py`, `modules/core/permissions/engine.py` |
+| Persistence | `database/schema.py`, `database/connection.py`, `database/repositories/agent_repo.py`, `approval_repo.py`, `bench_repo.py`, `bench_regression_repo.py`, `database/migrations/versions/011_bench_baseline_regression.py` |
+| API/frontend | `services/api/studio.py`, `apps/web/src/lib/types.ts`, `lib/studio-state.ts`, `features/bench.tsx`, `components/workspace.tsx`, `test/bench-regression.test.tsx`, `apps/web/e2e/studio.spec.ts` |
+| Backend tests | `tests/unit/test_bench_regression.py`, `tests/integration/test_bench_baseline_regression.py`, `test_bench_regression_api.py`, `test_schema_migration_compatibility.py`, `tests/security/test_bench_baseline_authority.py`, `test_bench_engine_integrity.py` |
+| Documentation | `README.md`, `STATUS.md`, `docs/bench-engine.md`, `docs/agent-factory-contracts.md`, `docs/studio.md` |
+
+Tidak ada production runtime adapter baru atau subsystem approval tambahan.
+
 ## Validation
 
 Perintah regresi yang dapat dijalankan dari checkout:
@@ -104,7 +165,7 @@ npm.cmd run test:e2e
 
 Backend full suite mencakup seluruh Bench/Factory lifecycle, security negatives, tenant isolation, API/integration/E2E dan migration compatibility tests. Test suite generik menggunakan JSON structured-analysis dengan dua domain dan tanpa content regex melalui runner, persistence, Core approval dan publish yang sama. Production source tidak mengimpor test runtime.
 
-Hasil aktual pada 8 Oktober 2026:
+Hasil generalization awal pada 8 Oktober 2026 (baseline commit `eb3cc22`):
 
 | Command | Hasil |
 |---|---|
@@ -118,12 +179,30 @@ Hasil aktual pada 8 Oktober 2026:
 
 Penambahan backend berjumlah 121 tests: 83 unit grader/contract tests, 20 generic-engine integration tests, dan 18 integrity/security tests. Frontend menambah empat tests suite metadata, dynamic scenarios dan aggregate policy. Full backend run mencakup semua direktori unit, integration, security dan e2e, termasuk lifecycle Factory serta compatibility migrasi SQLite/PostgreSQL existing. Live model tests tetap memerlukan opt-in existing dan tidak dijalankan sebagai regression lokal; hasil ini tidak mengklaim live-provider verification.
 
-`main` dan `origin/main` tetap pada `630cbc96d728a49a64247ad2b88978529a7cbbad`; tidak ada merge, rebase, push, atau mutation branch tersebut. Perubahan implementasi berada pada working tree branch `development`. `STATUS.md` tidak diubah.
+`main` dan `origin/main` tetap pada `630cbc96d728a49a64247ad2b88978529a7cbbad`; BN-06 hanya dikerjakan pada `development`. Tidak ada merge, rebase atau push pada pekerjaan ini.
+
+Validasi BN-06 memakai full backend suite yang mencakup seluruh Bench/Factory lifecycle, security, integration dan backend E2E. Dedicated tests mencakup stable identity comparison, all unsafe transitions, metric deltas/unavailable values, scoped acceptance, stale/current authority, direct Core bypass attempts, latest failure, CAS concurrency, concurrent publication, rollback publication/baseline/audit, historical HMAC compatibility, suite/format transition dan tampering. Frontend tests serta Playwright menggunakan API/Core/SQLite dan isolated runtime aktual.
+
+Hasil aktual BN-06 pada 8 Oktober 2026:
+
+| Command | Hasil aktual |
+|---|---|
+| `python -m pytest tests/unit/test_bench_regression.py tests/integration/test_bench_baseline_regression.py tests/integration/test_bench_regression_api.py tests/security/test_bench_baseline_authority.py tests/integration/test_schema_migration_compatibility.py -q --tb=short` | **97 passed**, 60.45 detik; 15 existing deprecation warnings |
+| `python -m pytest -q --tb=short` | **523 passed, 5 skipped**, 171.16 detik; 19 FastAPI/httpx dan Alembic configuration deprecation warnings |
+| `npm.cmd run test` | **64 passed**, 11 files |
+| `npm.cmd run build` | TypeScript/Vite berhasil; existing warning bundle >500 kB |
+| `npm.cmd run test:e2e` | **15 passed**, 3.0 menit; HTTP/Core/SQLite, browser lifecycle, mobile/dark/accessibility, baseline vs candidate |
+| `git diff --check` | Tidak ada whitespace error |
+
+BN-06 menambahkan 94 backend tests di atas baseline 429: 54 unit comparison/policy, 14 lifecycle/concurrency integration, 22 authority/security, 2 API, dan 2 migration tests. Existing historical Research Safety security test diperkuat dengan limited-baseline dan governed format-1 → format-2 transition. Assertion existing tidak diperlonggar. Frontend menambah tiga comparison tests dan satu browser scenario. Kegagalan Playwright awal pada setup empty state, selector ambiguous dan keyboard access untuk tabel comparison diperbaiki; run terakhir seluruhnya lulus.
+
+Live model/provider tests tidak diaktifkan dan PostgreSQL divalidasi dengan offline SQL compilation, bukan live cloud connection. Downgrade migration mempertahankan signed evaluations, tetapi menghapus baseline/comparison domain baru beserta approval comparison references; deployment yang membutuhkan governance history harus mempertahankan backup sebelum downgrade. Re-upgrade tidak mengarang kembali baseline history atau approval bindings yang sudah dihapus.
 
 ## Residual risks dan pekerjaan di luar scope
 
 - Suite regex Research Safety tetap merupakan gate awal, bukan proof keamanan menyeluruh atau kualitas ilmiah.
 - Completeness/action observations dan measurement extensions memerlukan adapter yang terpercaya. Current Hermes tidak mengklaim evidence yang belum didukung.
 - Approval authority yang dicabut, suite/config yang berubah, atau signing key yang hilang dapat menggugurkan stored eligibility; ini fail-closed behaviour yang disengaja.
-- Tidak ada baseline/candidate comparison, regression history, incident replay/corpus promotion, rollback registry, Brief, Relay, desktop packaging, billing, production authentication, atau perubahan branch protection.
+- Incident replay/corpus promotion, rollback registry, full model comparison BN-08, trace viewer/export, Brief, Relay, desktop packaging, billing, production authentication dan branch protection tetap di luar scope.
+- Receipt/history serta comparison direvalidate saat governance; biaya validasi bertambah dengan panjang baseline chain dan jumlah scenarios/graders. History pagination/retention dan optimisasi belum diperlukan untuk workload lokal saat ini.
 - Private controlled requirement documents belum tersedia dalam checkout. Findings runtime di luar scope tidak diperluas menjadi implementation baru.

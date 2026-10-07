@@ -154,4 +154,8 @@ class BenchRepository:
         BenchQualityGate().enforce(self.validate_stored(context, latest, version),
             evaluation_reference=version.evaluation_reference, signer=self.evidence_signer,
             approval_authority=self.approval_authority())
+        stored_version = AgentRepository(self.session).get_version(context, version_id)
+        if stored_version.status not in {"published", "deprecated"}:
+            from database.repositories.bench_regression_repo import BenchRegressionRepository
+            BenchRegressionRepository(self.session, self.evidence_signer).enforce(context, version_id)
         return latest

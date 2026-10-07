@@ -264,6 +264,25 @@ class BenchSuiteManifest(BenchContract):
     scenario_ids: List[str] = Field(min_length=1)
 
 
+class RegressionPolicy(BenchContract):
+    critical_scenarios: List[str] = Field(default_factory=list)
+    critical_graders: List[str] = Field(default_factory=list)
+    max_score_drop: Optional[float] = Field(default=None, ge=0, le=1)
+    max_latency_increase_seconds: Optional[float] = Field(default=None, ge=0)
+    max_token_increase: Optional[int] = Field(default=None, ge=0, strict=True)
+    max_cost_increase_usd: Optional[float] = Field(default=None, ge=0)
+    max_resource_increases: Dict[str, float] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def valid_policy(self):
+        if any(v < 0 for v in self.max_resource_increases.values()):
+            raise ValueError("Resource regression limits must be nonnegative.")
+        for ids in (self.critical_scenarios, self.critical_graders):
+            if len(ids) != len(set(ids)) or any(not value for value in ids):
+                raise ValueError("Regression identities must be unique and nonempty.")
+        return self
+
+
 class BenchSuiteDefinition(BenchSuiteManifest):
     name: str = Field(min_length=1)
     description: str
@@ -273,6 +292,7 @@ class BenchSuiteDefinition(BenchSuiteManifest):
     resource_limits: ResourceLimits = Field(default_factory=ResourceLimits)
     suite_hash: str = ""
     legacy_suite_hash: Optional[str] = None
+    regression_policy: Optional[RegressionPolicy] = None
 
     @model_validator(mode="after")
     def valid_suite(self):
@@ -285,7 +305,17 @@ class BenchSuiteDefinition(BenchSuiteManifest):
             raise ValueError("Duplicate required scenario identities.")
         if not set(self.required_scenarios).issubset(ids):
             raise ValueError("Required scenarios must belong to the suite.")
-        digest = evidence_hash(self.model_dump(mode="json", exclude={"suite_hash"}))
+        if self.regression_policy:
+            if not set(self.regression_policy.critical_scenarios).issubset(ids):
+                raise ValueError("Unknown critical regression scenario.")
+            grader_ids = {g.grader_id for s in self.scenarios for g in s.graders}
+            if not set(self.regression_policy.critical_graders).issubset(grader_ids):
+                raise ValueError("Unknown critical regression grader.")
+        configuration = self.model_dump(mode="json", exclude={"suite_hash"})
+        # Preserve configuration identities of suites written before BN-06.
+        if self.regression_policy is None:
+            configuration.pop("regression_policy")
+        digest = evidence_hash(configuration)
         if self.suite_hash and self.suite_hash != digest:
             raise ValueError("Suite configuration hash differs.")
         object.__setattr__(self, "suite_hash", digest)
@@ -499,6 +529,106 @@ class BenchEvaluationResult(BaseModel):
                     scenario.pop(field)
         return {"organization_id": organization_id, "project_id": project_id,
                 "evaluated_by": evaluated_by, "result": result}
+
+
+class EvaluationIdentity(BenchContract):
+    evaluation_id: str
+    version_id: str
+    version_number: str
+    payload_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    evidence_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    evidence_format: Literal[1, 2]
+
+
+class AcceptedBaseline(BenchContract):
+    baseline_id: str
+    organization_id: str
+    project_id: str
+    blueprint_id: str
+    generation: int = Field(ge=1)
+    evaluation: EvaluationIdentity
+    agent_configuration_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    suite_id: str
+    evaluation_version: str
+    suite_hash: str
+    accepted_by: str
+    accepted_at: str
+    acceptance: Literal["explicit", "publication", "suite_transition"]
+    reason: str
+    approval_id: Optional[str] = None
+    supersedes_id: Optional[str] = None
+    previous_hash: Optional[str] = None
+    suite_definition: BenchSuiteDefinition
+    limitations: List[str] = Field(default_factory=list)
+    attestation: str = ""
+
+
+class MetricDelta(BenchContract):
+    state: Literal["comparable", "unavailable", "invalid"]
+    baseline: Optional[float] = None
+    candidate: Optional[float] = None
+    delta: Optional[float] = None
+
+
+class RegressionFinding(BenchContract):
+    kind: Literal["scenario", "grader", "metric", "comparability", "evidence"]
+    reason: str
+    critical: bool
+    scenario_id: Optional[str] = None
+    grader_id: Optional[str] = None
+    baseline_state: Optional[EvaluationState] = None
+    candidate_state: Optional[EvaluationState] = None
+    details: Dict[str, Any] = Field(default_factory=dict)
+
+
+class GraderComparison(BenchContract):
+    grader_id: str
+    grader_type: str
+    grader_version: str
+    baseline_state: EvaluationState
+    candidate_state: EvaluationState
+    candidate_reason: str
+    regression: bool
+    critical: bool
+
+
+class ScenarioComparison(BenchContract):
+    scenario_id: str
+    scenario_version: str
+    baseline_state: EvaluationState
+    candidate_state: EvaluationState
+    candidate_reason: Optional[str] = None
+    regression: bool
+    critical: bool
+    graders: List[GraderComparison] = Field(default_factory=list)
+
+
+class RegressionComparison(BenchContract):
+    schema_version: Literal["1.0.0"] = "1.0.0"
+    comparison_id: str
+    organization_id: str
+    project_id: str
+    blueprint_id: str
+    baseline_id: Optional[str] = None
+    baseline: Optional[EvaluationIdentity] = None
+    candidate: EvaluationIdentity
+    suite_id: str
+    evaluation_version: str
+    suite_hash: str
+    compared_at: str
+    state: Literal["bootstrap", "baseline_required", "comparable", "incompatible", "invalid", "unverifiable"]
+    reason: str
+    promotion_blocked: bool
+    baseline_score: Optional[float] = None
+    candidate_score: Optional[float] = None
+    score_delta: Optional[float] = None
+    scenarios: List[ScenarioComparison] = Field(default_factory=list)
+    metrics: Dict[str, MetricDelta] = Field(default_factory=dict)
+    provenance_differences: Dict[str, Any] = Field(default_factory=dict)
+    regressions: List[RegressionFinding] = Field(default_factory=list)
+    critical_regressions: List[RegressionFinding] = Field(default_factory=list)
+    limitations: List[str] = Field(default_factory=list)
+    attestation: str = ""
 
 
 def resolve_bench_suite_manifest(identifier: str) -> Optional[BenchSuiteManifest]:

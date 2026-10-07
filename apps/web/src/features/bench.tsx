@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Beaker, Check, ChevronDown, ChevronRight, X } from "lucide-react";
-import type { Evaluation, Shared } from "../lib/types";
+import type { Evaluation, RegressionComparison, Shared } from "../lib/types";
 import { readBenchCompletion } from "../lib/api";
 import { date, number } from "../lib/utils";
 import { Button } from "../components/ui/button";
@@ -19,6 +19,144 @@ import { buildBenchNodesAndEdges } from "../components/canvas/canvas-builders";
 import type { NodeStatus } from "../components/canvas/types";
 import { evaluationStatus, executionReady } from "../lib/studio-state";
 export { evaluationStatus } from "../lib/studio-state";
+
+export function RegressionPanel({
+  comparison,
+}: {
+  comparison: RegressionComparison;
+}) {
+  const signed = (value: number | null | undefined) =>
+    value == null
+      ? "Tidak tersedia"
+      : `${value > 0 ? "+" : ""}${number(value)}`;
+  return (
+    <Panel
+      id="regression-comparison"
+      title="Accepted Baseline vs Candidate"
+      subtitle={`${comparison.suite_id} · ${comparison.evaluation_version}`}
+    >
+      <Notice tone={comparison.promotion_blocked ? "error" : "success"}>
+        {comparison.promotion_blocked
+          ? "Promotion diblokir"
+          : "Eligible untuk tinjauan promotion"}
+        {` · ${comparison.critical_regressions.length} regression kritis · ${comparison.state}`}
+      </Notice>
+      <div
+        className="table-scroll"
+        tabIndex={0}
+        role="region"
+        aria-label="Identitas baseline dan candidate"
+      >
+        <table>
+          <thead>
+            <tr>
+              <th>Accepted Baseline</th>
+              <th>Candidate</th>
+              <th>Delta skor</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                {comparison.baseline
+                  ? `v${comparison.baseline.version_number}`
+                  : comparison.state === "bootstrap"
+                    ? "Bootstrap publication pertama"
+                    : "Baseline diperlukan"}
+                <small className="table-sub mono">
+                  {comparison.baseline?.evaluation_id || comparison.reason}
+                </small>
+              </td>
+              <td>
+                v{comparison.candidate.version_number}
+                <small className="table-sub mono">
+                  {comparison.candidate.evaluation_id}
+                </small>
+              </td>
+              <td>{signed(comparison.score_delta)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div
+        className="table-scroll"
+        tabIndex={0}
+        role="region"
+        aria-label="Delta metric baseline dan candidate"
+      >
+        <table>
+          <thead>
+            <tr>
+              <th>Metric</th>
+              <th>Baseline</th>
+              <th>Candidate</th>
+              <th>Delta</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Object.entries(comparison.metrics).map(([name, metric]) => (
+              <tr key={name}>
+                <td>{name}</td>
+                <td>{metric.baseline ?? "Tidak tersedia"}</td>
+                <td>{metric.candidate ?? "Tidak tersedia"}</td>
+                <td>
+                  {metric.state === "comparable"
+                    ? signed(metric.delta)
+                    : metric.state}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {comparison.scenarios
+        .filter((s) => s.regression || s.graders.some((g) => g.regression))
+        .map((s) => (
+          <details key={s.scenario_id} className="scenario-result" open>
+            <summary>
+              <strong>{s.scenario_id}</strong>
+              <span>
+                {s.baseline_state} → {s.candidate_state}
+                {s.critical ? " · kritis" : ""}
+              </span>
+            </summary>
+            <ul>
+              {s.graders
+                .filter((g) => g.regression)
+                .map((g) => (
+                  <li key={g.grader_id}>
+                    {g.grader_id} ({g.grader_type}): {g.baseline_state} →{" "}
+                    {g.candidate_state}
+                    {g.critical ? " · kritis" : ""} · {g.candidate_reason}
+                  </li>
+                ))}
+            </ul>
+          </details>
+        ))}
+      {comparison.regressions
+        .filter(
+          (r) =>
+            r.kind === "comparability" ||
+            r.kind === "evidence" ||
+            (r.kind === "metric" && r.critical),
+        )
+        .map((r, index) => (
+          <Notice key={index} tone="error">
+            {r.reason}
+            {typeof r.details.metric === "string"
+              ? ` · ${r.details.metric}`
+              : ""}
+          </Notice>
+        ))}
+      {comparison.limitations.length > 0 && (
+        <Notice tone="warning">{comparison.limitations.join(" · ")}</Notice>
+      )}
+      <div className="panel-footnote mono">
+        {comparison.comparison_id} · {date(comparison.compared_at)}
+      </div>
+    </Panel>
+  );
+}
 
 export function EvaluationPanel({
   evaluation,
@@ -98,7 +236,9 @@ export function EvaluationPanel({
               </div>
               <div>
                 <strong>
-                  {scenarioNames[s.scenario_id] || s.name || "Skenario evaluasi"}
+                  {scenarioNames[s.scenario_id] ||
+                    s.name ||
+                    "Skenario evaluasi"}
                 </strong>
                 <small>{failureReason(s.failure_reason)}</small>
               </div>
@@ -150,6 +290,8 @@ export function BenchPage({
   const [benchRunning, setBenchRunning] = useState(false);
   const [benchError, setBenchError] = useState<string | null>(null);
   const [consent, setConsent] = useState(false);
+  const [baselineReason, setBaselineReason] = useState("");
+  const [suiteTransition, setSuiteTransition] = useState(false);
   const [completedEvaluation, setCompletedEvaluation] =
     useState<Evaluation | null>(null);
 
@@ -169,6 +311,10 @@ export function BenchPage({
   const selectedVersion = useMemo(() => {
     return data.versions.find((v) => v.id === activeVersionId) || null;
   }, [data.versions, activeVersionId]);
+  useEffect(() => {
+    setBaselineReason("");
+    setSuiteTransition(false);
+  }, [activeVersionId]);
 
   // STRICT SYNC: Only evaluations for the active version!
   const versionEvaluations = useMemo(() => {
@@ -199,9 +345,13 @@ export function BenchPage({
     scenarios?: import("../lib/types").ScenarioDefinition[];
   } | null>(null);
 
-  const selectedSuite = data.evaluation_suites?.find((suite) =>
-    suite.suite_id === selectedVersion?.evaluation_reference?.suite_id ||
-    suite.aliases.includes(selectedVersion?.evaluation_reference?.suite_id || "research-safety"));
+  const selectedSuite = data.evaluation_suites?.find(
+    (suite) =>
+      suite.suite_id === selectedVersion?.evaluation_reference?.suite_id ||
+      suite.aliases.includes(
+        selectedVersion?.evaluation_reference?.suite_id || "research-safety",
+      ),
+  );
   const { nodes: benchNodes, edges: benchEdges } = useMemo(() => {
     return buildBenchNodesAndEdges(
       selectedEvaluation,
@@ -250,8 +400,10 @@ export function BenchPage({
             });
           } else if (evt.type === "scenario.started") {
             const sId = evt.data?.scenario_id;
-            const idx = Number.isInteger(evt.data?.index) ? evt.data.index :
-              scenarioDefinitions?.findIndex((s) => s.scenario_id === sId) ?? -1;
+            const idx = Number.isInteger(evt.data?.index)
+              ? evt.data.index
+              : (scenarioDefinitions?.findIndex((s) => s.scenario_id === sId) ??
+                -1);
             if (idx >= 0) {
               setLiveBenchEvent({
                 step: "scenario.started",
@@ -263,8 +415,10 @@ export function BenchPage({
             }
           } else if (evt.type === "scenario.completed") {
             const sId = evt.data?.scenario_id;
-            const idx = Number.isInteger(evt.data?.index) ? evt.data.index :
-              scenarioDefinitions?.findIndex((s) => s.scenario_id === sId) ?? -1;
+            const idx = Number.isInteger(evt.data?.index)
+              ? evt.data.index
+              : (scenarioDefinitions?.findIndex((s) => s.scenario_id === sId) ??
+                -1);
             if (idx >= 0) {
               scenarioStatuses[idx] = {
                 passed: evt.data?.passed,
@@ -372,16 +526,84 @@ export function BenchPage({
       {!selectedEvaluation && selectedVersion && !benchRunning && (
         <Notice tone="info">
           Versi ini belum pernah dievaluasi di Bench Laboratory. Klik 'Jalankan
-          Bench' di atas untuk menjalankan suite evaluasi yang direferensikan versi
-          agent.
+          Bench' di atas untuk menjalankan suite evaluasi yang direferensikan
+          versi agent.
         </Notice>
       )}
       {selectedEvaluation && !selectedEvaluation.verified && (
         <Notice tone="warning">
-          Bukti evaluasi belum lolos validasi integritas dan konfigurasi saat ini.
-          Evidence tidak dapat digunakan untuk pengajuan persetujuan Core.
+          Bukti evaluasi belum lolos validasi integritas dan konfigurasi saat
+          ini. Evidence tidak dapat digunakan untuk pengajuan persetujuan Core.
         </Notice>
       )}
+
+      {selectedVersion?.regression && (
+        <RegressionPanel comparison={selectedVersion.regression} />
+      )}
+      {selectedEvaluation?.verified &&
+        selectedEvaluation.passed === 1 &&
+        data.permissions?.["bench:accept_baseline"] &&
+        act &&
+        selectedVersion?.evaluation_id === selectedEvaluation.id &&
+        selectedVersion.regression?.baseline?.evaluation_id !==
+          selectedEvaluation.id && (
+          <Panel
+            title="Penerimaan baseline"
+            subtitle="Keputusan admin dicatat oleh Core; baseline sebelumnya tetap menjadi riwayat."
+          >
+            <label className="checkbox-field text-sm">
+              Alasan governance
+              <input
+                aria-label="Alasan penerimaan baseline"
+                value={baselineReason}
+                onChange={(e) => setBaselineReason(e.target.value)}
+                maxLength={2000}
+              />
+            </label>
+            {selectedVersion.regression?.state === "incompatible" && (
+              <label className="checkbox-field text-sm">
+                <input
+                  type="checkbox"
+                  checked={suiteTransition}
+                  onChange={(e) => setSuiteTransition(e.target.checked)}
+                />
+                Terima transisi suite/evidence secara eksplisit
+              </label>
+            )}
+            <Button
+              disabled={
+                pending ||
+                baselineReason.trim().length < 3 ||
+                Boolean(
+                  selectedVersion.regression?.promotion_blocked &&
+                  !(
+                    selectedVersion.regression.state === "incompatible" &&
+                    suiteTransition
+                  ) &&
+                  !(
+                    selectedVersion.regression.state === "baseline_required" &&
+                    ["published", "deprecated"].includes(selectedVersion.status)
+                  ),
+                )
+              }
+              onClick={() =>
+                act(
+                  `/blueprints/${selectedVersion.blueprint_id}/baseline`,
+                  {
+                    evaluation_id: selectedEvaluation.id,
+                    expected_baseline_id:
+                      selectedVersion.regression?.baseline_id || null,
+                    reason: baselineReason,
+                    suite_transition: suiteTransition,
+                  },
+                  "Baseline diterima.",
+                )
+              }
+            >
+              Terima sebagai baseline
+            </Button>
+          </Panel>
+        )}
 
       {/* Primary Workspace: Bench Canvas & Inspector */}
       <div className="bench-canvas-workspace mb-6">

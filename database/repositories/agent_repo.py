@@ -217,6 +217,12 @@ class AgentRepository:
     def get_version(self, context: SecurityContext, version_id: str, for_update: bool = False) -> AgentVersionModel:
         query = self.session.query(AgentVersionModel).filter_by(id=version_id)
         if for_update:
+            # Serialize all promotion/baseline writers at the blueprint boundary,
+            # before version and membership locks (including Core direct callers).
+            parent_id = query.with_entities(AgentVersionModel.blueprint_id).scalar()
+            if parent_id:
+                self.get_blueprint(context, parent_id)
+                self.session.query(AgentBlueprintModel).filter_by(id=parent_id).with_for_update().populate_existing().one()
             query = query.with_for_update()
         version = query.first()
         if not version:

@@ -188,6 +188,7 @@ class AgentBlueprintModel(Base):
     objective = Column(Text, nullable=True)
     owner = Column(String(64), nullable=True)
     created_by = Column(String(64), nullable=False)
+    bench_baseline_id = Column(String(64), nullable=True)
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
 
@@ -316,3 +317,50 @@ class ApprovalModel(Base):
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
     evaluation_id = Column(String(64), nullable=True)
     attestation = Column(String(64), nullable=False, default="")
+    regression_comparison_id = Column(String(64), nullable=True)
+
+
+class BenchBaselineModel(Base):
+    __tablename__ = "bench_baselines"
+    id = Column(String(64), primary_key=True)
+    organization_id = Column(String(64), ForeignKey("organizations.id"), nullable=False)
+    project_id = Column(String(64), ForeignKey("projects.id"), nullable=False)
+    blueprint_id = Column(String(64), ForeignKey("agent_blueprints.id"), nullable=False)
+    generation = Column(Integer, nullable=False)
+    evaluation_id = Column(String(64), ForeignKey("bench_evaluations.id"), nullable=False)
+    version_id = Column(String(64), ForeignKey("agent_versions.id"), nullable=False)
+    payload_hash = Column(String(64), nullable=False)
+    suite_id = Column(String(128), nullable=False)
+    evaluation_version = Column(String(32), nullable=False)
+    suite_hash = Column(String(64), nullable=False)
+    accepted_by = Column(String(64), nullable=False)
+    accepted_at = Column(DateTime(timezone=True), nullable=False)
+    supersedes_id = Column(String(64), ForeignKey("bench_baselines.id"), nullable=True)
+    details_json = Column(Text, nullable=False)
+    attestation = Column(String(64), nullable=False)
+    __table_args__ = (
+        UniqueConstraint("organization_id", "project_id", "blueprint_id", "generation", name="uq_bench_baseline_generation"),
+        Index("ix_bench_baseline_scope", "organization_id", "project_id", "blueprint_id"),
+    )
+
+
+class BenchComparisonModel(Base):
+    __tablename__ = "bench_comparisons"
+    id = Column(String(64), primary_key=True)
+    organization_id = Column(String(64), ForeignKey("organizations.id"), nullable=False)
+    project_id = Column(String(64), ForeignKey("projects.id"), nullable=False)
+    blueprint_id = Column(String(64), ForeignKey("agent_blueprints.id"), nullable=False)
+    baseline_id = Column(String(64), ForeignKey("bench_baselines.id"), nullable=True)
+    candidate_evaluation_id = Column(String(64), ForeignKey("bench_evaluations.id"), nullable=False)
+    compared_at = Column(DateTime(timezone=True), nullable=False)
+    details_json = Column(Text, nullable=False)
+    attestation = Column(String(64), nullable=False)
+    __table_args__ = (Index("ix_bench_comparison_scope", "organization_id", "project_id", "blueprint_id", "candidate_evaluation_id"),)
+
+
+@event.listens_for(BenchBaselineModel, "before_update")
+@event.listens_for(BenchBaselineModel, "before_delete")
+@event.listens_for(BenchComparisonModel, "before_update")
+@event.listens_for(BenchComparisonModel, "before_delete")
+def protect_bench_governance_history(mapper, connection, target):
+    raise ValueError("Bench governance evidence is append-only.")

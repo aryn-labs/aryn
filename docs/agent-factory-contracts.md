@@ -242,7 +242,7 @@ Service layer di `modules/agent_factory/service.py` mengorkestrasi:
   - `tool_policy.validate_tool_grants()` memastikan tidak ada tool terlarang yang diminta.
   - `evaluation_reference` divalidasi sedini mungkin terhadap suite manifest registry dan scenario IDs.
 - **Audit Logging**: Mencatat event audit terstruktur `agent_factory.blueprint_created`, `agent_factory.version_created`, `agent_factory.version_evaluated`, dan `agent_factory.version_published` dengan metadata lengkap.
-- **Integrasi Approval & Publikasi**: Memastikan versi ber-Format 3 kanonikal, memiliki hasil evaluasi Bench yang lulus dan valid terhadap `evaluation_reference`, serta approval mengikat exact payload hash sebelum transisi ke `published`.
+- **Integrasi Approval & Publikasi**: Memastikan versi ber-Format 3 kanonikal, hasil Bench terbaru valid terhadap `evaluation_reference`, dan current baseline regression gate tidak diblokir. Core approval mengikat exact payload hash, evaluation ID dan comparison ID; perubahan baseline memerlukan human review baru. Publication dan advancement baseline/audit commit atomik. Factory tidak mengetahui isi Research Safety. Lihat [baseline lifecycle, bootstrap dan compatibility](bench-engine.md#accepted-baseline-dan-regression-governance-bn-06).
 
 ---
 

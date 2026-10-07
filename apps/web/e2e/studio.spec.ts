@@ -1078,3 +1078,53 @@ test("9Router: gateway terputus memblokir Bench meskipun runtime siap", async ({
     page.getByRole("button", { name: "Jalankan Bench", exact: true }),
   ).toBeDisabled();
 });
+
+test("Bench presents accepted baseline against a candidate using server evidence", async ({
+  page,
+}) => {
+  const { bp, version, prefix, headers } = await publishedAssignment(page);
+  const response = await page.request.post(
+    `${prefix}/blueprints/${bp.id}/versions`,
+    {
+      headers,
+      data: {
+        version_number: "2.0.0",
+        system_prompt:
+          "Follow research safety guidelines and abstain without evidence. Updated definition.",
+        model: version.model,
+        max_tokens: 512,
+      },
+    },
+  );
+  expect(response.status()).toBe(201);
+  const candidate = await response.json();
+  const evaluation = await page.request.post(
+    `${prefix}/versions/${candidate.id}/bench`,
+    { headers, data: { allow_remote_model: true } },
+  );
+  expect(evaluation.status()).toBe(200);
+  const result = await evaluation.json();
+  expect(result.evaluation.regression.baseline.version_id).toBe(version.id);
+  expect(result.evaluation.regression.state).toBe("comparable");
+  expect(result.evaluation.regression.promotion_blocked).toBe(false);
+  await page.goto(
+    `/bench?versi=${candidate.id}&evaluasi=${result.evaluation_id}`,
+  );
+  await expect(
+    page.getByText("Accepted Baseline vs Candidate", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page
+      .locator("#regression-comparison")
+      .getByRole("cell", { name: /v1\.0\.0/ }),
+  ).toBeVisible();
+  await expect(
+    page
+      .locator("#regression-comparison")
+      .getByRole("cell", { name: /v2\.0\.0/ }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/Eligible untuk tinjauan promotion/),
+  ).toBeVisible();
+  await expect(page.getByText("unavailable", { exact: true })).toBeVisible();
+});

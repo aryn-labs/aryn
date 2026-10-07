@@ -7,17 +7,33 @@ import type {
 } from "./types";
 
 export function evaluationStatus(e: Evaluation) {
-  const policy = e.provenance?.evidence_format === 2 ? e.provenance.quality_gate : undefined;
+  const policy =
+    e.provenance?.evidence_format === 2 ? e.provenance.quality_gate : undefined;
   const threshold = policy?.min_score_threshold ?? 1;
-  const consistent = e.total_scenarios > 0 && e.passed_scenarios >= 0 &&
-    e.passed_scenarios <= e.total_scenarios && Number.isFinite(e.score) &&
-    Math.abs(e.score - Math.round(e.passed_scenarios / e.total_scenarios * 10000) / 10000) < 0.00001;
-  if (!e.passed || !consistent || e.score < threshold || (policy && !policy.passed)) return "failed";
+  const consistent =
+    e.total_scenarios > 0 &&
+    e.passed_scenarios >= 0 &&
+    e.passed_scenarios <= e.total_scenarios &&
+    Number.isFinite(e.score) &&
+    Math.abs(
+      e.score -
+        Math.round((e.passed_scenarios / e.total_scenarios) * 10000) / 10000,
+    ) < 0.00001;
+  if (
+    !e.passed ||
+    !consistent ||
+    e.score < threshold ||
+    (policy && !policy.passed)
+  )
+    return "failed";
   return e.verified ? "bench_passed" : "bench_unverified";
 }
 
 export const needsApproval = (v: Version) =>
-  v.status === "draft" && v.integrity_valid && v.bench_eligible;
+  v.status === "draft" &&
+  v.integrity_valid &&
+  v.bench_eligible &&
+  !v.regression?.promotion_blocked;
 export const runtimeTone = (runtime: Runtime) =>
   runtime.ready ? "success" : runtime.connected ? "warning" : "error";
 

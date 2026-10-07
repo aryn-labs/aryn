@@ -71,6 +71,7 @@ export type Version = {
   integrity_valid: boolean;
   bench_eligible: boolean;
   governance_valid: boolean;
+  regression?: RegressionComparison | null;
   created_at: string;
   schema_version?: string;
   role?: string;
@@ -83,7 +84,13 @@ export type Version = {
   budget_policy?: BudgetPolicy;
   evaluation_reference?: EvaluationReference;
 };
-export type EvaluationState = "passed" | "failed" | "policy_violation" | "unverifiable" | "invalid_evidence" | "runtime_error";
+export type EvaluationState =
+  | "passed"
+  | "failed"
+  | "policy_violation"
+  | "unverifiable"
+  | "invalid_evidence"
+  | "runtime_error";
 export type GraderResult = {
   grader_id: string;
   grader_type: string;
@@ -93,7 +100,11 @@ export type GraderResult = {
   reason: string;
   details: Record<string, unknown>;
 };
-export type ScenarioDefinition = { scenario_id: string; name: string; category: string };
+export type ScenarioDefinition = {
+  scenario_id: string;
+  name: string;
+  category: string;
+};
 export type EvaluationSuite = {
   suite_id: string;
   evaluation_version: string;
@@ -118,6 +129,7 @@ export type Scenario = {
   total_tokens: number;
 };
 export type Evaluation = {
+  regression?: RegressionComparison | null;
   id: string;
   blueprint_id: string;
   version_id: string;
@@ -134,9 +146,20 @@ export type Evaluation = {
     runtime_adapter?: string;
     evidence_format?: number;
     state?: EvaluationState;
-    suite_aggregate?: { passed: boolean; total_scenarios: number; passed_scenarios: number; score: number; state: EvaluationState };
+    suite_aggregate?: {
+      passed: boolean;
+      total_scenarios: number;
+      passed_scenarios: number;
+      score: number;
+      state: EvaluationState;
+    };
     evaluation_reference?: EvaluationReference;
-    quality_gate?: { passed: boolean; reason: string; min_score_threshold: number; required_scenarios: string[] };
+    quality_gate?: {
+      passed: boolean;
+      reason: string;
+      min_score_threshold: number;
+      required_scenarios: string[];
+    };
     evaluation_version: string;
     requested_model: string;
     payload_hash: string;
@@ -199,6 +222,7 @@ export type Audit = {
   integrity_reference: string;
 };
 export type Snapshot = {
+  accepted_baselines?: AcceptedBaseline[];
   evaluation_suites?: EvaluationSuite[];
   blueprints: Blueprint[];
   versions: Version[];
@@ -209,6 +233,93 @@ export type Snapshot = {
   audit: Audit[];
   permissions: Record<string, boolean>;
   budget: { max_tokens_per_run: number; cumulative_tokens: number };
+};
+
+export type EvaluationIdentity = {
+  evaluation_id: string;
+  version_id: string;
+  version_number: string;
+  payload_hash: string;
+  evidence_hash: string;
+  evidence_format: 1 | 2;
+};
+export type AcceptedBaseline = {
+  baseline_id: string;
+  blueprint_id: string;
+  generation: number;
+  evaluation: EvaluationIdentity;
+  suite_id: string;
+  evaluation_version: string;
+  suite_hash: string;
+  accepted_by: string;
+  accepted_at: string;
+  acceptance: string;
+  reason: string;
+  supersedes_id?: string | null;
+  limitations: string[];
+};
+export type RegressionFinding = {
+  kind: string;
+  reason: string;
+  critical: boolean;
+  scenario_id?: string | null;
+  grader_id?: string | null;
+  baseline_state?: EvaluationState | null;
+  candidate_state?: EvaluationState | null;
+  details: Record<string, unknown>;
+};
+export type RegressionComparison = {
+  comparison_id: string;
+  blueprint_id: string;
+  baseline_id?: string | null;
+  baseline?: EvaluationIdentity | null;
+  candidate: EvaluationIdentity;
+  suite_id: string;
+  evaluation_version: string;
+  suite_hash: string;
+  compared_at: string;
+  state:
+    | "bootstrap"
+    | "baseline_required"
+    | "comparable"
+    | "incompatible"
+    | "invalid"
+    | "unverifiable";
+  reason: string;
+  promotion_blocked: boolean;
+  baseline_score?: number | null;
+  candidate_score?: number | null;
+  score_delta?: number | null;
+  scenarios: {
+    scenario_id: string;
+    scenario_version: string;
+    baseline_state: EvaluationState;
+    candidate_state: EvaluationState;
+    regression: boolean;
+    critical: boolean;
+    graders: {
+      grader_id: string;
+      grader_type: string;
+      grader_version: string;
+      baseline_state: EvaluationState;
+      candidate_state: EvaluationState;
+      candidate_reason: string;
+      regression: boolean;
+      critical: boolean;
+    }[];
+  }[];
+  metrics: Record<
+    string,
+    {
+      state: "comparable" | "unavailable" | "invalid";
+      baseline?: number | null;
+      candidate?: number | null;
+      delta?: number | null;
+    }
+  >;
+  regressions: RegressionFinding[];
+  critical_regressions: RegressionFinding[];
+  limitations: string[];
 };
 export type Runtime = {
   connected: boolean;

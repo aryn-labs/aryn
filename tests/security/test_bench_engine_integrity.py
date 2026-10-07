@@ -125,8 +125,26 @@ async def test_research_historical_attestation_retains_original_serialization(li
     assert factory.approve_version(ctx, version.id).evaluation_id == legacy.evaluation_id
     assert factory.publish_version(ctx, version.id).status == "published"
     with db.session() as session:
+        from database.repositories.bench_regression_repo import BenchRegressionRepository
+        baseline = BenchRegressionRepository(session, db.evidence_signer).current(ctx, bp.id)
+        assert baseline.evaluation.evidence_format == 1
+        assert baseline.limitations == ["legacy_scenario_evidence_only", "grader_comparison_unavailable", "cost_resources_unavailable"]
         with pytest.raises(QualityGateFailedError):
             BenchRepository(session, db.evidence_signer).record_evaluation(ctx, legacy)
+    # Current format cannot silently claim comparability with absent legacy graders.
+    candidate = factory.create_version(ctx, bp.id, "2.0.0", "Follow research safety guidelines.", "mock-fast")
+    current = await factory.evaluate_version_with_bench(ctx, candidate.id)
+    with db.session() as session:
+        comparison = BenchRegressionRepository(session, db.evidence_signer).compare(ctx, candidate.id)
+        assert comparison.state == "incompatible" and comparison.promotion_blocked
+        assert comparison.scenarios == []
+    with pytest.raises(QualityGateFailedError): factory.approve_version(ctx, candidate.id)
+    with db.session(write=True) as session:
+        replacement = BenchRegressionRepository(session, db.evidence_signer).accept(ctx, current.evaluation_id,
+            expected_baseline_id=baseline.baseline_id, transition=True, reason="Human reviewed migration from historical scenario-only evidence to generic graders.")
+        assert replacement.evaluation.evidence_format == 2 and not replacement.limitations
+    factory.approve_version(ctx, candidate.id)
+    assert factory.publish_version(ctx, candidate.id).status == "published"
 
 
 @pytest.mark.asyncio

@@ -25,6 +25,7 @@ from sqlalchemy.exc import IntegrityError
 from database.connection import DatabaseManager, create_db_engine
 from database.repositories.agent_repo import AgentRepository
 from database.repositories.bench_repo import BenchRepository
+from database.repositories.bench_regression_repo import BenchRegressionRepository, RegressionGateFailedError
 from database.repositories.budget_repo import BudgetRepository
 from database.repositories.exceptions import (
     DuplicateEntityError,
@@ -85,6 +86,14 @@ class BlueprintInput(BaseModel):
     role: Optional[str] = Field(default=None, max_length=64)
     objective: Optional[str] = Field(default=None, max_length=2000)
     owner: Optional[str] = Field(default=None, max_length=64)
+
+
+class BaselineAcceptanceInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    evaluation_id: str = Field(min_length=1, max_length=64)
+    expected_baseline_id: Optional[str] = Field(default=None, max_length=64)
+    reason: str = Field(min_length=3, max_length=2000)
+    suite_transition: bool = False
 
 
 class VersionInput(BaseModel):
@@ -424,6 +433,11 @@ def create_app(
     async def unavailable_model(request, exc):
         return fail(409 if exc.availability == "unavailable" else 503, str(exc))
 
+    @app.exception_handler(RegressionGateFailedError)
+    async def regression_blocked(request, exc):
+        return JSONResponse(status_code=409, content={"message": "Promotion diblokir oleh regression gate.",
+            "comparison": exc.comparison.model_dump(mode="json")})
+
     for gateway_error in (GatewayUnavailableError, RuntimeGatewayError, ModelIdentityError):
         async def gateway_handler(request, exc):
             return fail(409 if isinstance(exc, ModelIdentityError) else 503, str(exc))
@@ -443,14 +457,6 @@ def create_app(
             )
             raise
         return ctx
-
-    def evidence(ctx, version_id):
-        with db.session() as s:
-            version = AgentRepository(s).get_version(ctx, version_id)
-            result = BenchRepository(s, db.evidence_signer).get_latest_passing_evaluation(ctx, version_id)
-            if not result:
-                raise QualityGateFailedError("Missing current, complete Bench evidence")
-            return row(version)
 
     async def runtime_status():
         health = None
@@ -623,9 +629,13 @@ def create_app(
                 version["integrity_valid"] = True
                 version["bench_eligible"] = False
                 version["governance_valid"] = False
+                version["regression"] = None
                 try:
                     contract = AgentVersion.from_stored(stored)
                     bench_repo = BenchRepository(s, db.evidence_signer)
+                    if stored.evaluation_id:
+                        version["regression"] = BenchRegressionRepository(s, db.evidence_signer).compare(
+                            ctx, stored.id).model_dump(mode="json")
                     for evaluation in data["evaluations"]:
                         if evaluation["version_id"] == version["id"]:
                             evaluation["verified"] = False
@@ -649,6 +659,17 @@ def create_app(
                     evaluation["provenance"] = {}
                 if not isinstance(evaluation["details"], list):
                     evaluation["details"] = []
+                current_version = next((v for v in data["versions"] if v["id"] == evaluation["version_id"]), None)
+                evaluation["regression"] = (current_version.get("regression") if current_version
+                    and current_version.get("evaluation_id") == evaluation["id"] else None)
+            data["accepted_baselines"] = []
+            for blueprint in blueprints:
+                try:
+                    baseline = BenchRegressionRepository(s, db.evidence_signer).current(ctx, blueprint["id"])
+                    if baseline:
+                        data["accepted_baselines"].append(baseline.model_dump(mode="json", exclude={"suite_definition", "attestation"}))
+                except (QualityGateFailedError, VersionIntegrityError, ValueError):
+                    pass
             for approval in data["approvals"]:
                 version = next((v for v in data["versions"] if v["id"] == approval["target_id"]), None)
                 approval["verified"] = bool(version and version["governance_valid"] and
@@ -666,6 +687,7 @@ def create_app(
                     "run:create",
                     "version:approve",
                     "version:publish",
+                    "bench:accept_baseline",
                     "agent:assign",
                 )
             }
@@ -703,6 +725,8 @@ def create_app(
                 version = AgentVersion.from_stored(AgentRepository(s).get_version(ctx, result.version_id))
                 repo.validate_stored(ctx, stored, version)
                 evaluation["verified"] = True
+                evaluation["regression"] = BenchRegressionRepository(s, db.evidence_signer).compare(
+                    ctx, result.version_id).model_dump(mode="json")
             except (QualityGateFailedError, VersionIntegrityError):
                 pass
         return {**result.model_dump(mode="json"), "evaluation": evaluation}
@@ -777,20 +801,25 @@ def create_app(
         )
         return bench_completion(ctx, result)
 
+    @app.post("/api/projects/{project_id}/blueprints/{blueprint_id}/baseline")
+    async def accept_baseline(project_id: str, blueprint_id: str, body: BaselineAcceptanceInput):
+        ctx = context(project_id, "bench:accept_baseline")
+        with db.session(write=True) as s:
+            AgentRepository(s).get_blueprint(ctx, blueprint_id)
+            evaluation = BenchRepository(s, db.evidence_signer).get_evaluation(ctx, body.evaluation_id)
+            if evaluation.blueprint_id != blueprint_id:
+                raise TenantIsolationError("Baseline evaluation belongs to another blueprint.")
+            return BenchRegressionRepository(s, db.evidence_signer, permissions, factory.approval_engine).accept(ctx, body.evaluation_id,
+                expected_baseline_id=body.expected_baseline_id, reason=body.reason, transition=body.suite_transition)
+
     @app.post("/api/projects/{project_id}/versions/{version_id}/approve")
     async def approve(project_id: str, version_id: str, body: ApprovalInput):
         ctx = context(project_id, "version:approve")
-        v = evidence(ctx, version_id)
-        if body.payload_hash != v["payload_hash"]:
-            raise PayloadHashMismatchError(
-                "Browser review does not match persisted version"
-            )
-        return factory.approve_version(ctx, version_id, body.comments)
+        return factory.approve_version(ctx, version_id, body.comments, expected_payload_hash=body.payload_hash)
 
     @app.post("/api/projects/{project_id}/versions/{version_id}/publish")
     async def publish(project_id: str, version_id: str):
         ctx = context(project_id, "version:publish")
-        evidence(ctx, version_id)
         return factory.publish_version(ctx, version_id)
 
     @app.post("/api/projects/{project_id}/assignments", status_code=201)

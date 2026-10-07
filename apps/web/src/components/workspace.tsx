@@ -33,6 +33,11 @@ export const eventNames: Record<string, string> = {
   "studio.run.assignment": "Hasil dikaitkan dengan penugasan",
   "studio.permission.denied": "Akses proyek ditolak",
   "bench.evaluation.interrupted": "Evaluasi terhenti",
+  "bench.baseline.accepted": "Baseline diterima",
+  "bench.baseline.superseded": "Baseline digantikan",
+  "bench.regression.compared": "Baseline dan candidate dibandingkan",
+  "bench.regression.critical": "Regression kritis terdeteksi",
+  "bench.promotion.blocked": "Promotion diblokir oleh regression gate",
 };
 
 export function Panel({

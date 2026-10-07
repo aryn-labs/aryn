@@ -15,6 +15,7 @@ from modules.core.audit.logger import AuditLogger
 from modules.core.permissions.engine import PermissionDeniedError, PermissionEngine
 from packages.contracts.approval import ApprovalRecord
 from packages.contracts.core import ActorType, AuditStatus, SecurityContext
+from modules.bench.regression import audit_regression_denial
 
 
 class ApprovalRequiredError(Exception):
@@ -46,6 +47,7 @@ class ApprovalEngine:
             approved_by=row.approved_by, status=row.status, comments=row.comments,
             created_at=created_at.isoformat(), evaluation_id=row.evaluation_id,
             attestation=row.attestation or "",
+            regression_comparison_id=row.regression_comparison_id,
         )
 
     def verify_signature(self, row):
@@ -57,7 +59,7 @@ class ApprovalEngine:
             stored = session.get(ApprovalModel, record.approval_id)
             if stored is None or self.contract(stored) != record:
                 raise ApprovalRequiredError("Approval no longer matches current Core evidence.")
-        payload = record.model_dump(mode="json", exclude={"attestation"})
+        payload = record.evidence_payload()
         if not self.db_manager.evidence_signer.verify("human_approval", payload, record.attestation):
             raise ApprovalRequiredError("Approval provenance is not verified.")
         approver = self.permission_engine.identity_binder.create_trusted_context(
@@ -68,13 +70,14 @@ class ApprovalEngine:
             raise ApprovalRequiredError("Human approver no longer has valid authority.") from exc
         return record
 
-    def current_evidence(self, context, target_type, target_id, payload_hash, session):
+    def current_evidence(self, context, target_type, target_id, payload_hash, session, for_approval=True):
         if target_type != "agent_version":
             return None
         version = AgentRepository(session).get_version(context, target_id, for_update=True)
         if version.payload_hash != payload_hash:
             raise PayloadHashMismatchError("Actual configuration differs from reviewed payload hash.")
-        if version.status not in {"draft", "approved", "published"}:
+        allowed_states = {"draft", "approved", "published"} if for_approval else {"draft", "approved", "published", "deprecated"}
+        if version.status not in allowed_states:
             raise InvalidStateTransitionError("Human approval requires finished Bench evidence.")
         evidence = BenchRepository(session, self.db_manager.evidence_signer).get_latest_passing_evaluation(context, target_id)
         if evidence is None:
@@ -82,6 +85,7 @@ class ApprovalEngine:
             raise QualityGateFailedError("No current passing Bench evaluation found.")
         return evidence.id
 
+    @audit_regression_denial
     def grant_approval(self, context: SecurityContext, target_type: str, target_id: str,
                        payload_hash: str, comments: Optional[str] = None, session=None) -> ApprovalRecord:
         if context.actor.actor_type != ActorType.USER:
@@ -105,29 +109,34 @@ class ApprovalEngine:
                     raise InvalidStateTransitionError("Published versions cannot receive new approval.")
             repo = ApprovalRepository(active)
             existing = repo.get_approval(context, target_type, target_id, payload_hash, evaluation_id)
+            comparison = active.info.get("bench_comparisons", {}).get(target_id)
+            comparison_id = comparison.comparison_id if comparison else None
             if existing:
                 try:
+                    if existing.regression_comparison_id != comparison_id:
+                        raise ApprovalRequiredError("Previous approval reviewed a different baseline comparison.")
                     return self.verify_signature(existing)
                 except ApprovalRequiredError:
                     # A fresh, authorized human decision does not rewrite stale evidence.
                     pass
             row = repo.record_approval(context, f"appr_{uuid.uuid4().hex}", target_type,
                                        target_id, payload_hash, context.actor.actor_id,
-                                       comments=comments, evaluation_id=evaluation_id)
+                                       comments=comments, evaluation_id=evaluation_id, regression_comparison_id=comparison_id)
             record = self.contract(row)
             row.attestation = self.db_manager.evidence_signer.sign(
-                "human_approval", record.model_dump(mode="json", exclude={"attestation"}))
+                "human_approval", record.evidence_payload())
             active.flush()
             self.audit_logger.record("core.approval.granted", context, target_id, AuditStatus.ALLOWED,
                                      {"target_type": target_type, "payload_hash": payload_hash,
                                       "approved_by": context.actor.actor_id, "evaluation_id": evaluation_id}, session=active)
             return self.contract(row)
 
+    @audit_regression_denial
     def verify_approval(self, context: SecurityContext, target_type: str, target_id: str,
                         expected_payload_hash: str, session=None) -> ApprovalRecord:
         self.permission_engine.enforce("run:read", context, context.organization_id, context.project_id)
         with (nullcontext(session) if session is not None else self.db_manager.session()) as active:
-            evaluation_id = self.current_evidence(context, target_type, target_id, expected_payload_hash, active)
+            evaluation_id = self.current_evidence(context, target_type, target_id, expected_payload_hash, active, for_approval=False)
             approval = ApprovalRepository(active).get_approval(context, target_type, target_id, expected_payload_hash, evaluation_id)
             if approval is None:
                 different = active.query(ApprovalModel).filter_by(
@@ -136,4 +145,10 @@ class ApprovalEngine:
                 if different and different.payload_hash != expected_payload_hash:
                     raise PayloadHashMismatchError("Modification after approval is forbidden.")
                 raise ApprovalRequiredError("No current human approval bound to this configuration and Bench evaluation.")
+            if target_type == "agent_version":
+                version = AgentRepository(active).get_version(context, target_id)
+                if version.status not in {"published", "deprecated"}:
+                    comparison = active.info.get("bench_comparisons", {}).get(target_id)
+                    if comparison is None or approval.regression_comparison_id != comparison.comparison_id:
+                        raise ApprovalRequiredError("Baseline changed since human review; a new approval is required.")
             return self.verify_signature(approval)

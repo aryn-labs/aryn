@@ -32,6 +32,7 @@ class ApprovalRepository:
         status: str = "approved",
         comments: Optional[str] = None,
         evaluation_id: Optional[str] = None,
+        regression_comparison_id: Optional[str] = None,
     ) -> ApprovalModel:
         approval = ApprovalModel(
             id=approval_id,
@@ -44,6 +45,7 @@ class ApprovalRepository:
             status=status,
             comments=comments,
             evaluation_id=evaluation_id,
+            regression_comparison_id=regression_comparison_id,
             created_at=utc_now(),
         )
         self.session.add(approval)

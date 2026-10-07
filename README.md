@@ -8,7 +8,7 @@ This is the private primary monorepo for ARYN Cloud and ARYN Local.
 - `modules/core/`: identity, organization/project scoping, divisions, workflows, permissions, approvals, audit, and usage authority.
 - `modules/agent_factory/`: agent blueprints, immutable versions, promotion and assignments.
 - `modules/brief/`: evidence bundles, provenance, contradiction, and abstention.
-- `modules/bench/`: generic scenario execution, deterministic graders, evidence validation and quality gates. Research Safety is the first suite.
+- `modules/bench/`: generic scenario execution, deterministic graders, evidence validation, accepted baseline comparisons and regression promotion gates. Research Safety is the first suite.
 - `modules/relay/`: incident investigation, approved remediation, recovery proof.
 - `modules/commercial/`: plans, subscriptions, entitlements and billing usage policy.
 

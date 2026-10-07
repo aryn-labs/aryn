@@ -30,5 +30,12 @@ class ApprovalRecord(BaseModel):
     status: ApprovalStatus = ApprovalStatus.APPROVED
     comments: Optional[str] = None
     evaluation_id: Optional[str] = None
+    regression_comparison_id: Optional[str] = None
     attestation: str = ""
     created_at: str = Field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
+
+    def evidence_payload(self):
+        payload = self.model_dump(mode="json", exclude={"attestation"})
+        if self.regression_comparison_id is None:
+            payload.pop("regression_comparison_id")
+        return payload
