@@ -64,6 +64,24 @@ class ProjectModel(Base):
     )
 
 
+class DivisionModel(Base):
+    __tablename__ = "divisions"
+
+    id = Column(String(64), primary_key=True)
+    organization_id = Column(String(64), ForeignKey("organizations.id"), nullable=False)
+    project_id = Column(String(64), ForeignKey("projects.id"), nullable=False)
+    name = Column(String(100), nullable=False)
+    slug = Column(String(80), nullable=False)
+    description = Column(Text, nullable=False, default="", server_default="")
+    generation = Column(Integer, nullable=False, default=1, server_default="1")
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+    __table_args__ = (
+        UniqueConstraint("project_id", "slug", name="uq_division_project_slug"),
+        Index("ix_division_scope_created", "organization_id", "project_id", "created_at", "id"),
+    )
+
+
 class MembershipModel(Base):
     __tablename__ = "memberships"
 

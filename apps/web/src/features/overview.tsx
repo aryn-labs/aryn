@@ -1,326 +1,269 @@
-import { Link, useNavigate } from "react-router-dom";
-import {
-  ArrowRight,
-  Beaker,
-  Bot,
-  ChevronRight,
-  Plus,
-  Radio,
-  ShieldCheck,
-  Workflow,
-} from "lucide-react";
+import { Link } from "react-router-dom";
+import { Plus, Radio } from "lucide-react";
+import type { Workspace } from "../lib/types";
+import type { ResourceItem, WorkspaceSummary } from "../lib/workspace-types";
 import { date, number } from "../lib/utils";
 import { Button } from "../components/ui/button";
 import { Empty, PageHeading, Status } from "../components/shared";
-import { needsApproval, runtimeTone, gatewayStatus } from "../lib/studio-state";
-import type { Shared } from "../lib/types";
-import { Panel, AuditList } from "../components/workspace";
-import { AgentFlow } from "../components/agent-flow";
+import { Panel } from "../components/workspace";
+import { gatewayStatus, runtimeTone } from "../lib/studio-state";
 
-export function Overview({ data, workspace, project, openBlueprint }: Shared) {
-  const navigate = useNavigate();
-  const published = data.versions.filter(
-    (v) => v.status === "published",
-  ).length;
-
-  const pendingApprovals = data.versions.filter(needsApproval).length;
-
-  const activeProject = workspace.projects.find((p) => p.id === project);
-
+export function Overview({
+  summary,
+  workspace,
+  project,
+  openBlueprint,
+}: {
+  summary: WorkspaceSummary;
+  workspace: Workspace;
+  project: string;
+  openBlueprint: () => void;
+}) {
+  const active = workspace.projects.find((item) => item.id === project);
+  const metrics = [
+    ["blueprints", "Blueprint Agent", "/factory"],
+    ["runs", "Eksekusi Tersimpan", "/runs"],
+    ["audits", "Jejak Core", "/governance"],
+    ["assigned", "Agent ditugaskan", "/runs"],
+  ];
   return (
-    <div className="overview-page studio-control-center">
-      {/* Studio Control Center Hero */}
+    <div className="overview-page workspace-overview">
       <div className="studio-hero">
         <div className="studio-hero-meta">
-          <span className="studio-live-pill">PUSAT KENDALI · ARYN STUDIO</span>
+          <span className="studio-live-pill">ARYN STUDIO</span>
           <span className="studio-project-tag">
             <Radio size={12} />
-            {activeProject?.name || "Proyek tidak tersedia"}
+            {active?.name || project}
           </span>
         </div>
         <PageHeading
-          eyebrow="ARYN STUDIO CONTROL CENTER"
           title="Ruang kerja agent Anda."
-          description="Rancang agent, tinjau evidence, dan telusuri eksekusi pada proyek aktif."
+          description="Perhatian, inventaris, dan aktivitas nyata dalam proyek aktif."
         >
-          <Button
-            onClick={openBlueprint}
-            disabled={!data.permissions["run:create"]}
-            className="btn-studio-primary"
-          >
-            <Plus size={16} />
-            Buat agent
-          </Button>
-        </PageHeading>
-      </div>
-
-      {/* Spatial Control & Telemetry HUD */}
-      <div className="control-center-hud">
-        {/* Workspace Context Card */}
-        <Link className="hud-card hud-card-interactive" to="/factory">
-          <div className="hud-header">
-            <div className="hud-icon hud-icon-violet">
-              <Bot size={17} />
-            </div>
-            <span className="hud-badge hud-badge-violet">Factory</span>
-          </div>
-          <div className="hud-body">
-            <strong className="hud-metric">
-              {number(data.blueprints.length)}
-            </strong>
-            <span className="hud-title">Blueprint Agent</span>
-            <p className="hud-desc">Definisi agent dalam proyek aktif</p>
-          </div>
-          <div className="hud-footer">
-            <span>{published} versi dipublikasikan</span>
-            <ChevronRight size={14} />
-          </div>
-        </Link>
-
-        {/* Runtime & ARYN Runtime Confinement */}
-        <Link className="hud-card hud-card-interactive" to="/runs">
-          <div className="hud-header">
-            <div className="hud-icon hud-icon-cyan">
-              <Workflow size={17} />
-            </div>
-            <span className="hud-badge hud-badge-cyan">Runtime</span>
-          </div>
-          <div className="hud-body">
-            <strong className="hud-metric">{number(data.runs.length)}</strong>
-            <span className="hud-title">Eksekusi Tersimpan</span>
-            <p className="hud-desc">Hasil dan status tersimpan dari Core</p>
-          </div>
-          <div className="hud-footer">
-            <span className={`text-${runtimeTone(workspace.runtime)}`}>
-              ARYN Runtime{" "}
-              {workspace.runtime.ready
-                ? "siap"
-                : workspace.runtime.connected
-                  ? "belum siap"
-                  : "tidak tersedia"}
-            </span>
-            <span className={`text-${gatewayStatus(workspace).tone}`}>
-              {gatewayStatus(workspace).label}
-            </span>
-            <ChevronRight size={14} />
-          </div>
-        </Link>
-
-        {/* Governance & Core Integrity */}
-        <Link className="hud-card hud-card-interactive" to="/governance">
-          <div className="hud-header">
-            <div className="hud-icon hud-icon-emerald">
-              <ShieldCheck size={17} />
-            </div>
-            <span className="hud-badge stat-pill-emerald">Core Security</span>
-          </div>
-          <div className="hud-body">
-            <strong className="hud-metric">{number(data.audit.length)}</strong>
-            <span className="hud-title">Jejak Core</span>
-            <p className="hud-desc">
-              Peristiwa aplikasi tersimpan pada proyek aktif
-            </p>
-          </div>
-          <div className="hud-footer">
-            <span>
-              {data.versions.filter((v) => v.integrity_valid).length} versi
-              dengan integritas valid
-            </span>
-            <ChevronRight size={14} />
-          </div>
-        </Link>
-
-        {/* Bench & Pending Approvals */}
-        <Link className="hud-card hud-card-interactive" to="/approvals">
-          <div className="hud-header">
-            <div className="hud-icon hud-icon-amber">
-              <Beaker size={17} />
-            </div>
-            <span className="hud-badge hud-badge-amber">
-              {pendingApprovals > 0 ? "Perlu Tinjauan" : "Siaga"}
-            </span>
-          </div>
-          <div className="hud-body">
-            <strong className="hud-metric">{number(pendingApprovals)}</strong>
-            <span className="hud-title">Menunggu Persetujuan</span>
-            <p className="hud-desc">Lulus Bench & siap tinjauan Core</p>
-          </div>
-          <div className="hud-footer">
-            <span>{data.evaluations.length} evaluasi Bench</span>
-            <ChevronRight size={14} />
-          </div>
-        </Link>
-      </div>
-
-      <div className="overview-content">
-        {/* Lifecycle Studio Flow Panel */}
-        <Panel
-          className="overview-flow-panel"
-          title="Dari ide ke eksekusi"
-          subtitle="Tujuh tahap untuk merancang, memvalidasi, dan mengoperasikan agent."
-          action={<span className="subtle-label">7 TAHAP</span>}
-        >
-          <AgentFlow data={data} />
-          <div className="workflow-footer">
-            <span className="workflow-assurance">
-              <ShieldCheck size={15} />
-              Bench lulus dan persetujuan Core sebelum publikasi
-            </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => navigate("/factory")}
-            >
-              Buka Agent Factory
-              <ArrowRight size={15} />
+          {summary.permissions["blueprint:create"] && (
+            <Button onClick={openBlueprint}>
+              <Plus size={16} />
+              Buat agent
             </Button>
-          </div>
-        </Panel>
-
-        {/* Spatial Agents Matrix & Live Telemetry Stream */}
-        <div className="overview-layout">
-          <div className="overview-primary">
-            <Panel
-              title="Agent di proyek ini"
-              subtitle="Blueprint dan konfigurasi yang benar-benar tersimpan."
-              action={
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => navigate("/factory")}
-                >
-                  Lihat semua
-                  <ArrowRight size={14} />
-                </Button>
-              }
+          )}
+        </PageHeading>
+        <p className="workspace-freshness">
+          Lingkup {workspace.organization.name} / {active?.name || project} ·
+          Diperbarui {date(summary.refreshed_at)} ·{" "}
+          {Intl.DateTimeFormat().resolvedOptions().timeZone}
+        </p>
+        {summary.metrics.blueprints.value === 0 && (
+          <p className="workspace-freshness">
+            Agent pertama Anda dimulai di sini
+          </p>
+        )}
+      </div>
+      <Panel
+        title="Perlu perhatian"
+        subtitle="Temuan Core dengan jalur untuk memeriksa sumbernya."
+      >
+        {summary.attention.length ? (
+          <ul className="attention-list">
+            {summary.attention.map((item) => (
+              <li key={item.code}>
+                <Link to={item.route}>
+                  <strong>{number(item.count)}</strong>
+                  <span>{item.description}</span>
+                  <span aria-hidden="true">→</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <Empty
+            title="Tidak ada temuan perhatian"
+            description="Tidak ada run gagal atau hasil tidak pasti tercatat; pemeriksaan candidate dibatasi pada lima versi terbaru yang memiliki evaluasi."
+          />
+        )}
+      </Panel>
+      <div className="control-center-hud">
+        {metrics.map(([key, label, route]) => {
+          const metric = summary.metrics[key];
+          return (
+            <Link
+              key={key}
+              to={route}
+              className="hud-card hud-card-interactive"
             >
-              {data.blueprints.length ? (
-                <div className="agent-overview-list">
-                  {data.blueprints.slice(0, 4).map((bp) => {
-                    const v = data.versions.find(
-                      (v) => v.blueprint_id === bp.id,
-                    );
-                    const assignments = data.assignments.filter(
-                      (a) => a.blueprint_id === bp.id,
-                    );
-                    return (
-                      <button
-                        className="agent-overview-item"
-                        key={bp.id}
-                        onClick={() => navigate(`/factory/${bp.id}`)}
-                      >
-                        <div className="agent-icon">
-                          <Bot size={19} />
-                        </div>
-                        <div className="agent-meta">
-                          <strong>{bp.name}</strong>
-                          <small>
-                            {bp.description ||
-                              bp.slug ||
-                              "Blueprint riset teks"}
-                          </small>
-                          <div className="agent-sub-pills">
-                            {v && (
-                              <span className="mono text-xs text-secondary">
-                                v{v.version_number}
-                              </span>
-                            )}
-                            {assignments.length > 0 && (
-                              <span className="text-xs text-secondary">
-                                · {assignments.length} penugasan
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        {v ? (
-                          <Status value={v.status} />
-                        ) : (
-                          <span className="subtle">Belum ada versi</span>
-                        )}
-                        <ChevronRight size={16} className="agent-arrow" />
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <Empty
-                  title="Agent pertama Anda dimulai di sini"
-                  description="Buat blueprint untuk mendefinisikan agent riset. Tidak ada agent atau aktivitas contoh yang ditambahkan otomatis."
-                  action="Buat blueprint"
-                  onAction={openBlueprint}
-                />
-              )}
-            </Panel>
-
-            {/* Recent Execution Runs Stream */}
-            {data.runs.length > 0 && (
-              <Panel
-                className="mt-6"
-                title="Eksekusi terbaru"
-                subtitle="Hasil pemrosesan model aktual melalui ARYN Runtime."
-                action={
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => navigate("/runs")}
-                  >
-                    Buka Eksekusi
-                    <ArrowRight size={14} />
-                  </Button>
-                }
-              >
-                <div className="recent-runs-stream">
-                  {data.runs.slice(0, 3).map((r) => (
-                    <Link
-                      key={r.id}
-                      className="recent-run-item"
-                      to={`/runs?hasil=${encodeURIComponent(r.id)}`}
-                    >
-                      <div className="run-stream-top">
-                        <span className="mono text-xs text-secondary">
-                          {r.id}
-                        </span>
-                        <Status value={r.status} />
-                      </div>
-                      <p className="run-stream-prompt line-clamp-2">
-                        {r.prompt}
-                      </p>
-                      <div className="run-stream-meta">
-                        <span className="mono text-xs">{r.model}</span>
-                        <span className="text-xs text-secondary">
-                          {number(r.total_tokens || 0)} token
-                        </span>
-                        <span className="text-xs text-secondary">
-                          {date(r.created_at)}
-                        </span>
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              </Panel>
+              <div className="hud-body">
+                <strong className="hud-metric">
+                  {metric?.value == null
+                    ? "Tidak tersedia"
+                    : number(metric.value)}
+                </strong>
+                <span className="hud-title">{label}</span>
+                <p className="hud-desc">{metric?.definition}</p>
+              </div>
+              <div className="hud-footer">
+                {key === "runs" ? (
+                  <>
+                    <span className={`text-${runtimeTone(workspace.runtime)}`}>
+                      ARYN Runtime{" "}
+                      {workspace.runtime.ready ? "siap" : "belum siap"}
+                    </span>
+                    <span className={`text-${gatewayStatus(workspace).tone}`}>
+                      {gatewayStatus(workspace).label}
+                    </span>
+                  </>
+                ) : (
+                  <span>
+                    {key === "assigned"
+                      ? `${summary.metrics.published.value ?? "Tidak tersedia"} versi berstatus published`
+                      : metric?.source}
+                  </span>
+                )}
+              </div>
+            </Link>
+          );
+        })}
+      </div>
+      <div className="workspace-columns">
+        <Panel
+          title="Eksekusi terbaru"
+          subtitle="Metadata tersimpan; output dimuat saat membuka detail."
+          action={
+            <Link className="text-link" to="/runs">
+              Lihat semua
+            </Link>
+          }
+        >
+          <Recent items={summary.latest_runs} resource="runs" />
+        </Panel>
+        <Panel
+          title="Aktivitas terbaru"
+          subtitle="Autentikasi evidence diperiksa untuk setiap item yang ditampilkan."
+          action={
+            <Link className="text-link" to="/governance">
+              Lihat semua
+            </Link>
+          }
+        >
+          <Recent items={summary.latest_audits} resource="audits" />
+        </Panel>
+        <Panel
+          title="Penggunaan & ketersediaan"
+          subtitle={summary.usage.source}
+        >
+          <dl className="definition-grid">
+            <dt>Token tercatat</dt>
+            <dd>
+              {summary.usage.tokens == null
+                ? "Tidak tersedia"
+                : number(summary.usage.tokens)}
+            </dd>
+            <dt>Token dicadangkan</dt>
+            <dd>
+              {summary.budget?.reserved_tokens == null
+                ? "Tidak tersedia"
+                : number(summary.budget.reserved_tokens)}
+            </dd>
+            <dt>Biaya provider</dt>
+            <dd>Tidak tersedia</dd>
+            <dt>Entitlement</dt>
+            <dd>Belum terverifikasi</dd>
+            <dt>Runtime</dt>
+            <dd>{workspace.runtime.message}</dd>
+            <dt>Model</dt>
+            <dd>{gatewayStatus(workspace).label}</dd>
+          </dl>
+        </Panel>
+        <Panel
+          title="Jalur kerja"
+          subtitle="Aksi tersedia mengikuti izin efektif dari Core."
+        >
+          <div className="workspace-shortcuts">
+            <Link to="/projects">Projects & Divisions</Link>
+            <Link to="/factory">Agent Factory</Link>
+            <Link to="/bench">Tinjau Bench</Link>
+            {summary.permissions["version:approve"] && (
+              <Link to="/approvals">Tinjau persetujuan</Link>
+            )}
+            {summary.permissions["run:create"] && (
+              <Link to="/runs">Jalankan agent yang ditugaskan</Link>
             )}
           </div>
-
-          <div className="overview-secondary">
-            <Panel
-              title="Aktivitas terbaru"
-              subtitle="Peristiwa Core terbaru di proyek ini."
-              action={
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => navigate("/governance")}
-                >
-                  Lihat semua
-                  <ArrowRight size={14} />
-                </Button>
-              }
-            >
-              <AuditList events={data.audit.slice(0, 5)} compact />
-            </Panel>
-          </div>
-        </div>
+        </Panel>
       </div>
+      <Panel
+        title="Siklus agent"
+        subtitle="Jalur baca untuk memeriksa konfigurasi dan evidence; membuka langkah tidak melakukan mutasi."
+      >
+        <ol
+          className="workspace-lifecycle"
+          aria-label="Alur agent dari blueprint hingga eksekusi"
+        >
+          {[
+            ["Blueprint", "/factory", "Agent Factory"],
+            ["Versi", "/factory", "Agent Factory"],
+            ["Bench", "/bench", "Bench"],
+            ["Persetujuan", "/approvals", "Persetujuan"],
+            ["Publikasi", "/factory", "Agent Factory"],
+            ["Penugasan", "/factory", "Agent Factory"],
+            ["Eksekusi", "/runs", "Eksekusi"],
+          ].map(([label, route, destination], index) => (
+            <li key={label}>
+              <Link
+                to={route}
+                aria-label={`Tahap ${index + 1}: ${label} — buka ${destination}`}
+              >
+                <span>{index + 1}</span>
+                {label}
+              </Link>
+            </li>
+          ))}
+        </ol>
+      </Panel>
     </div>
+  );
+}
+function Recent({
+  items,
+  resource,
+}: {
+  items: ResourceItem[];
+  resource: "runs" | "audits";
+}) {
+  return items.length ? (
+    <ul className="workspace-recent">
+      {items.map((item) => (
+        <li key={item.id}>
+          <Link
+            to={
+              resource === "runs"
+                ? `/runs/${encodeURIComponent(item.id)}`
+                : `/governance?resource=${encodeURIComponent((item.references.resource_id as string) || item.id)}`
+            }
+          >
+            <strong>{item.name}</strong>
+            <span>{item.status && <Status value={item.status} />}</span>
+            <small>
+              {item.verified
+                ? resource === "runs"
+                  ? "Captured claim terverifikasi"
+                  : "Audit terautentikasi"
+                : "Evidence belum terverifikasi"}{" "}
+              · {date(item.created_at)}
+            </small>
+            {resource === "runs" && (
+              <small>
+                {item.references.total_tokens == null
+                  ? "Penggunaan tidak tersedia"
+                  : `${number(item.references.total_tokens as number)} token tercatat`}
+              </small>
+            )}
+          </Link>
+        </li>
+      ))}
+    </ul>
+  ) : (
+    <Empty
+      title="Belum ada aktivitas"
+      description="Data akan muncul setelah aktivitas Core tersimpan pada proyek ini."
+    />
   );
 }

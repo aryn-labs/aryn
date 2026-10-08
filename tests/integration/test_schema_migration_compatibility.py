@@ -33,7 +33,7 @@ def test_upgrade_from_005_retains_legacy_governance_and_run_data(tmp_path):
         assert connection.exec_driver_sql("PRAGMA foreign_key_check").all() == []
         for table in ("external_identities", "auth_sessions", "login_transactions"):
             assert connection.exec_driver_sql("SELECT COUNT(*) FROM " + table).scalar() == 0
-        assert connection.exec_driver_sql("SELECT version_num FROM alembic_version").scalar() == "015_authentication_boundary"
+        assert connection.exec_driver_sql("SELECT version_num FROM alembic_version").scalar() == "016_workspace_structure"
         assert tuple(connection.exec_driver_sql("SELECT actual_model,gateway,runtime_backend,actual_provider FROM run_states WHERE id='legacy'").one()) == (None, None, None, None)
         assert any(index["unique"] and index["column_names"] == ["project_id", "idempotency_key"]
                    for index in inspect(engine).get_indexes("run_states"))

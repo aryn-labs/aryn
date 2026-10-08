@@ -12,7 +12,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Overview } from "../features/overview";
 import { Runs } from "../features/runs";
 import { Approvals } from "../features/approvals";
-import { studioFixture, versionA } from "./studio-fixtures";
+import { studioFixture, summaryFixture, versionA } from "./studio-fixtures";
 
 vi.mock("../components/canvas/aryn-canvas", async (importOriginal) => {
   const actual =
@@ -57,7 +57,7 @@ describe("konteks Studio", () => {
   it("Ringkasan menampilkan project aktif, bukan proyek pertama/organization", () => {
     render(
       <MemoryRouter>
-        <Overview {...studioFixture()} />
+        <Overview {...studioFixture()} summary={summaryFixture()} />
       </MemoryRouter>,
     );
     expect(screen.getByText("Proyek Aktif")).toBeInTheDocument();

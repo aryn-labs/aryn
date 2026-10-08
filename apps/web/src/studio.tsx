@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, Suspense, lazy, useEffect, useRef, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -8,6 +8,7 @@ import {
   ChevronDown,
   ChevronRight,
   FileText,
+  FolderKanban,
   Fingerprint,
   LayoutDashboard,
   Menu,
@@ -24,31 +25,130 @@ import {
 } from "lucide-react";
 import { api, apiStream, ApiError, logout } from "./lib/api";
 import type { Snapshot, Workspace } from "./lib/types";
+import type { WorkspaceSummary } from "./lib/workspace-types";
+import { workspaceKey, routeIdentifier } from "./lib/workspace-types";
 import { Button } from "./components/ui/button";
 import { Modal } from "./components/ui/dialog";
 import { BlueprintForm } from "./components/blueprint-form";
 import { Busy, Empty, Notice } from "./components/shared";
 import { Overview } from "./features/overview";
-import { Factory, AgentDetail } from "./features/factory";
-import { BenchPage } from "./features/bench";
-import { Approvals } from "./features/approvals";
-import { Runs } from "./features/runs";
-import { Governance } from "./features/governance";
-import { SettingsPage, Unavailable } from "./features/settings";
+import { Projects } from "./features/projects";
+import "./workspace.css";
 import { AmbientBackground } from "./components/ambient-background";
-import { needsApproval } from "./lib/studio-state";
 import arynMark from "./assets/aryn-mark.png";
 import arynMarkDark from "./assets/aryn-mark-dark.png";
+const Factory = lazy(() =>
+  import("./features/factory").then((module) => ({ default: module.Factory })),
+);
+const AgentDetail = lazy(() =>
+  import("./features/factory").then((module) => ({
+    default: module.AgentDetail,
+  })),
+);
+const BenchPage = lazy(() =>
+  import("./features/bench").then((module) => ({ default: module.BenchPage })),
+);
+const Approvals = lazy(() =>
+  import("./features/approvals").then((module) => ({
+    default: module.Approvals,
+  })),
+);
+const Runs = lazy(() =>
+  import("./features/runs").then((module) => ({ default: module.Runs })),
+);
+const Governance = lazy(() =>
+  import("./features/governance").then((module) => ({
+    default: module.Governance,
+  })),
+);
+const SettingsPage = lazy(() =>
+  import("./features/settings").then((module) => ({
+    default: module.SettingsPage,
+  })),
+);
+const Unavailable = lazy(() =>
+  import("./features/settings").then((module) => ({
+    default: module.Unavailable,
+  })),
+);
 const navigation = [
-  { path: "/", label: "Ringkasan", icon: LayoutDashboard },
-  { path: "/factory", label: "Agent Factory", icon: Bot },
-  { path: "/runs", label: "Eksekusi", icon: Workflow },
-  { path: "/bench", label: "Bench", icon: Beaker },
-  { path: "/approvals", label: "Persetujuan", icon: ShieldCheck },
-  { path: "/brief", label: "Brief", icon: FileText, future: true },
-  { path: "/relay", label: "Relay", icon: Radio, future: true },
-  { path: "/governance", label: "Tata Kelola", icon: Fingerprint },
-  { path: "/settings", label: "Pengaturan", icon: Settings },
+  { path: "/", label: "Ringkasan", icon: LayoutDashboard, group: "WORKSPACE" },
+  {
+    path: "/projects",
+    label: "Projects & Divisions",
+    icon: FolderKanban,
+    group: "WORKSPACE",
+  },
+  { path: "/factory", label: "Agent Factory", icon: Bot, group: "BUILD" },
+  {
+    path: "/workflows",
+    label: "Workflow Builder",
+    icon: Workflow,
+    group: "BUILD",
+    future: true,
+  },
+  {
+    path: "/capabilities",
+    label: "Capabilities",
+    icon: ShieldCheck,
+    group: "BUILD",
+    future: true,
+  },
+  {
+    path: "/operations",
+    label: "Agent Operations",
+    icon: Bot,
+    group: "OPERATE",
+    future: true,
+  },
+  {
+    path: "/automations",
+    label: "Automations",
+    icon: Workflow,
+    group: "OPERATE",
+    future: true,
+  },
+  { path: "/runs", label: "Eksekusi", icon: Terminal, group: "OPERATE" },
+  {
+    path: "/outputs",
+    label: "Outputs",
+    icon: FileText,
+    group: "OPERATE",
+    future: true,
+  },
+  {
+    path: "/brief",
+    label: "Brief",
+    icon: FileText,
+    group: "INTELLIGENCE & RELIABILITY",
+    future: true,
+  },
+  {
+    path: "/bench",
+    label: "Bench",
+    icon: Beaker,
+    group: "INTELLIGENCE & RELIABILITY",
+  },
+  {
+    path: "/relay",
+    label: "Relay",
+    icon: Radio,
+    group: "INTELLIGENCE & RELIABILITY",
+    future: true,
+  },
+  {
+    path: "/approvals",
+    label: "Persetujuan",
+    icon: ShieldCheck,
+    group: "CONTROL",
+  },
+  {
+    path: "/governance",
+    label: "Tata Kelola",
+    icon: Fingerprint,
+    group: "CONTROL",
+  },
+  { path: "/settings", label: "Pengaturan", icon: Settings, group: "CONTROL" },
 ];
 
 function useTheme() {
@@ -73,31 +173,88 @@ export function App() {
   const [mobile, setMobile] = useState(false);
   const sidebarRef = useRef<HTMLElement>(null);
   const menuRef = useRef<HTMLButtonElement>(null);
-  const [project, setProject] = useState(
-    () => localStorage.getItem("aryn-project") || "proj_studio_research",
+  const [selectedProject, setProject] = useState(
+    () => localStorage.getItem("aryn-project") || "",
   );
+  const project =
+    (location.pathname.startsWith("/projects/")
+      ? routeIdentifier(location.pathname.split("/")[2])
+      : "") || selectedProject;
   const [newBlueprint, setNewBlueprint] = useState(false);
   const [toast, setToast] = useState("");
+  const [streamPending, setStreamPending] = useState(false);
   const workspace = useQuery({
-    queryKey: ["workspace"],
-    queryFn: () => api<Workspace>("/workspace"),
+    queryKey: ["workspace-context"],
+    queryFn: ({ signal }) =>
+      api<Workspace>("/workspace/context", undefined, signal),
     refetchInterval: 20000,
+    retry: false,
+  });
+  const organization = workspace.data?.organization.id || "";
+  const availability = useQuery({
+    queryKey: ["workspace-availability", organization],
+    queryFn: ({ signal }) =>
+      api<
+        Pick<Workspace, "models" | "runtime" | "gateway"> & {
+          organization_id: string;
+        }
+      >("/workspace/status", undefined, signal),
+    enabled: !!organization && !workspace.error,
+    refetchInterval: 20000,
+    retry: false,
+  });
+  const requiresSnapshot = [
+    "/factory",
+    "/runs",
+    "/bench",
+    "/approvals",
+    "/governance",
+    "/settings",
+  ].some(
+    (route) =>
+      location.pathname === route || location.pathname.startsWith(`${route}/`),
+  );
+  const summary = useQuery({
+    queryKey: workspaceKey(organization, project, "summary"),
+    queryFn: ({ signal }) =>
+      api<WorkspaceSummary>(`/projects/${project}/summary`, undefined, signal),
+    enabled: !!organization && !!project && !workspace.error,
+    refetchInterval: 10000,
+    retry: false,
   });
   const snapshot = useQuery({
-    queryKey: ["snapshot", project],
-    queryFn: () => api<Snapshot>(`/projects/${project}/snapshot`),
-    enabled: !!workspace.data,
+    queryKey: workspaceKey(organization, project, "snapshot"),
+    queryFn: ({ signal }) =>
+      api<Snapshot>(`/projects/${project}/snapshot`, undefined, signal),
+    enabled:
+      !!organization && !!project && !workspace.error && requiresSnapshot,
     refetchInterval: 10000,
+    retry: false,
   });
   const mutation = useMutation({
-    mutationFn: ({ path, body }: { path: string; body: unknown }) =>
-      api<Record<string, unknown>>(`/projects/${project}${path}`, body),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["snapshot", project] });
+    mutationFn: ({
+      path,
+      body,
+      scope,
+    }: {
+      path: string;
+      body: unknown;
+      scope: string;
+      org: string;
+    }) => api<Record<string, unknown>>(`/projects/${scope}${path}`, body),
+    onSuccess: async (_, variables) => {
+      await queryClient.invalidateQueries({
+        queryKey: ["studio", variables.org, variables.scope],
+      });
     },
   });
   const act = async (path: string, body: unknown, success: string) => {
-    const result = await mutation.mutateAsync({ path, body });
+    const result = await mutation.mutateAsync({
+      path,
+      body,
+      scope: project,
+      org: organization,
+    });
     setToast(success);
     return result;
   };
@@ -107,6 +264,7 @@ export function App() {
     success: string,
     onEvent?: (event: import("./lib/types").StreamEvent) => void,
   ): Promise<Record<string, unknown>> => {
+    setStreamPending(true);
     try {
       const result = await apiStream(
         `/projects/${project}${path}`,
@@ -115,10 +273,14 @@ export function App() {
       );
       if (success && (!path.endsWith("/runs") || result.status === "completed"))
         setToast(success);
-      await queryClient.invalidateQueries({ queryKey: ["snapshot", project] });
+      await queryClient.invalidateQueries({
+        queryKey: ["studio", organization, project],
+      });
       return result;
     } catch (err: any) {
       throw err;
+    } finally {
+      setStreamPending(false);
     }
   };
   useEffect(() => {
@@ -139,18 +301,44 @@ export function App() {
     }
   }, [toast]);
   useEffect(() => {
-    if (
-      workspace.data &&
-      !workspace.data.projects.some((p) => p.id === project)
-    ) {
-      setProject(workspace.data.projects[0]?.id || "proj_studio_research");
+    if (workspace.data && !project) {
+      setProject(workspace.data.projects[0]?.id || "");
     }
   }, [workspace.data, project]);
-  const w = workspace.data;
+  const w = workspace.data
+    ? {
+        ...workspace.data,
+        ...(availability.data &&
+        !availability.error &&
+        availability.data.organization_id === organization
+          ? {
+              models: availability.data.models,
+              runtime: availability.data.runtime,
+              gateway: availability.data.gateway,
+            }
+          : {}),
+      }
+    : undefined;
   const data = snapshot.data;
-  const readError = workspace.error || snapshot.error;
+  const readError =
+    workspace.error ||
+    summary.error ||
+    (requiresSnapshot ? snapshot.error : null);
+  const authError =
+    availability.error instanceof ApiError &&
+    [401, 403].includes(availability.error.status)
+      ? availability.error
+      : null;
   const accessDenied =
-    readError instanceof ApiError && readError.status === 403;
+    (readError instanceof ApiError && readError.status === 403) ||
+    authError?.status === 403;
+  const denied = [readError, authError].some(
+    (error) => error instanceof ApiError && [401, 403].includes(error.status),
+  );
+  const displayError =
+    !!authError ||
+    (!!readError &&
+      (denied || !w || !summary.data || (requiresSnapshot && !data)));
   const apiConnected =
     !!w &&
     !(
@@ -165,6 +353,17 @@ export function App() {
   const refresh = () => {
     void queryClient.invalidateQueries();
   };
+  const switchProject = (next: string, route = "/") => {
+    if (mutation.isPending || streamPending) return;
+    void queryClient.cancelQueries({ queryKey: ["studio"] });
+    queryClient.removeQueries({ queryKey: ["studio"] });
+    setNewBlueprint(false);
+    setToast("");
+    mutation.reset();
+    setProject(next);
+    localStorage.setItem("aryn-project", next);
+    navigate(route);
+  };
   const selectedBlueprint = data?.blueprints.find(
     (b) => location.pathname === `/factory/${b.id}`,
   );
@@ -172,7 +371,7 @@ export function App() {
     data: data!,
     workspace: w!,
     project,
-    pending: mutation.isPending,
+    pending: mutation.isPending || streamPending,
     error: mutation.error?.message,
     resetError: () => mutation.reset(),
     act,
@@ -239,7 +438,7 @@ export function App() {
         </div>
         <div
           className="workspace-card"
-          title={`Proyek aktif: ${w?.projects.find((p) => p.id === project)?.name || "Laboratorium Riset"}`}
+          title={`Proyek aktif: ${w?.projects.find((p) => p.id === project)?.name || project || "Memuat proyek"}`}
         >
           <div className="workspace-card-icon">
             <Radio size={15} />
@@ -251,7 +450,8 @@ export function App() {
             </div>
             <strong className="workspace-card-title">
               {w?.projects.find((p) => p.id === project)?.name ||
-                "Laboratorium Riset"}
+                project ||
+                "Memuat proyek"}
             </strong>
           </div>
           {w && w.projects.length > 1 && (
@@ -260,11 +460,9 @@ export function App() {
                 aria-label="Pilih proyek"
                 value={project}
                 className="workspace-card-select"
-                disabled={mutation.isPending}
+                disabled={mutation.isPending || streamPending}
                 onChange={(e) => {
-                  setProject(e.target.value);
-                  localStorage.setItem("aryn-project", e.target.value);
-                  navigate("/");
+                  switchProject(e.target.value);
                 }}
               >
                 {w.projects.map((p) => (
@@ -277,31 +475,38 @@ export function App() {
             </>
           )}
         </div>
-        <div className="nav-caption">RUANG KERJA</div>
         <nav aria-label="Navigasi utama">
-          {navigation.map((n, i) => (
-            <NavLink
-              key={n.path}
-              to={n.path}
-              end={n.path === "/"}
-              title={n.label}
-              className={({ isActive }) =>
-                `nav-item ${isActive ? "active" : ""} ${i === 7 ? "nav-separated" : ""}`
-              }
-            >
-              <n.icon size={18} />
-              <span>{n.label}</span>
-              {n.future && (
-                <span className="future-dot" title="Belum tersedia" />
-              )}
-              {n.path === "/approvals" &&
-                data &&
-                data.versions.filter(needsApproval).length > 0 && (
-                  <small className="nav-count">
-                    {data.versions.filter(needsApproval).length}
-                  </small>
-                )}
-            </NavLink>
+          {[...new Set(navigation.map((item) => item.group))].map((group) => (
+            <div className="nav-group" key={group}>
+              <div className="nav-caption">{group}</div>
+              {navigation
+                .filter((item) => item.group === group)
+                .map((n) => (
+                  <NavLink
+                    key={n.path}
+                    to={n.path}
+                    end={n.path === "/"}
+                    title={n.label}
+                    className={({ isActive }) =>
+                      `nav-item ${isActive ? "active" : ""}`
+                    }
+                  >
+                    <n.icon size={18} />
+                    <span>{n.label}</span>
+                    {n.future && (
+                      <span className="future-dot" title="Belum tersedia" />
+                    )}
+                    {n.path === "/approvals" &&
+                      summary.data &&
+                      !denied &&
+                      summary.data.metrics.review_candidates.value! > 0 && (
+                        <small className="nav-count">
+                          {summary.data.metrics.review_candidates.value}
+                        </small>
+                      )}
+                  </NavLink>
+                ))}
+            </div>
           ))}
         </nav>
         <div className="sidebar-bottom">
@@ -364,7 +569,10 @@ export function App() {
             >
               <Menu size={19} />
             </Button>
-            <span className="breadcrumb-workspace">Ruang kerja</span>
+            <span className="breadcrumb-workspace">
+              {w?.projects.find((item) => item.id === project)?.name ||
+                "Ruang kerja"}
+            </span>
             <ChevronRight size={14} />
             <span>{currentNav?.label || "Halaman"}</span>
             {selectedBlueprint && (
@@ -419,7 +627,11 @@ export function App() {
               <RefreshCw
                 size={16}
                 className={
-                  workspace.isFetching || snapshot.isFetching ? "spin" : ""
+                  workspace.isFetching ||
+                  snapshot.isFetching ||
+                  summary.isFetching
+                    ? "spin"
+                    : ""
                 }
               />
             </Button>
@@ -440,88 +652,122 @@ export function App() {
           </div>
         </header>
         <main id="main" className="main-content" tabIndex={-1}>
-          {workspace.isPending ||
-          (!snapshot.error && !data && snapshot.isFetching) ? (
-            <Busy />
-          ) : workspace.error || snapshot.error ? (
-            <div className="connection-error">
-              <Terminal size={30} />
-              <h1>
-                {accessDenied
-                  ? "Akses proyek dibatasi"
-                  : "Ruang kerja belum terhubung"}
-              </h1>
-              <Notice tone="error">
-                {workspace.error?.message || snapshot.error?.message}
-              </Notice>
-              <p>
-                {accessDenied
-                  ? "Core belum mengizinkan sesi ini membaca proyek. Periksa keanggotaan dan peran di server."
-                  : "Data dan aksi Studio membutuhkan API yang aktif dan sesi yang valid."}
-              </p>
-              {workspace.error instanceof ApiError &&
-                workspace.error.loginUrl && (
-                  <a href={workspace.error.loginUrl}>
-                    Masuk melalui penyedia identitas
-                  </a>
+          <Suspense fallback={<Busy />}>
+            {displayError ? (
+              <div className="connection-error">
+                <Terminal size={30} />
+                <h1>
+                  {accessDenied
+                    ? "Akses proyek dibatasi"
+                    : "Ruang kerja belum terhubung"}
+                </h1>
+                <Notice tone="error">
+                  {authError?.message || readError?.message}
+                </Notice>
+                <p>
+                  {accessDenied
+                    ? "Core belum mengizinkan sesi ini membaca proyek. Periksa keanggotaan dan peran di server."
+                    : "Data dan aksi Studio membutuhkan API yang aktif dan sesi yang valid."}
+                </p>
+                {[authError, readError].find(
+                  (error) => error instanceof ApiError && error.loginUrl,
+                ) instanceof ApiError && (
+                  <a href="/auth/login">Masuk melalui penyedia identitas</a>
                 )}
-              <Button onClick={refresh}>
-                <RefreshCw size={15} />
-                Coba sambungkan kembali
-              </Button>
-            </div>
-          ) : data && w ? (
-            <Fragment key={project}>
-              {mutation.error && !newBlueprint && (
-                <div className="global-error">
-                  <Notice tone="error">{mutation.error.message}</Notice>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    aria-label="Tutup pesan kesalahan"
-                    onClick={() => mutation.reset()}
-                  >
-                    <X size={16} />
-                  </Button>
-                </div>
-              )}
-              {location.pathname === "/" ? (
-                <Overview {...shared} />
-              ) : location.pathname === "/factory" ? (
-                <Factory {...shared} />
-              ) : selectedBlueprint ? (
-                <AgentDetail {...shared} blueprint={selectedBlueprint} />
-              ) : location.pathname === "/runs" ? (
-                <Runs {...shared} />
-              ) : location.pathname === "/bench" ? (
-                <BenchPage {...shared} />
-              ) : location.pathname === "/approvals" ? (
-                <Approvals {...shared} />
-              ) : location.pathname === "/governance" ? (
-                <Governance {...shared} />
-              ) : location.pathname === "/settings" ? (
-                <SettingsPage
-                  workspace={w}
-                  data={data}
-                  theme={theme.theme}
-                  setTheme={theme.setTheme}
-                  refresh={refresh}
-                />
-              ) : location.pathname === "/brief" ||
-                location.pathname === "/relay" ? (
-                <Unavailable
-                  module={location.pathname === "/brief" ? "Brief" : "Relay"}
-                />
-              ) : (
-                <Empty
-                  title="Halaman tidak ditemukan"
-                  description="Halaman atau blueprint ini tidak tersedia di proyek yang dipilih."
-                  action="Kembali ke Ringkasan"
-                  onAction={() => navigate("/")}
-                />
-              )}
-            </Fragment>
-          ) : null}
+                <Button onClick={refresh}>
+                  <RefreshCw size={15} />
+                  Coba sambungkan kembali
+                </Button>
+              </div>
+            ) : workspace.isPending ||
+              (!!project && !summary.data && !summary.error) ||
+              (requiresSnapshot && !data && !snapshot.error) ? (
+              <Busy />
+            ) : w && !project ? (
+              <Empty
+                title="Belum ada proyek yang diizinkan"
+                description="Core belum menyediakan proyek untuk sesi ini."
+              />
+            ) : w && summary.data ? (
+              <Fragment
+                key={`${organization}:${project}:${location.pathname.startsWith("/projects") ? location.pathname : "workspace"}`}
+              >
+                {readError && (
+                  <div className="workspace-stale">
+                    <Notice tone="warning">
+                      Data terakhir · belum diperbarui: {readError.message}
+                    </Notice>
+                  </div>
+                )}
+                {availability.error && !authError && (
+                  <Notice tone="warning">
+                    Status runtime/model belum dapat diperbarui.{" "}
+                    {availability.error.message}
+                  </Notice>
+                )}
+                {mutation.error && !newBlueprint && (
+                  <div className="global-error">
+                    <Notice tone="error">{mutation.error.message}</Notice>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      aria-label="Tutup pesan kesalahan"
+                      onClick={() => mutation.reset()}
+                    >
+                      <X size={16} />
+                    </Button>
+                  </div>
+                )}
+                {location.pathname === "/" ? (
+                  <Overview
+                    summary={summary.data}
+                    workspace={w}
+                    project={project}
+                    openBlueprint={shared.openBlueprint}
+                  />
+                ) : location.pathname === "/projects" ||
+                  location.pathname.startsWith("/projects/") ? (
+                  <Projects
+                    organization={organization}
+                    project={project}
+                    switchProject={switchProject}
+                  />
+                ) : location.pathname === "/factory" ? (
+                  <Factory {...shared} />
+                ) : selectedBlueprint ? (
+                  <AgentDetail {...shared} blueprint={selectedBlueprint} />
+                ) : location.pathname === "/runs" ||
+                  location.pathname.startsWith("/runs/") ? (
+                  <Runs {...shared} />
+                ) : location.pathname === "/bench" ? (
+                  <BenchPage {...shared} />
+                ) : location.pathname === "/approvals" ? (
+                  <Approvals {...shared} />
+                ) : location.pathname === "/governance" ? (
+                  <Governance {...shared} />
+                ) : location.pathname === "/settings" ? (
+                  <SettingsPage
+                    workspace={w}
+                    data={data!}
+                    theme={theme.theme}
+                    setTheme={theme.setTheme}
+                    refresh={refresh}
+                  />
+                ) : currentNav &&
+                  (currentNav.future ||
+                    location.pathname.startsWith(`${currentNav.path}/`)) ? (
+                  <Unavailable module={currentNav.label} />
+                ) : (
+                  <Empty
+                    title="Halaman tidak ditemukan"
+                    description="Halaman atau blueprint ini tidak tersedia di proyek yang dipilih."
+                    action="Kembali ke Ringkasan"
+                    onAction={() => navigate("/")}
+                  />
+                )}
+              </Fragment>
+            ) : null}
+          </Suspense>
         </main>
         <footer className="app-footer">
           <span>

@@ -364,7 +364,7 @@ test("UAT model unavailable memblokir tombol Bench dengan pesan Indonesia", asyn
   page,
 }) => {
   const { bp, version } = await createUatBench(page);
-  await page.route("**/api/workspace", async (route) => {
+  await page.route("**/api/workspace/status", async (route) => {
     const response = await route.fetch();
     const data = await response.json();
     data.models.find(
@@ -610,12 +610,12 @@ test("penolakan mutasi, koneksi terputus, dan pemulihan", async ({ page }) => {
     "Akses ditolak oleh Core.",
   );
   await page.getByRole("button", { name: "Tutup dialog" }).click();
-  await page.route("**/api/workspace", (route) => route.abort());
+  await page.route("**/api/workspace/context", (route) => route.abort());
   await page.reload();
   await expect(
     page.getByRole("heading", { name: "Ruang kerja belum terhubung" }),
   ).toBeVisible();
-  await page.unroute("**/api/workspace");
+  await page.unroute("**/api/workspace/context");
   await page.getByRole("button", { name: "Coba sambungkan kembali" }).click();
   await expect(
     page.getByRole("heading", { name: "Agent Factory", exact: true }),
@@ -686,7 +686,7 @@ test("kegagalan sesi lokal dan penolakan izin baca memiliki pesan yang tepat", a
   await expect(
     page.getByRole("heading", { name: "Ruang kerja agent Anda." }),
   ).toBeVisible();
-  await page.route("**/api/projects/*/snapshot", (route) =>
+  await page.route("**/api/projects/*/summary", (route) =>
     route.fulfill({
       status: 403,
       contentType: "application/json",
@@ -964,7 +964,7 @@ test("Ringkasan project aktif memakai snapshot nyata; runtime unknown bukan succ
     0,
   );
   // Display-only negative runtime state; no governance operation uses this projection.
-  await page.route("**/api/workspace", async (route) => {
+  await page.route("**/api/workspace/status", async (route) => {
     const response = await route.fetch();
     const data = await response.json();
     data.runtime.ready = false;
@@ -1120,7 +1120,7 @@ test("9Router: gateway terputus memblokir Bench meskipun runtime siap", async ({
   page,
 }) => {
   const fixture = await createUatBench(page);
-  await page.route("**/api/workspace", async (route) => {
+  await page.route("**/api/workspace/status", async (route) => {
     const response = await route.fetch();
     const data = await response.json();
     data.gateway.connected = false;

@@ -1,4 +1,45 @@
 import type { Shared, Version } from "../lib/types";
+import type { WorkspaceSummary } from "../lib/workspace-types";
+
+export function summaryFixture(): WorkspaceSummary {
+  return {
+    organization_id: "org",
+    project_id: "project-b",
+    refreshed_at: "2026-10-09T00:00:00Z",
+    metrics: Object.fromEntries(
+      [
+        "blueprints",
+        "runs",
+        "audits",
+        "assigned",
+        "published",
+        "review_candidates",
+      ].map((key) => [
+        key,
+        {
+          value: 0,
+          definition: `Scoped ${key}`,
+          source: "Core",
+          verification: "recorded_inventory" as const,
+        },
+      ]),
+    ),
+    permissions: { "blueprint:create": true, "run:create": true },
+    attention: [],
+    latest_runs: [],
+    latest_audits: [],
+    review_candidates: [],
+    budget: null,
+    usage: {
+      availability: "unavailable",
+      tokens: null,
+      cost_usd: null,
+      cost_source: "unavailable",
+      entitlement: "unknown",
+      source: "Core",
+    },
+  };
+}
 
 export const versionA: Version = {
   id: "version-a",

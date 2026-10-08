@@ -6,9 +6,13 @@ import { resolve } from "node:path";
 
 // One actual API/Core server and fresh authority/database per test. No reset API
 // exists in the product, and test state cannot leak into the next browser case.
-export const test = base.extend<{ studioServer: void }>({
+export const test = base.extend<{
+  studioServer: void;
+  workspaceDataset: string;
+}>({
+  workspaceDataset: ["", { option: true }],
   studioServer: [
-    async ({}, use, testInfo) => {
+    async ({ workspaceDataset }, use, testInfo) => {
       const env: NodeJS.ProcessEnv = {};
       for (const name of [
         "PATH",
@@ -22,6 +26,7 @@ export const test = base.extend<{ studioServer: void }>({
       ])
         if (process.env[name]) env[name] = process.env[name];
       const log = createWriteStream(testInfo.outputPath("server.log"));
+      if (workspaceDataset) env.ARYN_TEST_WORKSPACE_DATASET = workspaceDataset;
       const child = spawn(
         process.env.ARYN_TEST_PYTHON || "python",
         ["-m", "tests.studio_server"],

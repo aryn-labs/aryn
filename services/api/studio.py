@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urlsplit
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -37,6 +37,7 @@ from database.schema import (
     AuditEventModel,
     BenchEvaluationModel,
     OrganizationModel,
+    ProjectModel,
     RunStateModel,
 )
 from modules.agent_factory.service import AgentFactoryService, ForbiddenToolError
@@ -61,6 +62,9 @@ from packages.contracts.agent import AgentVersion, VersionIntegrityError, Rollba
 from packages.contracts.core import AuditStatus
 from packages.contracts.runtime import (ModelUnavailableError, GatewayUnavailableError, ModelIdentityError, RuntimeGatewayError)
 from packages.contracts.model import ModelProviderType, ModelSpec
+from packages.contracts.workspace import DivisionInput, DivisionUpdate, ResourceItem, ResourcePage, WorkspaceSummary
+from modules.core.workspace import WorkspaceService
+from services.api.workspace_reads import WorkspaceReads
 from packages.model_adapters import ModelRouter, ModelRoutingError
 from packages.runtime_adapters import HermesAdapterError, HermesRuntimeAdapter, RuntimeAuthenticationError
 from services.api.authentication import (
@@ -265,6 +269,8 @@ def create_app(
     coordinator = RunCoordinator(
         adapter, permission_engine=permissions, audit_logger=audit, db_manager=db, model_router=model_router
     )
+    workspace_reads = WorkspaceReads(db, permissions, coordinator)
+    workspace_service = WorkspaceService(db, permissions)
     sessions = {}
     mutation_lock = asyncio.Lock()
     # Provision only dedicated development scope. Do not re-grant a revoked membership on restart.
@@ -318,6 +324,8 @@ def create_app(
     app.state.binder = binder
     app.state.coordinator = coordinator
     app.state.sessions = sessions
+    app.state.workspace_reads = workspace_reads
+    app.state.workspace_service = workspace_service
     hosted = None if local_development else HostedAuthentication(db, auth_config, identity_provider)
     app.state.authentication = hosted
     app.state.authentication_settings = auth_config
@@ -616,6 +624,25 @@ def create_app(
         )
         return response
 
+    @app.get("/api/workspace/context")
+    async def workspace_context():
+        principal = principal_context.get() if hosted else Principal(DEV_ACTOR, DEV_ORG)
+        if principal is None:
+            raise HTTPException(401)
+        ctx = binder.create_trusted_context(principal.actor_id, principal.organization_id, "", auth_session_id=principal.session_id)
+        with db.session() as s:
+            workspace_reads.authorize(s, ctx)
+            projects = workspace_reads.query(s, ctx, "projects").order_by(ProjectModel.name, ProjectModel.id).limit(100).all()
+            member = OrganizationRepository(s).get_member(principal.organization_id, principal.actor_id)
+            organization = s.get(OrganizationModel, principal.organization_id)
+            workspace_reads.authorize(s, ctx)
+            return {"organization": {"id": organization.id, "name": organization.name},
+                "projects": [{"id": p.id, "name": p.name} for p in projects],
+                "user": {"id": principal.actor_id, "name": "Pemilik development" if local_development else principal.actor_id, "role": member.role},
+                "mode": "isolated-test" if testing else "development" if local_development else "hosted",
+                "models": [], "runtime": {"connected": False, "ready": False, "message": "Ketersediaan runtime belum diperiksa"},
+                "gateway": {"name": "9Router", "connected": False, "discovery_valid": False, "runtime_binding_verified": False, "reason": "unmeasured"}}
+
     @app.get("/api/workspace")
     async def workspace():
         principal = principal_context.get() if hosted else Principal(DEV_ACTOR, DEV_ORG)
@@ -651,6 +678,8 @@ def create_app(
             role = member.role
             organization = s.get(OrganizationModel, principal.organization_id)
             organization_name = organization.name
+        runtime = await runtime_status()
+        context(accessible[0])
         return {
             "organization": {"id": principal.organization_id, "name": organization_name},
             "projects": projects,
@@ -659,26 +688,68 @@ def create_app(
             "gateway": {"name": "9Router", "connected": discovery.connected,
                         "discovery_valid": discovery.discovery_valid, "reason": discovery.reason,
                         "runtime_binding_verified": binding},
-            "runtime": await runtime_status(),
+            "runtime": runtime,
             "mode": "isolated-test" if testing else "development" if local_development else "hosted",
         }
+
+    @app.get("/api/workspace/status")
+    async def workspace_status():
+        ctx = context("")
+        discovery = await model_catalog()
+        binding = await adapter.gateway_binding()
+        runtime = await runtime_status()
+        context("")
+        return {"organization_id": ctx.organization_id, "models": discovery.models,
+            "gateway": {"name": "9Router", "connected": discovery.connected, "discovery_valid": discovery.discovery_valid,
+                "reason": discovery.reason, "runtime_binding_verified": binding}, "runtime": runtime}
+
+    @app.get("/api/projects/{project_id}/summary", response_model=WorkspaceSummary)
+    async def summary(project_id: str):
+        return workspace_reads.summary(context(project_id))
+
+    @app.get("/api/projects/{project_id}/resources/{resource}", response_model=ResourcePage[ResourceItem])
+    async def resource_list(project_id: str, resource: str, request: Request,
+        limit: int = Query(default=25, ge=1, le=100), cursor: str | None = Query(default=None, max_length=4096),
+        q: str = Query(default="", max_length=100), status: str = Query(default="", max_length=32),
+        sort: str = Query(default="newest", max_length=16), actor: str = Query(default="", max_length=64),
+        resource_id: str = Query(default="", max_length=128)):
+        allowed = {"limit", "cursor", "q", "status", "sort", "actor", "resource_id"}
+        if set(request.query_params) - allowed or any(len(request.query_params.getlist(key)) != 1 for key in request.query_params):
+            raise HTTPException(422, "Unsupported query parameters.")
+        return workspace_reads.page(context(project_id), resource, limit=limit, cursor=cursor, q=q,
+            status=status, sort=sort, actor=actor, resource_id=resource_id)
+
+    @app.get("/api/projects/{project_id}/resources/{resource}/{identifier}", response_model=ResourceItem)
+    async def resource_detail(project_id: str, resource: str, identifier: str):
+        return workspace_reads.detail(context(project_id), resource, identifier)
+
+    @app.post("/api/projects/{project_id}/divisions", status_code=201)
+    async def create_division(project_id: str, body: DivisionInput):
+        from modules.core.errors import sanitize
+        return sanitize(workspace_service.save_division(context(project_id, "division:manage"), body), credentials=protected_credentials)
+
+    @app.post("/api/projects/{project_id}/divisions/{division_id}")
+    async def update_division(project_id: str, division_id: str, body: DivisionUpdate):
+        from modules.core.errors import sanitize
+        return sanitize(workspace_service.save_division(context(project_id, "division:manage"), body, division_id), credentials=protected_credentials)
 
     @app.get("/api/projects/{project_id}/snapshot")
     async def snapshot(project_id: str):
         ctx = context(project_id)
         with db.session() as s:
             blueprints = [row(x) for x in AgentRepository(s).list_blueprints(ctx)]
-            versions = [
-                row(x)
-                for x in s.query(AgentVersionModel)
+            version_records = (s.query(AgentVersionModel)
                 .join(AgentBlueprintModel)
                 .filter(
                     AgentBlueprintModel.organization_id == ctx.organization_id,
                     AgentBlueprintModel.project_id == project_id,
                 )
                 .order_by(AgentVersionModel.created_at.desc())
-                .all()
-            ]
+                .all())
+            versions = [row(record) for record in version_records]
+            # Hold strong references for the duration of the verified projection.
+            # SQLAlchemy's weak identity map otherwise re-fetches every audit/version.
+            stored_records = {"versions": version_records}
             data = {
                 "evaluation_suites": [
                     {"suite_id": suite.suite_id, "evaluation_version": suite.evaluation_version,
@@ -709,7 +780,8 @@ def create_app(
                     if key == "evaluations"
                     else model.created_at
                 )
-                data[key] = [row(x) for x in query.order_by(order.desc()).all()]
+                stored_records[key] = query.order_by(order.desc(), model.id.desc()).all()
+                data[key] = [row(x) for x in stored_records[key]]
             from database.repositories.audit_repo import AuditRepository
             for audit_event in data["audit"]:
                 stored_event = s.get(AuditEventModel, audit_event["id"])

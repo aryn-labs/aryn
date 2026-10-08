@@ -62,17 +62,25 @@ async function session() {
       });
   return pendingSession;
 }
-export async function api<T>(path: string, body?: unknown): Promise<T> {
+export async function api<T>(
+  path: string,
+  body?: unknown,
+  signal?: AbortSignal,
+): Promise<T> {
+  signal?.throwIfAborted();
   if (!csrf) await session();
+  signal?.throwIfAborted();
   let response: Response;
   try {
     response = await fetch(`/api${path}`, {
+      signal,
       method: body === undefined ? "GET" : "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
   } catch {
+    signal?.throwIfAborted();
     throw new ApiError(
       "Koneksi ke API terputus. Pastikan layanan Studio masih berjalan.",
       0,

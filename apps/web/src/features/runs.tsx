@@ -1,8 +1,9 @@
 import { executionReady } from "../lib/studio-state";
 import { useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useLocation, useNavigate } from "react-router-dom";
 import { ChevronRight } from "lucide-react";
 import type { Shared } from "../lib/types";
+import { routeIdentifier } from "../lib/workspace-types";
 import { date, number } from "../lib/utils";
 import { Button } from "../components/ui/button";
 import { Busy, Empty, Notice, PageHeading, Status } from "../components/shared";
@@ -15,6 +16,8 @@ import type { PublishedAgentItem } from "../components/canvas/canvas-inspector";
 
 export function Runs({ data, workspace, pending, act, actStream }: Shared) {
   const [params, setParams] = useSearchParams();
+  const routeRun = useLocation().pathname.split("/")[2];
+  const navigate = useNavigate();
   const reducedMotion = useReducedMotion();
 
   // Published agents available for execution (assigned or unassigned)
@@ -103,9 +106,11 @@ export function Runs({ data, workspace, pending, act, actStream }: Shared) {
   const [roleInput, setRoleInput] = useState("Peneliti riset");
   const [creatingAssignment, setCreatingAssignment] = useState(false);
 
-  const isHistorical = params.has("hasil");
+  const runIdentifier =
+    params.get("hasil") || (routeRun ? routeIdentifier(routeRun) : null);
+  const isHistorical = !!runIdentifier;
   const selectedRun = isHistorical
-    ? data.runs.find((r) => r.id === params.get("hasil"))
+    ? data.runs.find((r) => r.id === runIdentifier)
     : undefined;
   const historical = historicalRunContext(data, selectedRun?.id);
 
@@ -281,7 +286,7 @@ export function Runs({ data, workspace, pending, act, actStream }: Shared) {
           {isHistorical ? "HISTORICAL RUN" : "NEW EXECUTION"}
         </span>
         {isHistorical && (
-          <Button variant="secondary" onClick={() => setParams({})}>
+          <Button variant="secondary" onClick={() => navigate("/runs")}>
             Eksekusi baru
           </Button>
         )}
@@ -308,7 +313,7 @@ export function Runs({ data, workspace, pending, act, actStream }: Shared) {
         <ArynCanvas
           key={
             isHistorical
-              ? `historical:${params.get("hasil")}`
+              ? `historical:${runIdentifier}`
               : `new:${activeVersionId}`
           }
           mode="execution"
@@ -320,12 +325,12 @@ export function Runs({ data, workspace, pending, act, actStream }: Shared) {
           auditEvents={data.audit.filter(
             (e) => e.resource_id === selectedRun?.id,
           )}
-          showInspectorByDefault={!params.has("hasil") || Boolean(selectedRun)}
+          showInspectorByDefault={!isHistorical || Boolean(selectedRun)}
           executionForm={isHistorical ? undefined : executionFormConfig}
         />
       </div>
 
-      {params.has("hasil") && !selectedRun && (
+      {isHistorical && !selectedRun && (
         <Panel title="Hasil eksekusi" className="mb-6">
           <Empty
             title="Run yang dipilih tidak tersedia"

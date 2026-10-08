@@ -1,11 +1,8 @@
 import { gatewayStatus } from "../lib/studio-state";
-import { Link } from "react-router-dom";
 import {
-  ArrowRight,
   Check,
   FileText,
   Moon,
-  Radio,
   RefreshCw,
   ShieldCheck,
   Sun,
@@ -121,42 +118,45 @@ export function SettingsPage({
 }
 
 export function Unavailable({ module }: { module: string }) {
+  const descriptions: Record<string, string> = {
+    Brief:
+      "Layanan evidence bundle, provenance, dan pemeriksaan kontradiksi belum tersedia.",
+    Relay:
+      "Layanan investigasi, proposal remediasi, dan verifikasi pemulihan belum tersedia.",
+    "Workflow Builder":
+      "Graph workflow executable dan TaskExecution belum tersedia.",
+    Automations:
+      "Scheduler Core dengan recurrence dan occurrence durable belum tersedia.",
+    Capabilities:
+      "Registry capability belum tersedia. Native tool grants tetap dibatasi Core.",
+    Outputs:
+      "Registry artifact dan deliverable umum belum tersedia. Hasil run existing dapat dibaca melalui Eksekusi.",
+    "Agent Operations":
+      "Permukaan Operations belum tersedia. Penugasan dan eksekusi existing tersedia melalui Eksekusi.",
+  };
   return (
     <>
       <PageHeading
         title={module}
-        description={
-          module === "Brief"
-            ? "Bukti, provenance, dan sintesis yang dapat diverifikasi."
-            : "Investigasi insiden dan remediasi dengan persetujuan."
-        }
+        description="Permukaan kerja ARYN dengan otoritas Core."
       />
       <Panel title="Belum tersedia di Studio">
         <div className="unavailable">
           <div className="empty-icon">
-            {module === "Brief" ? <FileText size={28} /> : <Radio size={28} />}
+            <FileText size={28} />
           </div>
           <span className="subtle-label">BELUM DIIMPLEMENTASIKAN</span>
-          <h2>
-            {module === "Brief"
-              ? "Fondasi bukti akan hadir di sini."
-              : "Investigasi akan memiliki ruang kerjanya sendiri."}
-          </h2>
+          <h2>Belum tersedia</h2>
           <p>
-            {module === "Brief"
-              ? "Layanan Brief belum diimplementasikan di repository. Belum ada evidence bundle, kutipan, atau pemeriksaan kontradiksi yang dapat dijalankan."
-              : "Layanan Relay belum diimplementasikan di repository. Investigasi, tindakan remediasi, dan pembuktian pemulihan belum dapat dijalankan."}
+            {descriptions[module] ||
+              "Detail atau editor baru untuk resource ini belum tersedia. Tampilan existing tetap dapat diakses melalui navigasi utama."}
           </p>
           <div className="unavailable-footer">
             <ShieldCheck size={16} />
             <span>
-              Fokus Studio saat ini: Factory → Bench → Persetujuan → Eksekusi.
+              Tidak ada aksi fitur yang dapat dijalankan pada halaman ini.
             </span>
           </div>
-          <Link to="/factory" className="text-link">
-            Buka Agent Factory
-            <ArrowRight size={15} />
-          </Link>
         </div>
       </Panel>
     </>

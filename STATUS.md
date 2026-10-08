@@ -8,6 +8,14 @@ cap, Managed AI monetary reservation dan distributed workers belum terbukti. Dis
 live PostgreSQL contracts kini diuji; deployment PostgreSQL VPS tetap memerlukan UAT.
 Historical PASS rows di bawah tetap evidence revision sebelumnya.
 
+Studio workspace melanjutkan `3a8ddb69`: grouped shell, scoped summary Overview,
+Projects/Divisions dengan Core authorization/CAS/audit, additive migration
+`016_workspace_structure`, bounded read APIs dan isolation cache. Evidence lokal,
+responsive/axe/performance, current-SHA CI dan sisa snapshot legacy dicatat pada
+[Studio redesign delivery](docs/studio-redesign-progress.md). Future Builder,
+Workflow, Brief/Relay dan Automation tetap desain untuk pekerjaan berikut;
+**hosted production readiness tetap BLOCKED**.
+
 CI/CD melanjutkan baseline `58bde394`: reproducible uv/npm locks, pinned read-only
 GitHub Actions, correctness Ruff, frontend formatting, Linux/Windows backend,
 actual native Hermes boundary, disposable PostgreSQL restricted-role integration,
