@@ -7,7 +7,6 @@ Complies with ARYN-ARCH-001 Section 04 and AGENTS.md rules 3, 4, 5, 6, 7.
 
 from __future__ import annotations
 
-import json
 import uuid
 from typing import Any, Callable, Dict, List, Optional
 
@@ -16,7 +15,7 @@ from database.repositories.agent_repo import AgentRepository
 from database.repositories.bench_repo import BenchRepository
 from database.repositories.exceptions import InvalidStateTransitionError
 from modules.core.audit.logger import AuditLogger
-from modules.core.approvals.engine import ApprovalEngine, ApprovalRequiredError
+from modules.core.approvals.engine import ApprovalEngine
 from modules.core.permissions.engine import PermissionDeniedError, PermissionEngine
 from modules.bench.quality_gate import BenchQualityGate, QualityGateFailedError
 from modules.bench.regression import audit_regression_denial
@@ -27,7 +26,6 @@ from packages.contracts.agent import (
     AgentBlueprint,
     AgentBudgetPolicy,
     AgentConstraints,
-    AgentDefinition,
     AgentEvaluationReference,
     AgentModelPolicy,
     AgentOutputContract,
@@ -35,7 +33,6 @@ from packages.contracts.agent import (
     AgentVersion,
     AgentVersionStatus,
     ForbiddenToolError,
-    VersionIntegrityError,
 )
 from packages.contracts.bench import BenchEvaluationResult, BenchScenario
 from packages.contracts.approval import ApprovalRecord
@@ -416,6 +413,8 @@ class AgentFactoryService:
                 raise InvalidStateTransitionError("Publication requires the approved state.")
 
             if m.status == "published":
+                from database.repositories.agent_activation_repo import AgentActivationRepository
+                AgentActivationRepository(session, self.db_manager.evidence_signer, self.permission_engine).known_good(context, m.id)
                 return AgentVersion.from_stored(m)
             from database.repositories.bench_regression_repo import BenchRegressionRepository
             regression_repo = BenchRegressionRepository(session, self.db_manager.evidence_signer,

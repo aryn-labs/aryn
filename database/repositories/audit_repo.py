@@ -7,12 +7,13 @@ from __future__ import annotations
 
 import datetime
 import json
-from typing import Any, Dict, List, Optional
-from sqlalchemy.orm import Session
+from typing import List
+from sqlalchemy.orm import Session, object_session
 from sqlalchemy.exc import IntegrityError
 
-from database.schema import AuditEventModel, utc_now
+from database.schema import AuditEventModel
 from packages.contracts.core import AuditEvent, SecurityContext
+from packages.contracts.timestamps import canonical_timestamp
 from database.repositories.exceptions import DuplicateEntityError, EntityNotFoundError, TenantIsolationError
 
 
@@ -30,16 +31,13 @@ class AuditRepository:
 
         payload_str = json.dumps(event.redacted_payload, sort_keys=True)
 
-        occurred_dt: datetime.datetime
-        if isinstance(event.occurred_at, str):
-            try:
-                occurred_dt = datetime.datetime.fromisoformat(event.occurred_at)
-            except Exception:
-                occurred_dt = utc_now()
-        elif isinstance(event.occurred_at, datetime.datetime):
-            occurred_dt = event.occurred_at
-        else:
-            occurred_dt = utc_now()
+        occurred_dt = datetime.datetime.fromisoformat(canonical_timestamp(event.occurred_at))
+        if event.schema_version != "1.0.0":
+            manager = self.session.info.get("db_manager")
+            if (event.schema_version != "2.0.0" or manager is None
+                    or not manager.evidence_signer.verify("audit_event", event.authenticated_payload(), event.attestation)
+                    or event.integrity_reference != event.calculate_integrity()):
+                raise ValueError("Authenticated audit envelope is invalid.")
 
         model = AuditEventModel(
             id=event.event_id,
@@ -57,6 +55,7 @@ class AuditRepository:
             status=event.status.value if hasattr(event.status, "value") else str(event.status),
             redacted_payload_json=payload_str,
             integrity_reference=event.integrity_reference or event.calculate_integrity(),
+            attestation=event.attestation,
         )
         self.session.add(model)
         try:
@@ -105,11 +104,21 @@ class AuditRepository:
         )
 
     @staticmethod
-    def verify_event_integrity(event_model: AuditEventModel) -> bool:
+    def verify_event_integrity(event_model: AuditEventModel, signer=None) -> bool:
         """Verifies that an audit event stored in DB has not been tampered with."""
         import hashlib
         try:
             payload = json.loads(event_model.redacted_payload_json)
+            if event_model.id != event_model.event_id:
+                return False
+            if event_model.attestation or event_model.schema_version != "1.0.0":
+                session = object_session(event_model)
+                manager = session.info.get("db_manager") if session else None
+                signer = signer or (manager.evidence_signer if manager else None)
+                event = AuditRepository.contract(event_model)
+                return bool(signer and event.schema_version == "2.0.0"
+                    and event.calculate_integrity() == event_model.integrity_reference
+                    and signer.verify("audit_event", event.authenticated_payload(), event_model.attestation))
         except Exception:
             return False
 
@@ -133,3 +142,16 @@ class AuditRepository:
         encoded = json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
         computed = hashlib.sha256(encoded).hexdigest()
         return computed == event_model.integrity_reference
+
+    @staticmethod
+    def contract(row):
+        return AuditEvent(event_id=row.event_id, event_type=row.event_type, schema_version=row.schema_version,
+            occurred_at=canonical_timestamp(row.occurred_at, stored=True), organization_id=row.organization_id,
+            project_id=row.project_id, actor_type=row.actor_type, actor_id=row.actor_id,
+            correlation_id=row.correlation_id, resource_id=row.resource_id, causation_id=row.causation_id,
+            status=row.status, redacted_payload=json.loads(row.redacted_payload_json),
+            integrity_reference=row.integrity_reference, attestation=row.attestation or "")
+
+    def verify_authenticated_event(self, row):
+        """Legacy checksums are readable compatibility data, never authority."""
+        return bool(row.attestation and self.verify_event_integrity(row))

@@ -15,6 +15,7 @@ from packages.contracts.agent import VersionIntegrityError
 from packages.contracts.core import ActorType
 from tests.conftest import bind_test_context
 from tests.integration.test_agent_registry_rollback import publications
+from tests.storage_attacks import corrupt_storage
 
 DENIED = (ValueError, InvalidStateTransitionError, TenantIsolationError, QualityGateFailedError,
     ApprovalRequiredError, PayloadHashMismatchError, PermissionDeniedError)
@@ -44,7 +45,7 @@ async def test_target_evidence_tampering_blocks_rollback(lifecycle, table, field
     ids = {"agent_versions": first.id, "bench_evaluations": target.evaluation_id, "approvals": target.approval_id,
         "bench_baselines": target.baseline_id, "bench_comparisons": target.regression_comparison_id,
         "agent_publications": target.publication_id}
-    with db.engine.begin() as connection:
+    with corrupt_storage(db.engine) as connection:
         connection.execute(text(f"UPDATE {table} SET {field}=:value WHERE id=:id"), {"id": ids[table], "value": "tampered"})
     with pytest.raises(DENIED):
         factory.rollback_assignment(ctx, assignment.id, intent)
@@ -150,7 +151,7 @@ async def test_activation_and_publication_history_are_append_only(lifecycle):
             with db.session(write=True) as session:
                 change(session.query(model).first())
                 session.flush()
-    with db.engine.begin() as connection:
+    with corrupt_storage(db.engine) as connection:
         connection.execute(text("UPDATE assignment_transitions SET details_json='{}' WHERE assignment_id=:id"), {"id": assignment.id})
     with pytest.raises(DENIED):
         factory.rollback_assignment(ctx, assignment.id, intent)

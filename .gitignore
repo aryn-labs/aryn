@@ -36,6 +36,7 @@ src-tauri/target/
 *.db
 *.db-wal
 *.db-shm
+*.aryn-history.sqlite3*
 # OS / tooling
 .DS_Store
 Thumbs.db

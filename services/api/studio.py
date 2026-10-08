@@ -623,6 +623,11 @@ def create_app(
                     else model.created_at
                 )
                 data[key] = [row(x) for x in query.order_by(order.desc()).all()]
+            from database.repositories.audit_repo import AuditRepository
+            for audit_event in data["audit"]:
+                stored_event = s.get(AuditEventModel, audit_event["id"])
+                audit_event["authenticated"] = AuditRepository(s).verify_authenticated_event(stored_event)
+                audit_event["integrity_limitation"] = None if audit_event["authenticated"] else "legacy_or_unverified_audit"
             # Stored labels are history, not governance authority. Expose verified
             # eligibility so Studio cannot present a fabricated PASS as actionable.
             for version in data["versions"]:
@@ -650,6 +655,8 @@ def create_app(
                         version["bench_eligible"] = bool(bench_repo.get_latest_passing_evaluation(ctx, stored.id))
                     if stored.status in {"approved", "published"} and version["bench_eligible"]:
                         factory.approval_engine.verify_approval(ctx, "agent_version", stored.id, stored.payload_hash, session=s)
+                        if stored.status == "published":
+                            AgentActivationRepository(s, db.evidence_signer, permissions).known_good(ctx, stored.id)
                         version["governance_valid"] = True
                 except VersionIntegrityError:
                     version["integrity_valid"] = False

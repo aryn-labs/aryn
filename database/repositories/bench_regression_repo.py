@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import datetime
-import json
 import uuid
 
 from database.connection import DatabaseManager
@@ -14,6 +13,7 @@ from modules.bench.quality_gate import BenchQualityGate, QualityGateFailedError
 from modules.bench.regression import block, compare_evaluations
 from modules.bench.scenarios import get_bench_suite
 from modules.core.audit.logger import AuditLogger
+from modules.core.history import advance_head, receipt_head, verify_head, HistoryUnverifiedError
 from modules.core.permissions.engine import PermissionEngine, PermissionDeniedError
 from packages.contracts.agent import AgentVersion
 from packages.contracts.bench import AcceptedBaseline, EvaluationIdentity, RegressionComparison, evidence_hash
@@ -98,6 +98,8 @@ class BenchRegressionRepository:
         if blueprint.bench_baseline_id is None:
             if newest:
                 raise QualityGateFailedError("Baseline history exists but current authority is missing.")
+            verify_head(self.session, "baseline", context, blueprint_id,
+                {"identity": None, "generation": 0, "hash": None})
             return None
         baseline = self.receipt(context, blueprint.bench_baseline_id, blueprint_id)
         if newest is None or newest.id != baseline.baseline_id:
@@ -113,6 +115,8 @@ class BenchRegressionRepository:
             cursor = prior
         if cursor.generation != 1 or cursor.previous_hash:
             raise QualityGateFailedError("Baseline history origin is invalid.")
+        verify_head(self.session, "baseline", context, blueprint_id,
+            receipt_head(baseline.baseline_id, baseline.generation, baseline.model_dump(mode="json")))
         return baseline
 
     @staticmethod
@@ -129,7 +133,7 @@ class BenchRegressionRepository:
         baseline_error = None
         try:
             baseline = self.current(context, version.blueprint_id, lock=persist)
-        except QualityGateFailedError as exc:
+        except (QualityGateFailedError, HistoryUnverifiedError) as exc:
             baseline, baseline_error = None, str(exc)
         suite = get_bench_suite(version.evaluation_reference.suite_id)
         candidate, validation_error = None, None
@@ -336,6 +340,10 @@ class BenchRegressionRepository:
             details_json=baseline.model_dump_json(), attestation=baseline.attestation))
         self.scope(context, row.blueprint_id).bench_baseline_id = baseline.baseline_id
         self.session.flush()
+        advance_head(self.session, "baseline", context, row.blueprint_id,
+            receipt_head(current.baseline_id, current.generation, current.model_dump(mode="json")) if current else
+                {"identity": None, "generation": 0, "hash": None},
+            receipt_head(baseline.baseline_id, baseline.generation, baseline.model_dump(mode="json")))
         payload = {"baseline_id": baseline.baseline_id, "evaluation_id": evaluation_id, "generation": baseline.generation,
             "previous_baseline_id": baseline.supersedes_id, "suite_id": baseline.suite_id,
             "payload_hash": version.payload_hash, "accepted_by": accepted_by, "acceptance": baseline.acceptance}

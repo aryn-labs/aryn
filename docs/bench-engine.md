@@ -86,7 +86,7 @@ Audit kelanjutan dimulai pada `eb3cc223e9b70fa21e9e77d8d468d2b730353c48` di `dev
 - Admin human dapat menerima **latest verified passing evaluation** melalui permission Core `bench:accept_baseline`. Exact version/evaluation/payload dan registry divalidasi server. Intent browser hanya evaluation ID, reason, expected current baseline ID dan explicit suite-transition intent. CAS yang stale ditolak. Failed/forged/tampered evaluation, unknown suite, wrong tenant/blueprint dan stale configuration tidak dapat diterima.
 - Bootstrap hanya berlaku saat belum ada accepted baseline **dan** belum ada published/deprecated history pada blueprint. Ini mengizinkan promotion pertama dari versi yang mempunyai passing verified evaluation; nomor semver/draft terdahulu tidak menjadi authority. Approval menandai comparison sebagai `bootstrap`. Tidak ada baseline otomatis dari label `passed`.
 - Publish yang melewati current regression gate dan exact-payload Core approval memajukan baseline secara atomik dengan publication dan audit. `accepted_by` berasal dari human approver Core; actor publikasi dicatat di audit. Publication pertama membuat generation 1; publication berikutnya menambah generation dan predecessor receipt tanpa overwrite. Republish idempotent tidak memajukan baseline lagi.
-- Database lama dengan published history tetapi belum memiliki baseline menghasilkan `baseline_required` untuk subsequent candidate. Admin harus secara eksplisit mengadopsi source published/deprecated yang evaluation serta **Core approval**-nya masih dapat diverifikasi. Candidate baru tidak dapat memakai bootstrap dalam keadaan ini.
+- Database lama tanpa independently committed baseline origin/head menghasilkan unverified history setelah `013_history_integrity`; source published/deprecated, signed evaluation dan approval lama tetap readable tetapi tidak membuktikan freshness. Tidak ada automatic adoption atau bootstrap dari absence records. Gunakan lineage blueprint baru dengan Bench/human review saat ini bila history lama tidak dapat dibuktikan.
 - Replacement normal memerlukan comparison tanpa critical regression. Perubahan suite/configuration/evidence format memerlukan intent `suite_transition=true`, reason, active admin authority, CAS dan passing evaluation pada konfigurasi authoritative baru. Exception ini hanya berlaku untuk incompatibility suite/evidence yang nyata; tidak bisa digunakan untuk mengesampingkan critical failure pada konfigurasi yang sama. Acceptance merupakan tindakan governance eksplisit, bukan silent reset.
 
 ### Contracts, comparability dan criticality
@@ -120,6 +120,16 @@ Studio menyediakan `POST /api/projects/{project_id}/blueprints/{blueprint_id}/ba
 Bench UI menampilkan Accepted Baseline vs Candidate, versi/evaluation/suite, score delta, scenario/grader regressions, critical count, latency/token/cost/resources availability dan block/eligible/bootstrap state. Acceptance dan suite transition memerlukan intent admin eksplisit. Tabel comparison dapat difokuskan keyboard agar horizontal scrolling tetap accessible di mobile. Client tidak menentukan baseline truth atau regression severity.
 
 Format-1 evidence valid tetap readable dan dapat menjadi **limited baseline**: scenario states serta latency/tokens saja, tanpa fabricated grader/action/cost/resource evidence. Limitations disimpan dalam receipt/comparison. Format 1 dan 2 tidak comparable; upgrade ke generic graders membutuhkan governed suite/evidence transition. Historical Core approval HMAC tanpa comparison field tetap dapat diverifikasi untuk published sources; unpublished promotion memerlukan approval baru yang mengikat current comparison.
+
+Sesudah `013_history_integrity`, eligibility tersebut juga memerlukan independently committed
+baseline origin/head. HMAC receipt/chain tidak cukup bila suffix dapat dihapus. Current baseline
+memverifikasi ID, generation dan hash signed receipt terhadap Core durable commitment di luar
+application DB. Delete newest baseline + restore older pointer, delete all history + bootstrap,
+stale signed receipt replay, missing/corrupt commitment dan pending intent memblokir acceptance,
+approval dan promotion. SQLite UPDATE/DELETE/REPLACE guards serta PostgreSQL mutation/TRUNCATE
+guards memperkuat persistence. Signed evaluation dan immutable version payload tidak berubah.
+Lihat [authority boundary dan compatibility](governance-history-integrity.md); live PostgreSQL
+privileges/concurrency belum diverifikasi dan fondasi hosted belum boleh dibekukan.
 
 Migration `011_bench_baseline_regression` mengikuti head `010_agent_definition_contracts`, menambah dua tables, scoped generation uniqueness/indexes, blueprint current pointer dan approval comparison reference. Upgrade tidak mengubah evaluation historis; downgrade menghapus domain baseline/comparison baru dan kolom referencenya. Tests mencakup SQLite upgrade/downgrade/upgrade, retained historical evaluation, foreign-key integrity, metadata parity, dan PostgreSQL offline SQL compilation. PostgreSQL runtime concurrency belum dijalankan terhadap live cloud database.
 

@@ -1,5 +1,13 @@
 # ARYN — Laporan Validasi Sistem dan Governance
 
+**Pembaruan 8 Oktober 2026:** audit baseline `4d5454ca607e833b01920aea69e864e40ad66b8c`
+menemukan history replay/truncation, publication legacy downgrade dan audit authority gaps.
+Remediation pada `development` memakai independent durable head commitment, fail-closed receipt
+authority, migration `013_history_integrity`, append-only database guards, dan authenticated
+canonical audit. Klaim eligibility legacy/chain-only freshness dalam laporan sebelumnya
+digantikan oleh [laporan integrity dan trust boundary](governance-history-integrity.md).
+Local regression proof tidak menjadi klaim compromised host/superuser atau hosted production PASS.
+
 Tanggal verifikasi: 5 Oktober 2026. Repository: `D:\ARYN\aryn-labs\aryn`. Branch awal dan akhir: `development`. HEAD awal benar-benar diperiksa dan cocok dengan baseline: `c0f46a189c63e5ae8a0fd28a7e883b72cd041972`. Working tree awal bersih. Commit implementasi terakhir: `8ba51ff`. Seluruh commit dibuat lokal; tidak ada push atau perubahan/merge ke `main`.
 
 Batch ini memperkuat implementasi yang sudah ada. Batas Web → ARYN API → Core → Hermes Runtime Adapter → Hermes tetap berlaku. Desain, navigasi, warna, font, dan aset Studio dipertahankan. Perubahan UI hanya memakai komponen yang ada untuk kelayakan, kegagalan, model aktual, dan status yang benar. Brief, Relay, login produksi, integrasi Cloud, Ollama, dan konfigurasi keamanan Hermes tidak dikembangkan atau diubah.

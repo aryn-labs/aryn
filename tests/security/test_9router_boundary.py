@@ -36,6 +36,7 @@ def test_production_environment_reads_are_explicit_and_never_provider_credential
         "API_SERVER_KEY",
         "ARYN_IDENTITY_SECRET",
         "ARYN_EVIDENCE_SECRET",
+        "ARYN_HISTORY_COMMITMENT_PATH",
     }
     for directory in ("services", "packages", "modules"):
         for path in (root / directory).rglob("*.py"):

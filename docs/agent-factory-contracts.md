@@ -351,23 +351,30 @@ Migration `012_assignment_activation` melanjutkan `011_bench_baseline_regression
 - nullable captured provenance columns/indexes pada `run_states`.
 
 Migration tidak mengubah AgentVersion, Bench, baseline, comparison atau approval payload/history,
-dan tidak mengarang signed receipts. Legacy assignment tanpa history dapat menerima present-time
-**adoption** origin dalam rollback transaction; receipt secara eksplisit mencatat bahwa prior
-activations unknown. Target rollback tetap wajib known-good; current bad version tidak harus lolos
-Bench lagi untuk ditinggalkan. Tracked assignment yang kehilangan history tidak dianggap legacy.
+dan tidak mengarang signed receipts. Remediation `013_history_integrity` menolak adoption terhadap
+history tanpa independently committed head. Menghapus seluruh history lalu mengubah origin SQL ke
+legacy tidak memberi authority. Historical assignment tetap readable, tetapi activation/rollback/run
+memerlukan freshness yang dapat dibuktikan.
 
-Publication sebelum migration hanya eligible jika signed publication baseline, exact Core approval,
-historical comparison jika tersedia, verified evaluation dan existing matching publication audit
-masih dapat dibuktikan. Registry menandai `historical_publication_audit` dan
-`no_signed_publication_receipt`; audit lama memakai integrity SHA-256 existing, bukan receipt HMAC
-baru yang difabricate. Explicit baseline tanpa proof publication, legacy canonical format 2 atau
-insufficient historical authority tetap readable tetapi ineligible. Existing Bench evidence format
-1 tidak diberi grader evidence baru; validator existing tetap source of truth.
+Publication tanpa receipt dan independent commitment tidak eligible. Fallback audit publication
+legacy dihapus: metadata SQL dan weak audit tidak membuktikan pre-receipt cohort. Registry menandai
+`history_freshness_unverified` dan `historical_access_read_only`; tidak ada signature historis yang
+dibuat oleh migration. Publication baru kehilangan receipt selalu fail-closed. Signed evaluation
+format 1 yang valid tetap dapat dibaca dan direvalidate dengan limitations existing, tanpa invented
+grader evidence; hal itu tidak membuktikan freshness publication atau accepted history.
 
 SQLite memakai existing `BEGIN IMMEDIATE`; PostgreSQL memakai row locks. Unique constraints
 melindungi generation/idempotency. Downgrade 012 menghapus operational receipts/provenance baru,
-tetapi mempertahankan artifact/governance lama; backup database beserta evidence key sebelum
+tetapi mempertahankan artifact/governance lama; backup database, evidence key, independent store/anchor sebelum
 downgrade. Upgrade ulang tidak merekonstruksi histori yang telah dihapus.
+
+Migration `013_history_integrity` menambahkan authenticated canonical audit serta SQL append-only
+guards. Head baseline/aktivasi/publication diperiksa terhadap durable store di luar application DB;
+publication deprecation tidak bisa direplay menjadi published. Prepare intent durable mendahului
+DB commit, dan failure ambigu meninggalkan pending/unverified. Tidak ada distributed commit atau
+compromised-host/superuser claim. SQLite Local mendukung database-only corruption dengan protected
+sidecar/key; PostgreSQL memerlukan restricted non-owner writer dan protected external path. Detail
+trust boundary, compatibility, recovery dan evidence: [Governance history integrity](governance-history-integrity.md).
 
 ### API dan UI
 

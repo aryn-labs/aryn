@@ -14,6 +14,7 @@ from packages.contracts.bench import ForbiddenActionGraderSpec
 from tests.bench_fixtures import generic_suite, generic_scenario, create_generic_version, StructuredRuntime
 from tests.conftest import bind_test_context
 from tests.integration.test_bench_baseline_regression import accepted, candidate
+from tests.storage_attacks import corrupt_storage
 
 
 @pytest.mark.asyncio
@@ -92,6 +93,7 @@ async def test_governance_evidence_tampering_blocks_promotion(lifecycle, monkeyp
     result = await factory.evaluate_version_with_bench(ctx, next_version.id)
     with db.session() as s:
         comparison = BenchRegressionRepository(s, db.evidence_signer).compare(ctx, next_version.id)
+    with corrupt_storage(db.engine) as s:
         if target == "baseline":
             s.execute(text("UPDATE bench_baselines SET accepted_by='forged' WHERE id=:id"), {"id": baseline.baseline_id})
         elif target == "baseline_evaluation":

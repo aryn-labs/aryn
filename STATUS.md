@@ -1,7 +1,16 @@
 # Delivery status
 
+**Governance foundation freeze: BLOCKED untuk hosted deployment.** Remediation history/evidence
+di `development` melanjutkan baseline `4d5454ca607e833b01920aea69e864e40ad66b8c`.
+Proof lama pada tabel adalah hasil pada revision sebelumnya, bukan bukti freshness lengkap.
+Authority boundary, perubahan compatibility dan hasil terbaru dicatat dalam
+[Governance history integrity](docs/governance-history-integrity.md). PostgreSQL live privileges,
+locking, deployment ACLs dan disaster recovery belum terbukti; tidak ada klaim compromised host
+atau database superuser resistance.
+
 | Workstream | Status | Proof | Blocker |
 |---|---|---|---|
+| Governance history integrity & evidence authority | LOCAL VERIFIED; HOSTED FREEZE BLOCKED | `docs/governance-history-integrity.md`: 8 October 2026; independent durable head/intent, SQLite file-access authorizer and UPDATE/DELETE/REPLACE guards, PostgreSQL restricted-role checks and mutation/TRUNCATE guards, fail-closed publication authority, authenticated canonical audit. Dedicated **47 passed**; full backend **621 passed, 5 skipped**; registry final check **4 passed**; frontend **67 passed**, build PASS; Playwright **16 passed**, 0 flaky. Migration upgrade/downgrade, offline PostgreSQL SQL and existing DB clone preserve evidence without backfill. | Live PostgreSQL/ACLs/distributed authority and pending recovery remain unverified; no compromised host/superuser or full audit-stream freshness claim |
 | GitHub security | NOT VERIFIED | — | Organization app access not yet available |
 | Hermes adapter PoC | PASS | `tests/integration/`, `tests/security/` (Loopback 127.0.0.1, Bearer auth, tools confinement verified) | — |
 | Core governance & persistence | PASS | `database/`, `modules/core/`, `tests/unit/test_persistence_repos.py`, `tests/security/test_core_persistence_security.py` (38/38 tests pass: tenant isolation, RBAC, state machine, idempotency, restart recovery, budget preflight, and DB audit scrubbing) | — |

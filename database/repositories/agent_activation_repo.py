@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import datetime
-import json
 import uuid
 
 from database.connection import DatabaseManager
@@ -12,16 +11,17 @@ from database.repositories.bench_repo import BenchRepository
 from database.repositories.bench_regression_repo import BenchRegressionRepository, evaluation_digest, timestamp
 from database.repositories.exceptions import InvalidStateTransitionError, TenantIsolationError, RepositoryError
 from database.schema import (AgentAssignmentModel, AgentPublicationModel, AgentVersionModel,
-    AssignmentTransitionModel, AuditEventModel, BenchBaselineModel, MembershipModel)
+    AssignmentTransitionModel, BenchBaselineModel, MembershipModel)
 from modules.bench.quality_gate import QualityGateFailedError
 from modules.core.approvals.engine import ApprovalEngine, ApprovalRequiredError, PayloadHashMismatchError
 from modules.core.audit.logger import AuditLogger
+from modules.core.history import advance_head, receipt_head, verify_head, HistoryUnverifiedError
 from modules.core.permissions.engine import PermissionDeniedError, PermissionEngine
 from modules.core.workflows.coordinator import IdempotencyConflictError
 from packages.contracts.agent import (AgentVersion, AssignmentTransition, PublicationEvidence, RollbackIntent,
     VersionIntegrityError, VersionRegistryEntry)
 from packages.contracts.bench import evidence_hash
-from packages.contracts.core import ActorType, AuditEvent, AuditStatus
+from packages.contracts.core import ActorType, AuditStatus
 
 
 class AgentActivationRepository:
@@ -93,11 +93,37 @@ class AgentActivationRepository:
             project_id=context.project_id, blueprint_id=contract.blueprint_id, version_id=version_id,
             details_json=contract.model_dump_json(), attestation=contract.attestation))
         self.session.flush()
+        advance_head(self.session, "publication", context, version_id, None,
+            receipt_head(contract.publication_id, 1, contract.model_dump(mode="json")))
+        advance_head(self.session, "publication_state", context, version_id, None,
+            {"status": "published", "publication_id": contract.publication_id, "generation": 1})
         self.session.info.pop("publishing_version_id", None)
         return contract
 
+    def verify_publication_commitment(self, context, version_id, reference):
+        row = self.session.query(AgentPublicationModel).filter_by(version_id=version_id).first()
+        if row is None:
+            raise HistoryUnverifiedError("Committed publication receipt is missing.")
+        publication = PublicationEvidence.model_validate_json(row.details_json)
+        version = self.session.get(AgentVersionModel, version_id)
+        if ((row.organization_id, row.project_id, row.blueprint_id, row.version_id, row.id)
+                != (context.organization_id, context.project_id, publication.blueprint_id, version_id, publication.publication_id)
+                or publication.model_dump(mode="json") != reference["publication"]
+                or publication.attestation != row.attestation
+                or not self.signer.verify("agent_publication", publication.model_dump(mode="json", exclude={"attestation"}), row.attestation)
+                or version is None or not version.published_at or timestamp(version.published_at) != publication.published_at
+                or version.published_by != publication.published_by):
+            raise VersionIntegrityError("Activation publication identity or metadata differs.")
+        verify_head(self.session, "publication", context, version_id,
+            receipt_head(publication.publication_id, 1, publication.model_dump(mode="json")))
+        verify_head(self.session, "publication_state", context, version_id,
+            {"status": version.status, "publication_id": publication.publication_id,
+             "generation": 2 if version.status == "deprecated" else 1})
+
     def known_good(self, context, version_id):
         receipt = self.session.query(AgentPublicationModel).filter_by(version_id=version_id).first()
+        if receipt is None:
+            raise HistoryUnverifiedError("Publication receipt missing; historical provenance is read-only and cannot authorize governance.")
         sources = self.publication_sources(context, version_id,
             PublicationEvidence.model_validate_json(receipt.details_json).baseline_id if receipt else None)
         if receipt:
@@ -109,27 +135,12 @@ class AgentActivationRepository:
                     or stored.attestation != receipt.attestation or not self.signer.verify("agent_publication",
                         expected.model_dump(mode="json", exclude={"attestation"}), receipt.attestation)):
                 raise VersionIntegrityError("Publication receipt does not match verified historical authority.")
+            self.regression.current(context, stored.blueprint_id)
+            verify_head(self.session, "publication", context, version_id,
+                receipt_head(stored.publication_id, 1, stored.model_dump(mode="json")))
+            verify_head(self.session, "publication_state", context, version_id,
+                {"status": "published", "publication_id": stored.publication_id, "generation": 1})
             return {"publication": stored.model_dump(mode="json"), "limitations": []}
-        # Pre-migration publications remain derived from actual signed governance and
-        # their existing publication audit. No migration invents publication receipts.
-        row, _, approval, baseline, _ = sources
-        events = self.session.query(AuditEventModel).filter_by(organization_id=context.organization_id,
-            project_id=context.project_id, resource_id=version_id, event_type="factory.version.published").all()
-        for event in events:
-            payload = json.loads(event.redacted_payload_json)
-            contract = AuditEvent(event_id=event.event_id, event_type=event.event_type, schema_version=event.schema_version,
-                occurred_at=timestamp(event.occurred_at), organization_id=event.organization_id, project_id=event.project_id,
-                actor_type=event.actor_type, actor_id=event.actor_id, correlation_id=event.correlation_id,
-                resource_id=event.resource_id, causation_id=event.causation_id, status=event.status,
-                redacted_payload=payload, integrity_reference=event.integrity_reference)
-            if (contract.calculate_integrity() == event.integrity_reference and event.actor_type == "user"
-                    and event.actor_id == row.published_by and event.status == "completed"
-                    and payload.get("payload_hash") == row.payload_hash and payload.get("blueprint_id") == row.blueprint_id
-                    and payload.get("baseline_id") == baseline.baseline_id
-                    and baseline.acceptance == "publication" and baseline.approval_id == approval.approval_id):
-                return {"publication": self.publication_contract(context, sources, "legacy_" + event.id).model_dump(mode="json"),
-                    "legacy_audit_hash": event.integrity_reference, "limitations": ["historical_publication_audit", "no_signed_publication_receipt"]}
-        raise QualityGateFailedError("Historical publication cannot be proved; baseline acceptance alone is insufficient.")
 
     def registry_entry(self, context, row):
         entry = VersionRegistryEntry(version_id=row.id, blueprint_id=row.blueprint_id, version_number=row.version_number,
@@ -140,7 +151,7 @@ class AgentActivationRepository:
         try:
             current_id = self.agents.get_blueprint(context, row.blueprint_id).bench_baseline_id
             if current_id:
-                current = self.regression.receipt(context, current_id, row.blueprint_id)
+                current = self.regression.current(context, row.blueprint_id)
                 entry.current_baseline = current.evaluation.version_id == row.id
         except (ValueError, RepositoryError, QualityGateFailedError):
             pass
@@ -172,6 +183,8 @@ class AgentActivationRepository:
                 ApprovalRequiredError, PayloadHashMismatchError) as exc:
             # Read-only registry must represent corrupt/legacy history, never grant it.
             entry.reason = type(exc).__name__
+            if isinstance(exc, HistoryUnverifiedError):
+                entry.limitations = ["history_freshness_unverified", "historical_access_read_only"]
         return entry
 
     @staticmethod
@@ -209,24 +222,26 @@ class AgentActivationRepository:
         if (prior and (assignment.current_transition_id != prior.transition_id or assignment.version_id != prior.to_version_id)
                 or not prior and (assignment.current_transition_id or assignment.activation_origin != "legacy")):
             raise VersionIntegrityError("Assignment pointer differs from activation history.")
+        if prior is None:
+            raise HistoryUnverifiedError("Historical assignment has no independently committed activation history.")
+        verify_head(self.session, "assignment", context, assignment.id,
+            receipt_head(prior.transition_id, prior.generation, prior.model_dump(mode="json")))
+        self.verify_publication_commitment(context, prior.to_version_id, prior.publication_reference)
         return transitions
 
     def append(self, context, assignment, target, kind, reason, reference, prior=None, intent=None):
         self.agents.get_assignment(context, assignment.id)
-        if kind not in {"initial", "adoption", "rollback"}:
+        if kind not in {"initial", "rollback"}:
             raise InvalidStateTransitionError("Unsupported assignment transition.")
-        if kind == "adoption":
-            if assignment.activation_origin != "legacy" or prior or target != assignment.version_id:
-                raise InvalidStateTransitionError("Adoption is only an observed pre-existing assignment origin.")
-            self.permissions.enforce("agent:rollback", context, context.organization_id, context.project_id)
-        else:
-            self.permissions.enforce("agent:rollback" if kind == "rollback" else "agent:assign",
-                context, context.organization_id, context.project_id)
-            target_row = self.agents.get_version(context, target)
-            if target_row.blueprint_id != assignment.blueprint_id or self.known_good(context, target) != reference:
-                raise VersionIntegrityError("Activation requires exact verified target publication evidence.")
+        self.permissions.enforce("agent:rollback" if kind == "rollback" else "agent:assign",
+            context, context.organization_id, context.project_id)
+        target_row = self.agents.get_version(context, target)
+        if target_row.blueprint_id != assignment.blueprint_id or self.known_good(context, target) != reference:
+            raise VersionIntegrityError("Activation requires exact verified target publication evidence.")
         if kind == "initial" and (prior or assignment.current_transition_id or assignment.version_id != target):
             raise InvalidStateTransitionError("Initial activation cannot replace an existing assignment.")
+        if kind == "initial" and assignment.id not in self.session.info.get("new_assignment_ids", set()):
+            raise HistoryUnverifiedError("Initial history is only authorized for a newly created assignment.")
         if kind == "rollback":
             if intent is None or prior is None or prior.transition_id != assignment.current_transition_id:
                 raise InvalidStateTransitionError("Rollback requires reviewed activation and intent.")
@@ -256,6 +271,9 @@ class AgentActivationRepository:
         assignment._activation_authorized = True
         assignment.version_id, assignment.current_transition_id = target, value.transition_id
         self.session.flush()
+        advance_head(self.session, "assignment", context, assignment.id,
+            receipt_head(prior.transition_id, prior.generation, prior.model_dump(mode="json")) if prior else None,
+            receipt_head(value.transition_id, value.generation, value.model_dump(mode="json")))
         self.audit.record("factory.assignment.activated", context, assignment.id, AuditStatus.COMPLETED,
             {"transition_id": value.transition_id, "type": kind, "from_version_id": value.from_version_id,
                 "to_version_id": target, "publication_id": reference["publication"]["publication_id"], "reason": reason}, session=self.session)
@@ -300,12 +318,6 @@ class AgentActivationRepository:
         self.audit.record("factory.assignment.rollback_requested", context, assignment.id, AuditStatus.ALLOWED,
             {"target_version_id": target.id, "expected_current_version_id": intent.expected_current_version_id,
                 "reason": intent.reason}, session=self.session)
-        if not history:
-            # Explicit present-time adoption proves only the observed pointer, never
-            # invents earlier activations. Current may be bad; only target is known-good.
-            adoption_reference = {"publication": {"publication_id": "unverified_observed_version", "version_id": current.id},
-                "limitations": ["pre_existing_assignment_origin", "prior_activations_unknown"]}
-            history = [self.append(context, assignment, current.id, "adoption", "Observed pre-existing assignment before rollback.", adoption_reference)]
         value = self.append(context, assignment, target.id, "rollback", intent.reason, reference, prior=history[-1], intent=intent)
         self.audit.record("factory.assignment.rollback_committed", context, assignment.id, AuditStatus.COMPLETED,
             {"transition_id": value.transition_id, "from_version_id": value.from_version_id, "to_version_id": value.to_version_id,

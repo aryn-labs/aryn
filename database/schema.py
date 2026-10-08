@@ -172,6 +172,7 @@ class AuditEventModel(Base):
     status = Column(String(32), nullable=False)
     redacted_payload_json = Column(Text, nullable=False)
     integrity_reference = Column(String(64), nullable=False)  # SHA-256
+    attestation = Column(String(64), nullable=False, default="", server_default="")
 
 
 class UsageBudgetModel(Base):
@@ -439,3 +440,9 @@ class BenchComparisonModel(Base):
 @event.listens_for(BenchComparisonModel, "before_delete")
 def protect_bench_governance_history(mapper, connection, target):
     raise ValueError("Bench governance evidence is append-only.")
+
+
+@event.listens_for(Base.metadata, "after_create")
+def install_governance_guards(metadata, connection, **kwargs):
+    from database.governance_protection import install_history_protection
+    install_history_protection(connection)

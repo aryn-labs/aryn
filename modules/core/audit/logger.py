@@ -7,7 +7,6 @@ Complies with ARYN-ARCH-001 Section 07 and ARYN-SEC-001.
 
 from __future__ import annotations
 
-import json
 import re
 from typing import Any, Dict, List, Optional
 from packages.contracts.core import AuditEvent, AuditStatus, SecurityContext
@@ -25,6 +24,12 @@ class AuditLogger:
     def __init__(self, db_manager: Optional[Any] = None) -> None:
         self.db_manager = db_manager
         self._events: List[AuditEvent] = []
+        if db_manager is None:
+            import secrets
+            from modules.core.evidence import EvidenceSigner
+            self._signer = EvidenceSigner(secrets.token_bytes(32))
+        else:
+            self._signer = db_manager.evidence_signer
 
     def redact_secrets(self, data: Any) -> Any:
         """Recursively scrubs secret keys and sensitive credential patterns."""
@@ -58,6 +63,7 @@ class AuditLogger:
         clean_payload = self.redact_secrets(payload or {})
 
         event = AuditEvent(
+            schema_version="2.0.0",
             event_type=event_type,
             organization_id=context.organization_id,
             project_id=context.project_id,
@@ -70,6 +76,7 @@ class AuditLogger:
             redacted_payload=clean_payload,
         )
         event.integrity_reference = event.calculate_integrity()
+        event.attestation = self._signer.sign("audit_event", event.authenticated_payload())
         self._events.append(event)
 
         # Persist to database if db_manager is configured
@@ -91,25 +98,7 @@ class AuditLogger:
                 repo = AuditRepository(session)
                 db_models = repo.list_by_correlation(context, correlation_id)
                 if db_models:
-                    return [
-                        AuditEvent(
-                            event_id=m.event_id,
-                            event_type=m.event_type,
-                            schema_version=m.schema_version,
-                            occurred_at=m.occurred_at,
-                            organization_id=m.organization_id,
-                            project_id=m.project_id,
-                            actor_type=m.actor_type,
-                            actor_id=m.actor_id,
-                            correlation_id=m.correlation_id,
-                            resource_id=m.resource_id,
-                            causation_id=m.causation_id,
-                            status=AuditStatus(m.status),
-                            redacted_payload=json.loads(m.redacted_payload_json),
-                            integrity_reference=m.integrity_reference,
-                        )
-                        for m in db_models
-                    ]
+                    return [AuditRepository.contract(m) for m in db_models]
 
         return [e for e in self._events if e.correlation_id == correlation_id]
 

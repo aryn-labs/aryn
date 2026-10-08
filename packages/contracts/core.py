@@ -84,6 +84,15 @@ class AuditEvent(BaseModel):
     status: AuditStatus
     redacted_payload: Dict[str, Any] = Field(default_factory=dict)
     integrity_reference: str = ""
+    attestation: str = ""
+
+    def authenticated_payload(self) -> dict:
+        from packages.contracts.timestamps import canonical_timestamp
+        return {"event_id": self.event_id, "event_type": self.event_type, "schema_version": self.schema_version,
+            "occurred_at": canonical_timestamp(self.occurred_at), "organization_id": self.organization_id,
+            "project_id": self.project_id, "actor_type": self.actor_type, "actor_id": self.actor_id,
+            "correlation_id": self.correlation_id, "resource_id": self.resource_id,
+            "causation_id": self.causation_id, "status": self.status.value, "payload": self.redacted_payload}
 
     def calculate_integrity(self) -> str:
         """Calculates a deterministic SHA256 integrity hash over canonical event fields."""
@@ -99,5 +108,7 @@ class AuditEvent(BaseModel):
             "status": self.status.value if isinstance(self.status, AuditStatus) else str(self.status),
             "payload": self.redacted_payload,
         }
-        encoded = json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        if self.schema_version != "1.0.0":
+            canonical = self.authenticated_payload()
+        encoded = json.dumps(canonical, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()

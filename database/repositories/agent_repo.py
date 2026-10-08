@@ -90,6 +90,9 @@ class AgentRepository:
             raise DuplicateEntityError(
                 f"Agent blueprint '{blueprint_id}' or slug '{slug}' conflict in project '{context.project_id}'."
             ) from exc
+        from modules.core.history import advance_head
+        advance_head(self.session, "baseline", context, blueprint_id, None,
+            {"identity": None, "generation": 0, "hash": None})
         return blueprint
 
     def get_blueprint(self, context: SecurityContext, blueprint_id: str) -> AgentBlueprintModel:
@@ -260,6 +263,19 @@ class AgentRepository:
                 f"Illegal version status transition from '{current}' to '{target}'. Allowed: {sorted(allowed)}."
             )
 
+        if current == "published" and target == "deprecated":
+            manager = self.session.info.get("db_manager")
+            if manager is None:
+                raise InvalidStateTransitionError("Deprecation requires configured governance authority.")
+            from modules.core.history import advance_head, observed_head, HistoryUnverifiedError
+            state = observed_head(self.session, "publication_state", context, version_id)
+            if state is not None and state["status"] != "published":
+                raise HistoryUnverifiedError("Publication lifecycle cannot replay a terminal state.")
+            # A terminal restriction can also be applied to unverified history; it
+            # never asserts that a historical publication actually took place.
+            advance_head(self.session, "publication_state", context, version_id, state,
+                {"status": "deprecated", "publication_id": state["publication_id"] if state else None, "generation": 2})
+
         version.status = target
         if target == "evaluating":
             version.evaluation_id = None
@@ -337,6 +353,7 @@ class AgentRepository:
             raise DuplicateEntityError(
                 f"Assignment conflict for role '{role_name}' in project '{context.project_id}'."
             ) from exc
+        self.session.info.setdefault("new_assignment_ids", set()).add(assignment.id)
         activation.initialize(context, assignment)
         return assignment
 

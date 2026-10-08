@@ -358,3 +358,4 @@ def test_audit_integrity_verification_and_tamper_detection(test_db, admin_contex
         model.redacted_payload_json = json.dumps({"parameter": "tampered_value"})
         # Verification must now return False!
         assert AuditRepository.verify_event_integrity(model) is False
+        session.rollback()  # Deliberate in-memory tampering must not persist through append-only storage.

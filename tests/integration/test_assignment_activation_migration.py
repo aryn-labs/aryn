@@ -7,6 +7,7 @@ from database.schema import Base
 from services.api.studio import ROOT
 from tests.integration.test_agent_registry_rollback import publications
 from modules.core.workflows.coordinator import RunCoordinator
+from modules.core.history import HistoryUnverifiedError
 
 
 @pytest.mark.asyncio
@@ -31,9 +32,10 @@ async def test_activation_upgrade_downgrade_keeps_versions_governance_and_existi
         assert connection.exec_driver_sql("SELECT current_transition_id,activation_origin FROM agent_assignments WHERE id=?", (assignment.id,)).one() == (None, "legacy")
         assert connection.exec_driver_sql("SELECT agent_version_id,assignment_provenance_json FROM run_states WHERE id=?", (run.run_id,)).one() == (None, None)
         assert connection.exec_driver_sql("PRAGMA foreign_key_check").all() == []
-    assert all(entry.rollback_eligible for entry in factory.version_registry(ctx, bp.id))
+    assert all(not entry.rollback_eligible for entry in factory.version_registry(ctx, bp.id))
     intent = intent.model_copy(update={"expected_transition_id": None})
-    factory.rollback_assignment(ctx, assignment.id, intent)
-    assert factory.get_assignment(ctx, assignment.id).version_id == first.id
+    with pytest.raises(HistoryUnverifiedError):
+        factory.rollback_assignment(ctx, assignment.id, intent)
+    assert factory.get_assignment(ctx, assignment.id).version_id == second.id
     for table in Base.metadata.sorted_tables:
         assert {c["name"] for c in inspect(db.engine).get_columns(table.name)} == set(table.columns.keys())

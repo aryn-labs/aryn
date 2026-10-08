@@ -13,6 +13,8 @@ from database.schema import (AgentAssignmentModel, AssignmentTransitionModel,
 from modules.core.workflows.coordinator import RunCoordinator
 from database.repositories.exceptions import InvalidStateTransitionError
 from packages.contracts.agent import RollbackIntent
+from modules.core.history import HistoryUnverifiedError
+from tests.storage_attacks import corrupt_storage
 
 
 async def publications(lifecycle):
@@ -163,28 +165,27 @@ async def test_atomic_rollback_failure_does_not_leave_pointer_or_partial_audit(l
 
 
 @pytest.mark.asyncio
-async def test_pre_existing_assignment_adoption_does_not_fabricate_prior_history(lifecycle):
+async def test_deleted_history_cannot_be_adopted_as_pre_existing_assignment(lifecycle):
     db, ctx, _, factory, bp, first, second, assignment, intent = await publications(lifecycle)
-    with db.engine.begin() as connection:
+    with corrupt_storage(db.engine) as connection:
         connection.execute(text("DELETE FROM assignment_transitions WHERE assignment_id=:id"), {"id": assignment.id})
         connection.execute(text("UPDATE agent_assignments SET current_transition_id=NULL,activation_origin='legacy' WHERE id=:id"), {"id": assignment.id})
     intent = intent.model_copy(update={"expected_transition_id": None})
-    factory.rollback_assignment(ctx, assignment.id, intent)
+    with pytest.raises(HistoryUnverifiedError):
+        factory.rollback_assignment(ctx, assignment.id, intent)
     with db.session() as session:
-        history = AgentActivationRepository(session, db.evidence_signer).history(ctx, session.get(AgentAssignmentModel, assignment.id))
-        assert [x.transition_type for x in history] == ["adoption", "rollback"]
-        assert "prior_activations_unknown" in history[0].publication_reference["limitations"]
-        assert history[0].from_version_id is None and history[0].to_version_id == second.id
+        assert session.query(AssignmentTransitionModel).filter_by(assignment_id=assignment.id).count() == 0
+    assert factory.get_assignment(ctx, assignment.id).version_id == second.id
 
 
 @pytest.mark.asyncio
-async def test_historical_publication_without_new_receipt_uses_existing_provenance(lifecycle):
+async def test_new_publication_without_receipt_cannot_use_historical_fallback(lifecycle):
     db, ctx, _, factory, bp, first, _, _, _ = await publications(lifecycle)
-    with db.engine.begin() as connection:
+    with corrupt_storage(db.engine) as connection:
         connection.execute(text("DELETE FROM agent_publications WHERE version_id=:id"), {"id": first.id})
     registry = {entry.version_id: entry for entry in factory.version_registry(ctx, bp.id)}
-    assert registry[first.id].rollback_eligible
-    assert "no_signed_publication_receipt" in registry[first.id].limitations
+    assert not registry[first.id].rollback_eligible
+    assert "historical_access_read_only" in registry[first.id].limitations
 
 
 @pytest.mark.asyncio
