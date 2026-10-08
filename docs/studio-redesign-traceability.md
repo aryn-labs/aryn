@@ -1,5 +1,6 @@
 # Studio requirement traceability
 
+Implementation source: `80bac7dfa59bd27a6ac1e7e5493f11285b625b2d`. Current source workflow: [ARYN Quality 37835952417](https://github.com/aryn-labs/aryn/actions/runs/37835952417); terminal completed/success, 14/14 jobs; evidence-only closure is verified separately before the final report. Subsequent evidence-only commits do not change this source.
 Audit source: `3a8ddb69b855ea37d1a33721c6c57a02f14ad881`. Evidence paths refer to the implementation accompanying this document. Final source and CI are recorded in studio-redesign-progress.md. Official references below are from the supplied PRD/repository; the normative PDFs are absent, so no missing PDF section is claimed verified.
 
 | ST-ID | Official / product relation | API / contract and source | Evidence / negative coverage | Delivery owner / status |

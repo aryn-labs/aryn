@@ -1,0 +1,71 @@
+{
+  "source_sha": "80bac7dfa59bd27a6ac1e7e5493f11285b625b2d",
+  "source_modified": false,
+  "environment": {
+    "platform": "Windows-11-10.0.26300-SP0",
+    "python": "3.12.12",
+    "processor": "Intel64 Family 6 Model 165 Stepping 2, GenuineIntel",
+    "database": "SQLite disposable",
+    "transport": "FastAPI TestClient; no live provider"
+  },
+  "thresholds_ms": {
+    "summary_p95": 2000,
+    "interactive_navigation_p95": 3000
+  },
+  "datasets": {
+    "small": {
+      "fixture": {
+        "blueprints": 20,
+        "runs": 50,
+        "audits": 200,
+        "divisions": 10
+      },
+      "real_lifecycle": "1 blueprint/version, 4 Bench scenarios, approval, publication, assignment, captured manual run",
+      "summary": {
+        "samples": 20,
+        "p50_ms": 22.14,
+        "p95_ms": 25.45,
+        "max_ms": 25.45
+      },
+      "snapshot": {
+        "samples": 20,
+        "p50_ms": 409.53,
+        "p95_ms": 497.88,
+        "max_ms": 497.88
+      },
+      "project_list": {
+        "samples": 20,
+        "p50_ms": 7.23,
+        "p95_ms": 7.92,
+        "max_ms": 7.92
+      }
+    },
+    "large": {
+      "fixture": {
+        "blueprints": 200,
+        "runs": 1000,
+        "audits": 5000,
+        "divisions": 200
+      },
+      "real_lifecycle": "1 blueprint/version, 4 Bench scenarios, approval, publication, assignment, captured manual run",
+      "summary": {
+        "samples": 20,
+        "p50_ms": 24.47,
+        "p95_ms": 30.72,
+        "max_ms": 30.72
+      },
+      "snapshot": {
+        "samples": 20,
+        "p50_ms": 3246.1,
+        "p95_ms": 3555.01,
+        "max_ms": 3555.01
+      },
+      "project_list": {
+        "samples": 20,
+        "p50_ms": 7.11,
+        "p95_ms": 10.22,
+        "max_ms": 10.22
+      }
+    }
+  }
+}

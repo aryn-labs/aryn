@@ -1,5 +1,6 @@
 # Studio redesign delivery evidence
 
+Implementation source: `80bac7dfa59bd27a6ac1e7e5493f11285b625b2d`. Current source workflow: [ARYN Quality 37835952417](https://github.com/aryn-labs/aryn/actions/runs/37835952417); terminal outcome is recorded in delivery evidence. Subsequent evidence-only commits do not change this source.
 Audit source: `3a8ddb69b855ea37d1a33721c6c57a02f14ad881`; local and origin/development equal, clean tree, push permission verified. Baseline ARYN Quality run [37791265032](https://github.com/aryn-labs/aryn/actions/runs/37791265032) completed-success. Baseline evidence is not evidence for the new implementation.
 
 ## Audit
@@ -12,7 +13,7 @@ Normative PDFs listed by PRD are not present in this workspace. aryn-docs/DOCUME
 
 ## Hasil implementasi
 
-Fondasi workspace diimplementasikan pada branch development. Source implementasi dan CI final akan ditautkan setelah commit/push; status sebelum langkah tersebut adalah LOCAL VERIFIED, CI UNVERIFIED.
+Fondasi workspace diimplementasikan pada branch development. Source implementasi `80bac7dfa59bd27a6ac1e7e5493f11285b625b2d` telah dipush normal ke origin/development. ARYN Quality pada source ini terminal completed / SUCCESS, 14 dari 14 jobs PASS. Working tree bersih pada benchmark clean-source; remote development sama dengan source setelah push. Commit penutup memperbarui evidence saja; workflow commit penutup juga diperiksa sampai terminal sebelum laporan akhir.
 
 - Shell memiliki lima kelompok navigasi PRD, breadcrumb, proyek aktif, sesi Local/Hosted, tema, status API/runtime/model yang berasal dari pemeriksaan aktual, dan navigasi mobile dengan pengelolaan fokus. Feature modules dimuat secara lazy; bundle utama turun dari sekitar 715 KB / 221 KB gzip menjadi 431 KB / 135 KB gzip.
 - Overview membaca summary scoped, bukan snapshot penuh. Inventaris recorded dibedakan dari governance eligibility; candidate review dan item latest menjalankan verifikasi evidence. Attention membuka run bermasalah terbaru atau approval. Sumber, definisi, scope, refreshed_at dan zona waktu terlihat. Cost/entitlement yang belum terbukti tetap unavailable/unknown.
@@ -40,7 +41,7 @@ Legacy /workspace dan /snapshot tetap kompatibel. Migration `016_workspace_struc
 | uv sync --frozen --extra dev; uv lock --check --offline | PASS, lock tidak berubah |
 | uv run --frozen --extra dev ruff check . | PASS |
 | uv run --frozen --extra dev python scripts/check_repository.py | PASS |
-| uv run --frozen --extra dev pytest -m 'not postgresql' -q | 739 passed, 5 skipped, 35 PostgreSQL deselected; 577,79 detik; 2 existing dependency deprecation warnings |
+| uv run --frozen --extra dev pytest -m 'not postgresql' -q | 739 passed, 5 skipped, 35 PostgreSQL deselected; tiga skip memerlukan live-model opt-in, dua skip memerlukan local Hermes API key; 577,79 detik; 2 existing dependency deprecation warnings |
 | uv run --frozen --extra dev pytest tests/integration/test_workspace_api.py -q | 23 passed setelah koreksi deep-link attention |
 | uv run --frozen --extra dev pytest tests/postgresql -q | 35 passed, 2 existing dependency deprecation warnings; PostgreSQL 16.13 pinned disposable, restricted writer generated per test |
 | npm.cmd run format:check; npm.cmd run typecheck; npm.cmd test; npm.cmd run build | PASS; 90 tests pada 15 files |
@@ -64,8 +65,10 @@ Windows 11 build 26300, Python 3.12.12, SQLite disposable dan FastAPI TestClient
 | Large, sebelum strong ORM references | 42,38 / 96,62 | 7.368,90 / 10.938,94 | 7,08 / 9,67 |
 | Small, setelah optimasi | 44,37 / 53,59 | 822,00 / 1.127,81 | 15,00 / 19,11 |
 | Large, setelah optimasi | 50,79 / 60,32 | 4.284,42 / 8.613,32 | 14,95 / 22,04 |
+| Small, clean commit 80bac7d | 22,14 / 25,45 | 409,53 / 497,88 | 7,23 / 7,92 |
+| Large, clean commit 80bac7d | 24,47 / 30,72 | 3.246,10 / 3.555,01 | 7,11 / 10,22 |
 
-Browser large dataset: navigation P50 **238,10 ms**, P95 **440,30 ms**; real HTTP summary P50 **49,82 ms**, P95 **62,76 ms**. Kedua threshold PASS. [JSON browser](evidence/studio/browser-performance.json) dan [API sebelum](evidence/studio/workspace-performance.json)/[sesudah](evidence/studio/workspace-performance-optimized.json) mencatat provenance sebagai uncommitted implementation di atas SHA audit. Gates lain berjalan bersamaan; perbandingan sample ini tidak menjanjikan faktor percepatan tetap. Benchmark dapat diulang dengan `uv run --frozen --extra dev python -m scripts.benchmark_workspace --samples 20 --output .local/workspace-performance.json`.
+Browser large dataset: navigation P50 **238,10 ms**, P95 **440,30 ms**; real HTTP summary P50 **49,82 ms**, P95 **62,76 ms**. Kedua threshold PASS. [JSON browser](evidence/studio/browser-performance.json) dan [API sebelum](evidence/studio/workspace-performance.json)/[sesudah](evidence/studio/workspace-performance-optimized.json) mencatat provenance sebagai uncommitted implementation di atas SHA audit. Gates lain berjalan bersamaan; perbandingan sample ini tidak menjanjikan faktor percepatan tetap. [Benchmark clean commit](evidence/studio/workspace-performance-committed.json) mencatat source_sha 80bac7d dan source_modified=false; lokal bebas dari suite concurrent pada pengulangan ini. Benchmark dapat diulang dengan `uv run --frozen --extra dev python -m scripts.benchmark_workspace --samples 20 --output .local/workspace-performance.json`.
 
 ## Traceability dan sisa kendala
 
@@ -76,4 +79,14 @@ Seluruh 38 ST-ID dipetakan satu per satu pada [traceability](studio-redesign-tra
 3. Cursor berlaku sampai satu jam dan invalid setelah API process restart; refresh daftar menghasilkan cursor baru. Selector cepat menampilkan maksimal 100 proyek; daftar Projects tetap paginated.
 4. Real IdP/TLS/VPS UAT, provider hard total/cost cap, managed money reservation, distributed scheduler/workers, payment/entitlement, installer dan production operations tetap program eksternal. Hosted production readiness tetap BLOCKED.
 
-Tidak ada perubahan main, production deployment, paid inference, unrestricted tool grants atau native scheduler. Readiness untuk Prompt 02 akan ditetapkan setelah exact-SHA ARYN Quality terminal; hasil historis tidak dianggap bukti CI perubahan ini.
+## GitHub Actions dan delivery
+
+[ARYN Quality 37835952417](https://github.com/aryn-labs/aryn/actions/runs/37835952417) terminal **completed / success** pada source `80bac7dfa59bd27a6ac1e7e5493f11285b625b2d`: backend Linux dan empat partisi Windows, frontend, PostgreSQL, security/configuration, actual Native Hermes Boundary, tiga shard browser, Required Quality Gates dan Validated Delivery Artifact semuanya **14/14 PASS**. [JSON metadata terminal](evidence/studio/ci-implementation.json) mencatat SHA, timestamps dan setiap job; bukan klaim dari YAML atau CI baseline. Gate existing memverifikasi complete collection dan disjoint coverage semua partisi Windows.
+
+Review artifact `aryn-delivery-80bac7dfa59bd27a6ac1e7e5493f11285b625b2d`, ID 11575758247, digest `sha256:2f7f6e8098c187a921989b79e0cfa7bd492c55b04eb1c332b7b0437a9b12c11b`, dihasilkan workflow yang sama. Artifact adalah build candidate dengan SHA/hash, bukan production release/deployment. Daftar perubahan source lengkap tersedia pada [commit implementasi](https://github.com/aryn-labs/aryn/commit/80bac7dfa59bd27a6ac1e7e5493f11285b625b2d).
+
+File utama: `apps/web/src/studio.tsx`, `features/overview.tsx`, `features/projects.tsx`, `lib/api.ts`, `lib/workspace-types.ts`, `workspace.css`; `services/api/studio.py`, `services/api/workspace_reads.py`, `modules/core/workspace.py`, `modules/core/permissions/engine.py`, `packages/contracts/workspace.py`; `database/schema.py` dan migration 016; scoped API/security/migration/PostgreSQL/browser/component tests, deterministic dataset dan benchmark script. Empat dokumen redesign dan screenshot/performance evidence menyertai source. Penamaan baru tetap profesional, tanpa nama fase/MVP/stage.
+
+Remote main diverifikasi tetap `630cbc96d728a49a64247ad2b88978529a7cbbad`. Tidak ada production deployment, paid inference, unrestricted tool grants atau native scheduler. Seluruh acceptance scope workspace selesai, dengan residual di atas dan future contracts tetap design-only.
+
+**READY FOR PROMPT 02.** Hosted production readiness tetap BLOCKED; status tersebut tidak berubah oleh delivery workspace.

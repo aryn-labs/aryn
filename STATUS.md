@@ -10,7 +10,8 @@ Historical PASS rows di bawah tetap evidence revision sebelumnya.
 
 Studio workspace melanjutkan `3a8ddb69`: grouped shell, scoped summary Overview,
 Projects/Divisions dengan Core authorization/CAS/audit, additive migration
-`016_workspace_structure`, bounded read APIs dan isolation cache. Evidence lokal,
+`016_workspace_structure`, bounded read APIs dan isolation cache. Source `80bac7d`
+lulus ARYN Quality 37835952417 (14/14 jobs); READY FOR PROMPT 02. Evidence lokal,
 responsive/axe/performance, current-SHA CI dan sisa snapshot legacy dicatat pada
 [Studio redesign delivery](docs/studio-redesign-progress.md). Future Builder,
 Workflow, Brief/Relay dan Automation tetap desain untuk pekerjaan berikut;
@@ -21,7 +22,8 @@ GitHub Actions, correctness Ruff, frontend formatting, Linux/Windows backend,
 actual native Hermes boundary, disposable PostgreSQL restricted-role integration,
 isolated browser E2E dan commit-bound review artifacts. PostgreSQL verification
 menemukan dan memperbaiki concurrent settlement serta inverted governance lock order.
-Tidak ada migration baru; chain tetap `015_authentication_boundary`. Hasil lokal dan
+Pada revisi CI/CD tersebut tidak ada migration baru; chain saat itu
+`015_authentication_boundary`. Workspace kini menambahkan migration 016 di atasnya. Hasil lokal dan
 status Actions yang benar-benar diamati dicatat pada [CI validation](docs/ci-validation.md);
 kontrak/gates/settings pada [CI delivery](docs/ci-delivery.md). Branch protection dan
 production release/deploy tidak diubah. **Hosted production readiness tetap BLOCKED.**

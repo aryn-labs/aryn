@@ -1,5 +1,6 @@
 # Studio workspace interaction contract
 
+Implementation source: `80bac7dfa59bd27a6ac1e7e5493f11285b625b2d`. Current source workflow: [ARYN Quality 37835952417](https://github.com/aryn-labs/aryn/actions/runs/37835952417); terminal completed/success, 14/14 jobs; evidence-only closure is verified separately before the final report. Subsequent evidence-only commits do not change this source.
 Source baseline: `3a8ddb69b855ea37d1a33721c6c57a02f14ad881`. Reviewed 9 October 2026 (Asia/Bangkok).
 
 The workspace delivery implements PRD sections 5–7 and workspace acceptance in package 01. This specification precedes implementation; validation evidence is recorded in studio-redesign-progress.md.
@@ -12,7 +13,7 @@ Groups are WORKSPACE, BUILD, OPERATE, INTELLIGENCE & RELIABILITY and CONTROL. Ex
 
 Reuse licensed packaged Geist/Geist Mono, existing Radix dialog/Button, React Router, React Query and dark/light tokens in styles.css. Workspace-specific styles belong in workspace.css. Dark tokens: background #070a13, solid surface #0d1527, elevated #152037, primary #8b7cf6, cyan #38bdf8, success #10b981, warning #f59e0b, error #f43f5e. Text and focus contrast are checked in both themes. Avoid inferred uptime, billing, traces or tool readiness.
 
-Project selection immediately hides the previous scope, cancels reads, removes scoped cache/selection, closes forms and navigates to Overview. Keys include organization/project/resource/filters/cursor. Reads receive AbortSignal. Permissions are supplied by Core; mutations invalidate summary, scoped lists and legacy snapshot. Pending mutations block user switching. Revoked membership and session expiry hide cached resource data.
+Project selection immediately hides the previous scope, cancels reads, removes scoped cache/selection, closes forms and navigates to Overview. Keys include organization/project/resource/filters/cursor. Reads receive AbortSignal. Permissions are supplied by Core; mutations invalidate summary, scoped lists and legacy snapshot. Pending lifecycle mutations block user switching; division mutation callbacks retain the captured organization/project scope. Revoked membership and session expiry hide cached resource data.
 
 Each page represents loading, empty and filtered-empty, fresh data, stale/revalidation failure, API/offline errors, 401, 403 and not-found. A retry control revalidates. Division create/edit has field errors, explicit save, generation conflict and preserved user input. No division membership or permissions are inferred. Metrics show source, scope, definition and refreshed_at; unknown values read Tidak tersedia.
 

@@ -1,5 +1,6 @@
 # Studio architecture decisions
 
+Implementation source: `80bac7dfa59bd27a6ac1e7e5493f11285b625b2d`. Current source workflow: [ARYN Quality 37835952417](https://github.com/aryn-labs/aryn/actions/runs/37835952417); terminal completed/success, 14/14 jobs; evidence-only closure is verified separately before the final report. Subsequent evidence-only commits do not change this source.
 Source baseline: `3a8ddb69b855ea37d1a33721c6c57a02f14ad881`. 9 October 2026.
 
 ## Workspace reads and authority
