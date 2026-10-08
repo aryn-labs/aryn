@@ -37,3 +37,4 @@ def test_installed_hermes_executes_via_guarded_gateway_double(tmp_path):
     assert "isolated-gateway-native-auth" not in output + errors
     assert process.returncode == 0, (output[-1500:], errors[-2000:])
     assert "REAL_HERMES_ISOLATED_GATEWAY_PASS" in output
+    assert "REAL_HERMES_CONFINED_ROUTES_PASS" in output

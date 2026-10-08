@@ -1,8 +1,4 @@
-"""Loopback-only Studio application boundary. This is development access, not production auth.
-
-Browser identity claims are never accepted. The server issues a local opaque session
-and constructs signed Core contexts for a single provisioned development principal.
-"""
+"""Studio authentication boundary; all authorization belongs to ARYN Core."""
 
 from __future__ import annotations
 
@@ -67,6 +63,9 @@ from packages.contracts.runtime import (ModelUnavailableError, GatewayUnavailabl
 from packages.contracts.model import ModelProviderType, ModelSpec
 from packages.model_adapters import ModelRouter, ModelRoutingError
 from packages.runtime_adapters import HermesAdapterError, HermesRuntimeAdapter, RuntimeAuthenticationError
+from services.api.authentication import (
+    AuthenticationSettings, HostedAuthentication, HOSTED_COOKIE, Principal, principal_context,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 DEV_ORG = "org_studio_local"
@@ -193,16 +192,26 @@ def create_app(
     runtime=None,
     origin: str | None = None,
     testing=False,
+    authentication: AuthenticationSettings | None = None,
+    identity_provider=None,
 ):
     from packages.config import get_settings
     settings = get_settings()
+    auth_config = authentication or AuthenticationSettings.from_env(settings)
+    if auth_config.environment != settings.aryn_env or (settings.aryn_env != "development" and auth_config.mode != "oidc"):
+        raise ValueError("Authentication mode must match the deployment environment.")
+    local_development = auth_config.mode == "local-development"
+    if not local_development:
+        if origin is not None and origin != auth_config.public_origin:
+            raise ValueError("Hosted origin must match the authenticated public origin.")
+        origin = auth_config.public_origin
     if origin is None:
         origin = settings.studio_origin
 
     parsed_origin = urlsplit(origin)
     origin_host = (parsed_origin.hostname or "").lower()
     origin_port = parsed_origin.port
-    if (
+    if local_development and (
         parsed_origin.scheme != "http"
         or origin_host not in {"127.0.0.1", "localhost", "::1"}
         or origin_port is None
@@ -215,18 +224,29 @@ def create_app(
     ):
         raise ValueError("Studio origin must be an explicit loopback port.")
     if db is None:
-        path = ROOT / ".local/studio.sqlite3"
-        path.parent.mkdir(exist_ok=True)
-        engine = create_db_engine(f"sqlite:///{path.as_posix()}")
+        if local_development:
+            path = ROOT / ".local/studio.sqlite3"
+            path.parent.mkdir(exist_ok=True)
+            engine = create_db_engine(f"sqlite:///{path.as_posix()}")
+        else:
+            import os
+            hosted_database_url = os.getenv("ARYN_DATABASE_URL", "")
+            if not all((hosted_database_url, os.getenv("ARYN_EVIDENCE_SECRET", ""), os.getenv("ARYN_HISTORY_COMMITMENT_PATH", ""))):
+                raise ValueError("Hosted database, evidence secret and protected history path must be explicit.")
+            if len(runtime_key()) < 32:
+                raise ValueError("Hosted runtime authentication requires an explicit strong key.")
+            engine = create_db_engine(hosted_database_url)
         from modules.core.workflows.ownership import ExecutionAuthority
         ExecutionAuthority.for_engine(engine)
         migrate(engine)
         db = DatabaseManager(engine=engine)
-    binder = TrustedIdentityBinder(secret_key=secrets.token_bytes(32))
+    binder = TrustedIdentityBinder(secret_key=secrets.token_bytes(32) if local_development else auth_config.identity_secret.get_secret_value())
     permissions = PermissionEngine(db_manager=db, identity_binder=binder)
     audit = AuditLogger(db_manager=db)
     adapter = runtime or StudioHermesAdapter(base_url=settings.runtime_base_url, api_key=runtime_key(), timeout=10)
     protected_credentials = [
+        auth_config.session_secret.get_secret_value(), auth_config.identity_secret.get_secret_value(),
+        auth_config.client_secret.get_secret_value(),
         getattr(adapter, "api_key", ""),
         runtime_key(),
         settings.nine_router_api_key.get_secret_value(),
@@ -236,6 +256,8 @@ def create_app(
     if gateway_client and hasattr(gateway_client, "settings"):
         protected_credentials.append(gateway_client.settings.api_key.get_secret_value())
     db.protected_credentials = tuple(key for key in protected_credentials if key)
+    from modules.core.errors import protect_diagnostic_logging
+    protect_diagnostic_logging(db.protected_credentials)
     model_router = ModelRouter(catalog={})
     factory = AgentFactoryService(
         db, BenchRunner(adapter), permission_engine=permissions, audit_logger=audit, model_router=model_router
@@ -248,7 +270,7 @@ def create_app(
     # Provision only dedicated development scope. Do not re-grant a revoked membership on restart.
     with db.session() as s:
         repo = OrganizationRepository(s)
-        if not s.get(OrganizationModel, DEV_ORG):
+        if local_development and not s.get(OrganizationModel, DEV_ORG):
             repo.create_organization(DEV_ORG, "ARYN Lokal", "aryn-studio-local")
             repo.add_member(DEV_ORG, DEV_ACTOR, role="admin")
             ctx = binder.create_trusted_context(DEV_ACTOR, DEV_ORG, DEV_PROJECT)
@@ -259,21 +281,24 @@ def create_app(
 
     coordinator.recover_in_flight_runs()
     with db.session(write=True) as s:
-        interrupted = (
+        interrupted_query = (
             s.query(AgentVersionModel)
             .join(AgentBlueprintModel)
             .filter(
-                AgentBlueprintModel.organization_id == DEV_ORG,
                 AgentVersionModel.status == "evaluating",
             )
-            .all()
         )
+        if local_development:
+            interrupted_query = interrupted_query.filter(AgentBlueprintModel.organization_id == DEV_ORG)
+        interrupted = interrupted_query.all()
         for version in interrupted:
             if version.evaluation_owner_id == coordinator.authority.owner_id:
                 continue
             version.status = "rejected"
+            from packages.contracts.core import ActorType
             interrupted_ctx = binder.create_trusted_context(
-                DEV_ACTOR, DEV_ORG, version.blueprint.project_id)
+                DEV_ACTOR if local_development else "core_execution_recovery", version.blueprint.organization_id,
+                version.blueprint.project_id, actor_type=ActorType.USER if local_development else ActorType.SYSTEM)
             audit.record(
                 "bench.evaluation.interrupted",
                 interrupted_ctx,
@@ -293,6 +318,11 @@ def create_app(
     app.state.binder = binder
     app.state.coordinator = coordinator
     app.state.sessions = sessions
+    hosted = None if local_development else HostedAuthentication(db, auth_config, identity_provider)
+    app.state.authentication = hosted
+    app.state.authentication_settings = auth_config
+    if hosted:
+        hosted.mount(app)
 
     from contextvars import ContextVar
     request_correlation = ContextVar("studio_correlation", default=None)
@@ -304,10 +334,20 @@ def create_app(
     async def boundary(request: Request, call_next):
         request.state.correlation_id = secrets.token_hex(16)
         request_correlation.set(request.state.correlation_id)
-        if request.client is None or request.client.host not in {"127.0.0.1", "::1"}:
-            return fail(403, "Studio hanya dapat diakses melalui loopback lokal.")
-        if request.headers.get("host") != origin.removeprefix("http://"):
-            return fail(403, "Host tidak diizinkan. Gunakan alamat loopback Studio.")
+        principal_context.set(None)
+        if local_development:
+            if (request.client is None or request.client.host not in {"127.0.0.1", "::1"}
+                    or any(name == "forwarded" or name.startswith("x-forwarded-") for name in request.headers)):
+                return fail(403, "Studio development hanya dapat diakses melalui loopback langsung.")
+            if request.headers.get("host") != parsed_origin.netloc:
+                return fail(403, "Host tidak diizinkan. Gunakan alamat loopback Studio.")
+        else:
+            try:
+                auth_config.check_request(request)
+            except HTTPException as exc:
+                return fail(exc.status_code, "Boundary HTTPS/host/proxy tidak valid.")
+        if request.url.path.startswith(("/docs", "/redoc", "/openapi", "/debug", "/diagnostics")):
+            return fail(404, "Endpoint tidak tersedia.")
         is_api = request.url.path.startswith("/api/")
         if is_api:
             credential_input = request.url.path + request.url.query
@@ -331,15 +371,24 @@ def create_app(
                     or request.headers.get("sec-fetch-site", "same-origin")
                     != "same-origin"
                 ):
-                    return fail(403, "Mutasi harus berasal dari halaman Studio lokal.")
+                    return fail(403, "Mutasi harus berasal dari origin Studio yang dikonfigurasi.")
                 if len(await request.body()) > 65536:
                     return fail(413, "Isi permintaan terlalu besar.")
-            if request.url.path != "/api/session":
+            if hosted:
+                try:
+                    principal_context.set(hosted.principal(request))
+                except HTTPException:
+                    return JSONResponse({"message": "Autentikasi diperlukan.", "error_code": "authentication_required", "login_url": "/auth/login"}, status_code=401,
+                        headers={"Cache-Control": "no-store"})
+                if request.url.path != "/api/session" and request.method not in {"GET", "HEAD"} and not secrets.compare_digest(
+                        request.headers.get("x-csrf-token", "").encode(), hosted.csrf(request.cookies.get(HOSTED_COOKIE, "")).encode()):
+                    return fail(403, "Token keamanan sesi tidak valid.")
+            elif request.url.path != "/api/session":
                 session = sessions.get(request.cookies.get(COOKIE, ""))
                 if not session or session["expires"] < time.time():
                     return fail(401, "Sesi development berakhir. Muat ulang Studio.")
                 if request.method not in {"GET", "HEAD"} and not secrets.compare_digest(
-                    request.headers.get("x-csrf-token", ""), session["csrf"]
+                    request.headers.get("x-csrf-token", "").encode(), session["csrf"].encode()
                 ):
                     return fail(
                         403, "Token keamanan sesi tidak valid. Muat ulang Studio."
@@ -364,6 +413,9 @@ def create_app(
             "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
         )
         if is_api:
+            response.headers["Cache-Control"] = "no-store"
+        if hosted:
+            response.headers["Strict-Transport-Security"] = "max-age=31536000"
             response.headers["Cache-Control"] = "no-store"
         return response
 
@@ -458,9 +510,13 @@ def create_app(
         app.add_exception_handler(gateway_error, gateway_handler)
 
     def context(project_id, action="run:read"):
-        ctx = binder.create_trusted_context(DEV_ACTOR, DEV_ORG, project_id, correlation_id=request_correlation.get())
+        principal = principal_context.get() if hosted else Principal(DEV_ACTOR, DEV_ORG)
+        if principal is None:
+            raise HTTPException(401)
+        ctx = binder.create_trusted_context(principal.actor_id, principal.organization_id, project_id,
+            correlation_id=request_correlation.get(), auth_session_id=principal.session_id)
         try:
-            permissions.enforce(action, ctx, DEV_ORG, project_id)
+            permissions.enforce(action, ctx, ctx.organization_id, project_id)
         except PermissionDeniedError:
             audit.record(
                 "studio.permission.denied",
@@ -532,6 +588,8 @@ def create_app(
             raise HTTPException(
                 422, "Sesi development diterbitkan server tanpa input identitas."
             )
+        if hosted:
+            return {"csrf": hosted.csrf(request.cookies.get(HOSTED_COOKIE, "")), "mode": "oidc"}
         for key in list(sessions):
             if sessions[key]["expires"] < time.time():
                 sessions.pop(key)
@@ -560,9 +618,23 @@ def create_app(
 
     @app.get("/api/workspace")
     async def workspace():
+        principal = principal_context.get() if hosted else Principal(DEV_ACTOR, DEV_ORG)
+        if principal is None:
+            raise HTTPException(401)
+        with db.session() as s:
+            from database.schema import ProjectModel
+            accessible = []
+            for project in s.query(ProjectModel).filter_by(organization_id=principal.organization_id).all():
+                candidate = binder.create_trusted_context(principal.actor_id, principal.organization_id, project.id,
+                    auth_session_id=principal.session_id)
+                if permissions.evaluate("run:read", candidate, principal.organization_id, project.id, session=s).allowed:
+                    accessible.append(project.id)
+        if not accessible:
+            raise PermissionDeniedError("No accessible projects.")
+        ctx = context(accessible[0])
         discovery = await model_catalog()
         binding = await adapter.gateway_binding()
-        ctx = context(DEV_PROJECT)
+        context(accessible[0])  # Revalidate after asynchronous provider discovery.
         with db.session() as s:
             repo = OrganizationRepository(s)
             projects = [
@@ -570,23 +642,25 @@ def create_app(
                 for p in repo.list_projects(ctx)
                 if permissions.evaluate(
                     "run:read",
-                    binder.create_trusted_context(DEV_ACTOR, DEV_ORG, p.id),
-                    DEV_ORG,
+                    binder.create_trusted_context(principal.actor_id, principal.organization_id, p.id, auth_session_id=principal.session_id),
+                    principal.organization_id,
                     p.id,
                 ).allowed
             ]
-            member = repo.get_member(DEV_ORG, DEV_ACTOR)
+            member = repo.get_member(principal.organization_id, principal.actor_id)
             role = member.role
+            organization = s.get(OrganizationModel, principal.organization_id)
+            organization_name = organization.name
         return {
-            "organization": {"id": DEV_ORG, "name": "ARYN Lokal"},
+            "organization": {"id": principal.organization_id, "name": organization_name},
             "projects": projects,
-            "user": {"name": "Pemilik development", "id": DEV_ACTOR, "role": role},
+            "user": {"name": "Pemilik development" if local_development else principal.actor_id, "id": principal.actor_id, "role": role},
             "models": discovery.models,
             "gateway": {"name": "9Router", "connected": discovery.connected,
                         "discovery_valid": discovery.discovery_valid, "reason": discovery.reason,
                         "runtime_binding_verified": binding},
             "runtime": await runtime_status(),
-            "mode": "isolated-test" if testing else "development",
+            "mode": "isolated-test" if testing else "development" if local_development else "hosted",
         }
 
     @app.get("/api/projects/{project_id}/snapshot")
@@ -599,7 +673,7 @@ def create_app(
                 for x in s.query(AgentVersionModel)
                 .join(AgentBlueprintModel)
                 .filter(
-                    AgentBlueprintModel.organization_id == DEV_ORG,
+                    AgentBlueprintModel.organization_id == ctx.organization_id,
                     AgentBlueprintModel.project_id == project_id,
                 )
                 .order_by(AgentVersionModel.created_at.desc())
@@ -626,7 +700,7 @@ def create_app(
                 "audit": AuditEventModel,
             }.items():
                 query = s.query(model).filter_by(
-                    organization_id=DEV_ORG, project_id=project_id
+                    organization_id=ctx.organization_id, project_id=project_id
                 )
                 order = (
                     model.occurred_at
@@ -725,7 +799,7 @@ def create_app(
                     run["assignment_provenance_verified"] = False
             data["budget"] = row(budget) if budget else None
             data["permissions"] = {
-                action: permissions.evaluate(action, ctx, DEV_ORG, project_id).allowed
+                action: permissions.evaluate(action, ctx, ctx.organization_id, project_id).allowed
                 for action in (
                     "run:create",
                     "version:approve",

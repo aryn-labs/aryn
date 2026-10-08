@@ -15,7 +15,9 @@ dependencies = [
     "fastapi>=0.100",
     "sqlalchemy>=2.0",
     "alembic>=1.10",
-    "uvicorn>=0.30"
+    "uvicorn>=0.30",
+    "authlib>=1.6,<2",
+    "PyJWT[crypto]>=2.10,<3"
 ]
 
 [project.optional-dependencies]

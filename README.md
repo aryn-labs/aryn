@@ -27,7 +27,7 @@ This is the private primary monorepo for ARYN Cloud and ARYN Local.
 All private resources are organization-scoped and project-scoped where applicable. Sensitive writes require service-side policy enforcement. Agent output is untrusted. Approval binds to exact action payload. Replays never invoke live write tools. Local has no silent cloud sync/fallback. Never commit secrets.
 
 ## Current status
-Core governance/persistence, Agent Factory, Bench, and the Hermes adapter are implemented. **ARYN Studio** provides a loopback-only development web application for blueprint → version → Bench → approval → publish → assignment → Research Agent execution → result/audit. This is not a production authentication or public deployment claim.
+Core governance/persistence, Agent Factory, Bench, and the Hermes adapter are implemented. **ARYN Studio** supports explicit loopback Local development and a configured hosted OIDC authentication boundary, using the same Core governance for blueprint → version → Bench → approval → publish → assignment → execution → result/audit. Hosted production readiness remains unverified until real IdP, PostgreSQL, TLS, reverse proxy and runtime network UAT.
 
 ```powershell
 Set-Location D:\ARYN\aryn-labs\aryn
@@ -37,5 +37,7 @@ Set-Location D:\ARYN\aryn-labs\aryn
 9Router must already listen at `http://127.0.0.1:20128/v1`; the combined launcher starts runtime and Studio with matching ephemeral authentication. See [9Router routing, readiness limitations and validation](docs/9router-gateway.md). Open `http://127.0.0.1:8710`. See [Studio setup, security, and capabilities](docs/studio.md) and [validation evidence](docs/studio-validation.md). Brief and Relay are not implemented in Studio.
 
 See [Bench engine contracts and validation](docs/bench-engine.md).
+
+Authentication defaults to fail closed. Local launchers explicitly select `ARYN_AUTH_MODE=local-development`; production requires `ARYN_AUTH_MODE=oidc`, verified issuer/subject provisioning and current Core membership. Runtime exposes only confined text/run operations; native jobs, cron, sessions administration and profile/plugin ingress are unavailable. See [deployment security and configuration](docs/deployment-security.md) and [actual validation evidence](docs/deployment-validation.md).
 
 References: ARYN-PRD-001, ARYN-ARCH-001, ARYN-TECH-001, ARYN-SEC-001 and ARYN-PLAN-001 in private `aryn-docs`.

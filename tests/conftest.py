@@ -37,6 +37,7 @@ def setup_test_identity_env(monkeypatch: pytest.MonkeyPatch) -> Generator[None, 
     Guarantees no component attempts to use a hardcoded default secret.
     """
     monkeypatch.setenv("ARYN_IDENTITY_SECRET", TEST_IDENTITY_SECRET)
+    monkeypatch.setenv("ARYN_AUTH_MODE", "local-development")
     yield
 
 

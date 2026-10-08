@@ -1,4 +1,9 @@
-import type { BenchCompletion, StreamEvent, StreamPayload, RunResponse } from "./types";
+import type {
+  BenchCompletion,
+  StreamEvent,
+  StreamPayload,
+  RunResponse,
+} from "./types";
 
 let csrf = "";
 let pendingSession: Promise<void> | undefined;
@@ -9,6 +14,7 @@ export class ApiError extends Error {
     public errorCode?: string,
     public correlationId?: string,
     public runId?: string,
+    public loginUrl?: "/auth/login",
   ) {
     super(message);
   }
@@ -23,14 +29,23 @@ async function session() {
     })
       .then(async (response) => {
         const data = await response.json().catch(() => ({}));
+        if (response.status === 401)
+          throw new ApiError(
+            "Autentikasi diperlukan. Masuk melalui penyedia identitas.",
+            401,
+            data.error_code,
+            undefined,
+            undefined,
+            data.login_url === "/auth/login" ? "/auth/login" : undefined,
+          );
         if (!response.ok)
           throw new ApiError(
-            data.message || "Sesi lokal tidak dapat dibuat.",
+            data.message || "Sesi tidak dapat dibaca.",
             response.status,
           );
         if (typeof data.csrf !== "string")
           throw new ApiError(
-            "Sesi development belum dapat diterbitkan oleh API Studio.",
+            "Sesi belum dapat diverifikasi oleh API Studio.",
             503,
           );
         csrf = data.csrf;
@@ -65,7 +80,15 @@ export async function api<T>(path: string, body?: unknown): Promise<T> {
   }
   if (response.status === 401) {
     csrf = "";
-    throw new ApiError("Sesi development berakhir. Muat ulang halaman.", 401);
+    const error = await response.json().catch(() => ({}));
+    throw new ApiError(
+      "Sesi berakhir. Muat ulang atau masuk kembali.",
+      401,
+      error.error_code,
+      undefined,
+      undefined,
+      error.login_url === "/auth/login" ? "/auth/login" : undefined,
+    );
   }
   const data = await response.json().catch(() => ({
     message: "API belum memberikan respons yang dapat dibaca.",
@@ -74,15 +97,23 @@ export async function api<T>(path: string, body?: unknown): Promise<T> {
     throw new ApiError(
       data.message || "Permintaan belum dapat diselesaikan. Coba kembali.",
       response.status,
-      data.error_code, data.correlation_id, data.run_id,
+      data.error_code,
+      data.correlation_id,
+      data.run_id,
     );
   return data;
 }
 
 export type { StreamEvent } from "./types";
 
+export async function logout(): Promise<void> {
+  await api("/logout", {});
+  csrf = "";
+}
+
 export function readBenchCompletion(input: unknown): BenchCompletion {
-  if (!input || typeof input !== "object") throw new ApiError("Kontrak hasil Bench tidak valid.", 502);
+  if (!input || typeof input !== "object")
+    throw new ApiError("Kontrak hasil Bench tidak valid.", 502);
   const value = input as Partial<BenchCompletion>;
   if (
     typeof value?.evaluation_id !== "string" ||
@@ -99,15 +130,39 @@ export function readBenchCompletion(input: unknown): BenchCompletion {
 }
 
 export function readRunCompletion(input: unknown): RunResponse {
-  if (!input || typeof input !== "object") throw new ApiError("Kontrak hasil Core tidak valid.", 502);
+  if (!input || typeof input !== "object")
+    throw new ApiError("Kontrak hasil Core tidak valid.", 502);
   const value = input as Partial<RunResponse>;
-  if (!value.run_id || value.id !== value.run_id || value.requested_model !== value.model ||
-      !["queued", "started", "running", "stopping", "completed", "failed", "cancelled", "outcome_unknown"].includes(value.status || "") ||
-      !["measured", "unavailable"].includes(value.usage?.availability || "") ||
-      (value.status === "completed" && (!value.execution_claim_verified || value.actual_model !== value.requested_model || !value.output_reference)) ||
-      (value.assignment_id && (!value.assignment_provenance_verified || !value.agent_version_id || !value.agent_payload_hash || !value.assignment_transition_id)) ||
-      (value.usage?.availability === "measured" && (value.usage.input_tokens < 0 || value.usage.output_tokens < 0 ||
-        value.usage.total_tokens !== value.usage.input_tokens + value.usage.output_tokens))) {
+  if (
+    !value.run_id ||
+    value.id !== value.run_id ||
+    value.requested_model !== value.model ||
+    ![
+      "queued",
+      "started",
+      "running",
+      "stopping",
+      "completed",
+      "failed",
+      "cancelled",
+      "outcome_unknown",
+    ].includes(value.status || "") ||
+    !["measured", "unavailable"].includes(value.usage?.availability || "") ||
+    (value.status === "completed" &&
+      (!value.execution_claim_verified ||
+        value.actual_model !== value.requested_model ||
+        !value.output_reference)) ||
+    (value.assignment_id &&
+      (!value.assignment_provenance_verified ||
+        !value.agent_version_id ||
+        !value.agent_payload_hash ||
+        !value.assignment_transition_id)) ||
+    (value.usage?.availability === "measured" &&
+      (value.usage.input_tokens < 0 ||
+        value.usage.output_tokens < 0 ||
+        value.usage.total_tokens !==
+          value.usage.input_tokens + value.usage.output_tokens))
+  ) {
     throw new ApiError("Kontrak hasil Core tidak valid.", 502);
   }
   return value as RunResponse;
@@ -139,7 +194,15 @@ export async function apiStream<T = Record<string, unknown>>(
   }
   if (response.status === 401) {
     csrf = "";
-    throw new ApiError("Sesi development berakhir. Muat ulang halaman.", 401);
+    const error = await response.json().catch(() => ({}));
+    throw new ApiError(
+      "Sesi berakhir. Muat ulang atau masuk kembali.",
+      401,
+      error.error_code,
+      undefined,
+      undefined,
+      error.login_url === "/auth/login" ? "/auth/login" : undefined,
+    );
   }
   if (!response.ok) {
     const data = await response.json().catch(() => ({
@@ -148,7 +211,9 @@ export async function apiStream<T = Record<string, unknown>>(
     throw new ApiError(
       data.message || "Permintaan belum dapat diselesaikan. Coba kembali.",
       response.status,
-      data.error_code, data.correlation_id, data.run_id,
+      data.error_code,
+      data.correlation_id,
+      data.run_id,
     );
   }
 
@@ -156,7 +221,11 @@ export async function apiStream<T = Record<string, unknown>>(
   if (contentType.includes("application/json")) {
     const result = await response.json();
     return (
-      path.endsWith("/bench") ? readBenchCompletion(result) : path.endsWith("/runs") ? readRunCompletion(result) : result
+      path.endsWith("/bench")
+        ? readBenchCompletion(result)
+        : path.endsWith("/runs")
+          ? readRunCompletion(result)
+          : result
     ) as T;
   }
 
@@ -190,7 +259,13 @@ export async function apiStream<T = Record<string, unknown>>(
             finalResult = parsedData as T;
           }
           if (evType === "bench.error" || evType === "run.failed") {
-            throw new ApiError(parsedData.message || "Operasi gagal.", 500, parsedData.error_code, parsedData.correlation_id, parsedData.run_id);
+            throw new ApiError(
+              parsedData.message || "Operasi gagal.",
+              500,
+              parsedData.error_code,
+              parsedData.correlation_id,
+              parsedData.run_id,
+            );
           }
           if (onEvent) {
             onEvent({ type: evType, data: parsedData as StreamPayload });

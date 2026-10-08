@@ -240,3 +240,7 @@ Injected Core signer/approval/permission authority dipakai juga untuk persisted 
 Evaluation owner process mencegah startup lain menandai live Bench interrupted. Standalone
 BenchRunner hanya diagnostic tanpa publication authority. Lihat [execution hardening](core-execution-hardening.md)
 untuk transaction, tests, compatibility dan batas token/cost/provider.
+
+## Hosted authentication boundary
+
+Bench/Factory use the same configured Core binder, PermissionEngine and approval authority for Local and Hosted. OIDC login creates no membership/approval/evidence; current DB role and session are revalidated by Core, including evaluation/promotion commits. Native Hermes jobs/session operations cannot replace Core-owned evaluation/accounting. Existing BN-06 and signed evidence contracts are retained. See [deployment security and validation](deployment-security.md).

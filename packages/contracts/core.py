@@ -36,6 +36,7 @@ class SecurityContext(BaseModel):
     correlation_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     causation_id: Optional[str] = None
     identity_token: Optional[str] = None
+    auth_session_id: Optional[str] = None
 
     def validate_ownership(self, target_org_id: str, target_project_id: Optional[str] = None) -> bool:
         """Enforces tenant and project boundary isolation."""

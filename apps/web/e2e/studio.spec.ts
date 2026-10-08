@@ -1,6 +1,29 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 
+test("hosted authentication-required contract presents the fixed login route", async ({
+  page,
+}) => {
+  // Browser contract only; real signed OIDC/Core integration is in backend tests.
+  await page.route("**/api/session", (route) =>
+    route.fulfill({
+      status: 401,
+      contentType: "application/json",
+      body: JSON.stringify({
+        error_code: "authentication_required",
+        login_url: "/auth/login",
+      }),
+    }),
+  );
+  await page.goto("/");
+  await expect(
+    page.getByRole("link", { name: "Masuk melalui penyedia identitas" }),
+  ).toHaveAttribute("href", "/auth/login");
+  await expect(
+    page.getByRole("button", { name: "Coba sambungkan kembali" }),
+  ).toBeVisible();
+});
+
 async function settleTheme(page: import("@playwright/test").Page) {
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await page.evaluate(async () => {
@@ -404,8 +427,13 @@ test("vertical slice HTTP nyata ke Core dengan runtime pengujian terisolasi", as
     const originalFetch = window.fetch;
     window.fetch = async (...args: Parameters<typeof fetch>) => {
       const response = await originalFetch.apply(window, args);
-      if (response.url.endsWith("/bench") && response.headers.get("content-type")?.includes("text/event-stream")) {
-        (window as Window & { arynBenchEvidence?: Promise<string> }).arynBenchEvidence = response.clone().text();
+      if (
+        response.url.endsWith("/bench") &&
+        response.headers.get("content-type")?.includes("text/event-stream")
+      ) {
+        (
+          window as Window & { arynBenchEvidence?: Promise<string> }
+        ).arynBenchEvidence = response.clone().text();
         window.fetch = originalFetch;
       }
       return response;
@@ -418,10 +446,19 @@ test("vertical slice HTTP nyata ke Core dengan runtime pengujian terisolasi", as
   );
   await page.getByRole("button", { name: "Jalankan Bench" }).click();
   expect((await benchTerminalResponse).status()).toBe(200);
-  await page.waitForFunction(() => Boolean((window as Window & { arynBenchEvidence?: Promise<string> }).arynBenchEvidence));
-  const benchFrames = (await page.evaluate(() => (window as Window & { arynBenchEvidence?: Promise<string> }).arynBenchEvidence!)).split(
-    "\n\n",
+  await page.waitForFunction(() =>
+    Boolean(
+      (window as Window & { arynBenchEvidence?: Promise<string> })
+        .arynBenchEvidence,
+    ),
   );
+  const benchFrames = (
+    await page.evaluate(
+      () =>
+        (window as Window & { arynBenchEvidence?: Promise<string> })
+          .arynBenchEvidence!,
+    )
+  ).split("\n\n");
   const benchTerminalFrame = benchFrames.find((frame) =>
     frame.startsWith("event: bench.completed\n"),
   )!;
@@ -669,10 +706,10 @@ test("kegagalan sesi lokal dan penolakan izin baca memiliki pesan yang tepat", a
 test("validasi versi dan penolakan Core terlihat di dalam dialog", async ({
   page,
 }) => {
+  // Own Core fixture; do not depend on the earlier vertical-slice test's blueprint.
+  const { bp } = await createUatBench(page);
   await page.goto("/factory");
-  await page
-    .getByRole("link", { name: /Research Agent — Tes Terisolasi/ })
-    .click();
+  await page.getByRole("link", { name: new RegExp(bp.name) }).click();
   await page.getByRole("button", { name: "Versi baru", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("Nomor versi").fill("invalid");

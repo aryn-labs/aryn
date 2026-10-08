@@ -444,3 +444,7 @@ Approval, explicit baseline acceptance dan rollback memerlukan human organizatio
 Publication memerlukan organization admin/operator serta project permission yang sesuai.
 Capabilities mengikuti aturan itu; membership direvalidate pada transaction commit.
 Tidak ada perluasan project admin rights. Lihat [execution hardening](core-execution-hardening.md).
+
+## Deployment identity boundary
+
+Hosted user identity is resolved only from verified issuer/subject, provisioned DB mapping and active server session; browser fields/identity headers cannot select actor/organization/role. Existing project membership and human org-admin governance policies remain authoritative for approval/baseline/rollback. Migration 015 creates empty authentication tables and never backfills memberships, approvals, publications or Bench evidence. AF-07, exact captured version, 013 commitments and 014 execution ownership remain unchanged. See [deployment security](deployment-security.md).

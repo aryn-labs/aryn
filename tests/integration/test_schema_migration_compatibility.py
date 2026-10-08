@@ -31,7 +31,9 @@ def test_upgrade_from_005_retains_legacy_governance_and_run_data(tmp_path):
         assert tuple(run) == ("Original", 3, "", None, "legacy")
         assert connection.exec_driver_sql("PRAGMA integrity_check").scalar() == "ok"
         assert connection.exec_driver_sql("PRAGMA foreign_key_check").all() == []
-        assert connection.exec_driver_sql("SELECT version_num FROM alembic_version").scalar() == "014_execution_authority"
+        for table in ("external_identities", "auth_sessions", "login_transactions"):
+            assert connection.exec_driver_sql("SELECT COUNT(*) FROM " + table).scalar() == 0
+        assert connection.exec_driver_sql("SELECT version_num FROM alembic_version").scalar() == "015_authentication_boundary"
         assert tuple(connection.exec_driver_sql("SELECT actual_model,gateway,runtime_backend,actual_provider FROM run_states WHERE id='legacy'").one()) == (None, None, None, None)
         assert any(index["unique"] and index["column_names"] == ["project_id", "idempotency_key"]
                    for index in inspect(engine).get_indexes("run_states"))
@@ -50,6 +52,9 @@ def test_postgresql_migrations_compile_offline_without_cloud_connection(monkeypa
     assert len(ScriptDirectory.from_config(config).get_current_head()) <= 32
     sql = output.getvalue()
     assert "ADD COLUMN execution_attestation VARCHAR(64)" in sql
+    assert "CREATE TABLE external_identities" in sql
+    assert "CREATE TABLE auth_sessions" in sql
+    assert "CREATE TABLE login_transactions" in sql
     assert "ADD COLUMN deadline_at TIMESTAMP WITH TIME ZONE" in sql
     assert "ADD COLUMN reserved_tokens INTEGER" in sql
     assert "ADD COLUMN usage_availability VARCHAR(32)" in sql

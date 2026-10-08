@@ -159,6 +159,13 @@ class PermissionEngine:
         # 7. Database verification: Project existence, Tenant scoping, and Hierarchical Membership validation
         effective_project_id = target_project_id or context.project_id
         with (nullcontext(session) if session is not None else self.db_manager.session()) as session:
+            if context.auth_session_id:
+                from modules.core.identity.sessions import session_identity
+                identity = session_identity(session, context.auth_session_id)
+                if (identity is None or identity.actor_id != context.actor.actor_id
+                        or identity.organization_id != target_org_id):
+                    return PolicyDecision(allowed=False, reason="Authenticated session is no longer valid.",
+                                          matched_rules=["RULE_SESSION_INVALID", "RULE_DENY_BY_DEFAULT"])
             # 7a. Verify project belongs to target organization if project is specified
             if effective_project_id:
                 proj = session.query(ProjectModel).filter_by(id=effective_project_id).first()

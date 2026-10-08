@@ -169,6 +169,7 @@ class TrustedIdentityBinder:
             organization_id=context.organization_id,
             project_id=context.project_id,
             ttl_seconds=ttl_seconds,
+            custom_claims={"auth_session_id": context.auth_session_id} if context.auth_session_id else None,
         )
         return context
 
@@ -181,6 +182,7 @@ class TrustedIdentityBinder:
         roles: Optional[List[str]] = None,
         correlation_id: Optional[str] = None,
         ttl_seconds: Optional[int] = None,
+        auth_session_id: Optional[str] = None,
     ) -> SecurityContext:
         """Issues an authoritative SecurityContext with a valid cryptographic identity token."""
         actor = Actor(
@@ -195,6 +197,7 @@ class TrustedIdentityBinder:
             organization_id=organization_id,
             project_id=project_id,
             correlation_id=correlation_id or str(uuid.uuid4()),
+            auth_session_id=auth_session_id,
         )
         return self.bind_context(ctx, ttl_seconds=ttl_seconds)
 
@@ -260,6 +263,10 @@ class TrustedIdentityBinder:
                 ),
                 matched_rules=["RULE_IDENTITY_TAMPERED", "RULE_DENY_BY_DEFAULT"],
             )
+
+        if claims.get("auth_session_id") != context.auth_session_id:
+            return PolicyDecision(allowed=False, reason="Authenticated session binding mismatch.",
+                                  matched_rules=["RULE_IDENTITY_TAMPERED", "RULE_DENY_BY_DEFAULT"])
 
         # 3. Expiration and timestamp validation
         now = time.time()

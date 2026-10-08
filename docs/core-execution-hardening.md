@@ -346,3 +346,7 @@ tests/security/test_tenant_isolation_ownership.py
 Commit delivery menggunakan pesan `Harden Core execution ownership, budgets, and captured provenance`.
 Commit berada pada development dengan parent baseline 5e9392c5f976b4725813dd98ccd8c6811472d9ae;
 hash aktual diberikan pada laporan akhir/git log. Tidak ada push, merge atau rebase main.
+
+## Deployment authentication follow-up
+
+Deployment boundary hardening continues this revision without changing captured execution claims, budgets/settlement, owner fencing or governance history. Hosted identity now comes from configured verified OIDC issuer/subject mapping and server session; Core binder signs the session reference and PermissionEngine revalidates session/mapping/current membership at authorization/commit. Local development identity requires explicit mode and cannot be enabled in production. See [deployment security](deployment-security.md); real hosted infrastructure remains unverified.

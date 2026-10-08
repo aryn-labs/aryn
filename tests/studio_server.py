@@ -1,6 +1,7 @@
 """Only for browser tests: isolated runtime + disposable DB + loopback port 8711."""
 
 from pathlib import Path
+import os
 from tempfile import mkdtemp
 
 import uvicorn
@@ -11,6 +12,7 @@ from database.repositories.organization_repo import OrganizationRepository
 from tests.studio_runtime import IsolatedTestRuntime
 
 if __name__ == "__main__":
+    os.environ["ARYN_AUTH_MODE"] = "local-development"
     path = Path(mkdtemp(prefix="aryn-studio-browser-test-")) / "isolated.sqlite3"
     db = DatabaseManager(create_db_engine(f"sqlite:///{path.as_posix()}"))
     init_db(db.engine)

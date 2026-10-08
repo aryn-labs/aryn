@@ -340,3 +340,7 @@ diklaim mempunyai hard total-token/cost cap. BYOK/local/9Router tidak otomatis M
 Timeout/ACK cancellation bukan proof provider berhenti; unknown retains reservation.
 Lihat [Core execution/runtime hardening](core-execution-hardening.md) untuk owner, recovery,
 contract, security evidence dan PostgreSQL limitations.
+
+## Deployment runtime isolation
+
+The dedicated ARYN Hermes wrapper now owns its actual aiohttp application/loopback listener and registers only minimal health, verified empty toolsets/capabilities, gateway receipt, text turn, run result and stop operations. Native jobs/cron, unrestricted sessions, responses, platform/profile/plugin ingress and browser-control WebSockets are unavailable even with a valid native API key. Request fields cannot grant tools, inject internal receipt, select native session IDs or enable fallback. Installed Hermes startup/router dispatch is tested with isolated home and HTTP model doubles; this does not prove VPS/firewall/container isolation. Runtime key remains private to API/runtime. See [route table and deployment boundary](deployment-security.md) and [actual validation](deployment-validation.md).

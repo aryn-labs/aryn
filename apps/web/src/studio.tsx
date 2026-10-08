@@ -22,7 +22,7 @@ import {
   Workflow,
   X,
 } from "lucide-react";
-import { api, apiStream, ApiError } from "./lib/api";
+import { api, apiStream, ApiError, logout } from "./lib/api";
 import type { Snapshot, Workspace } from "./lib/types";
 import { Button } from "./components/ui/button";
 import { Modal } from "./components/ui/dialog";
@@ -108,8 +108,13 @@ export function App() {
     onEvent?: (event: import("./lib/types").StreamEvent) => void,
   ): Promise<Record<string, unknown>> => {
     try {
-      const result = await apiStream(`/projects/${project}${path}`, body, onEvent);
-      if (success && (!path.endsWith("/runs") || result.status === "completed")) setToast(success);
+      const result = await apiStream(
+        `/projects/${project}${path}`,
+        body,
+        onEvent,
+      );
+      if (success && (!path.endsWith("/runs") || result.status === "completed"))
+        setToast(success);
       await queryClient.invalidateQueries({ queryKey: ["snapshot", project] });
       return result;
     } catch (err: any) {
@@ -305,16 +310,26 @@ export function App() {
             <span>
               {w?.mode === "isolated-test"
                 ? "Pengujian terisolasi"
-                : "Lingkungan lokal"}
-              <small>Sesi development · loopback</small>
+                : w?.mode === "hosted"
+                  ? "Lingkungan hosted"
+                  : "Lingkungan lokal"}
+              <small>
+                {w?.mode === "hosted"
+                  ? "Sesi terautentikasi"
+                  : "Sesi development · loopback"}
+              </small>
             </span>
           </div>
           <div className="user-area">
             <div className="user-avatar">PL</div>
             <div>
-              <strong>{w?.user.name || "Sesi development"}</strong>
+              <strong>{w?.user.name || "Sesi Studio"}</strong>
               <small>
-                {w?.user.role === "admin" ? "Admin lokal" : "Akses terbatas"}
+                {w?.user.role === "admin"
+                  ? w?.mode === "hosted"
+                    ? "Admin organisasi"
+                    : "Admin lokal"
+                  : "Akses terbatas"}
               </small>
             </div>
             <Button
@@ -360,9 +375,21 @@ export function App() {
             )}
           </div>
           <div className="topbar-actions">
+            {w?.mode === "hosted" && (
+              <Button
+                variant="ghost"
+                onClick={async () => {
+                  await logout();
+                  queryClient.clear();
+                  window.location.assign("/");
+                }}
+              >
+                Keluar
+              </Button>
+            )}
             <span
               className={`connection ${apiConnected ? "online" : "offline"}`}
-              title={workspace.error?.message || "ARYN API lokal"}
+              title={workspace.error?.message || "ARYN API"}
             >
               <span className="connection-dot" />
               API {apiConnected ? "terhubung" : "terputus"}
@@ -429,9 +456,15 @@ export function App() {
               </Notice>
               <p>
                 {accessDenied
-                  ? "Core belum mengizinkan sesi ini membaca proyek. Periksa keanggotaan dan peran development di server."
-                  : "Data dan aksi Studio membutuhkan API lokal yang aktif."}
+                  ? "Core belum mengizinkan sesi ini membaca proyek. Periksa keanggotaan dan peran di server."
+                  : "Data dan aksi Studio membutuhkan API yang aktif dan sesi yang valid."}
               </p>
+              {workspace.error instanceof ApiError &&
+                workspace.error.loginUrl && (
+                  <a href={workspace.error.loginUrl}>
+                    Masuk melalui penyedia identitas
+                  </a>
+                )}
               <Button onClick={refresh}>
                 <RefreshCw size={15} />
                 Coba sambungkan kembali
@@ -492,7 +525,8 @@ export function App() {
         </main>
         <footer className="app-footer">
           <span>
-            ARYN Studio <span className="footer-dot">·</span> development
+            ARYN Studio <span className="footer-dot">·</span>{" "}
+            {w?.mode === "hosted" ? "hosted" : "development"}
           </span>
           <span>
             Core mengatur setiap aksi <ShieldCheck size={12} />

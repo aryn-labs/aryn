@@ -101,6 +101,35 @@ class ProjectMembershipModel(Base):
     )
 
 
+class ExternalIdentityModel(Base):
+    """Administrator provisioned issuer/subject binding; never populated by login."""
+    __tablename__ = "external_identities"
+    id = Column(String(64), primary_key=True)
+    issuer = Column(String(512), nullable=False)
+    subject = Column(String(255), nullable=False)
+    actor_id = Column(String(64), nullable=False)
+    organization_id = Column(String(64), ForeignKey("organizations.id"), nullable=False)
+    status = Column(String(32), nullable=False, default="active")
+    __table_args__ = (UniqueConstraint("issuer", "subject", name="uq_external_identity_subject"),)
+
+
+class AuthSessionModel(Base):
+    __tablename__ = "auth_sessions"
+    token_hash = Column(String(64), primary_key=True)
+    identity_id = Column(String(64), ForeignKey("external_identities.id"), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    revoked_at = Column(DateTime(timezone=True))
+
+
+class LoginTransactionModel(Base):
+    __tablename__ = "login_transactions"
+    state_hash = Column(String(64), primary_key=True)
+    browser_hash = Column(String(64), nullable=False)
+    nonce = Column(String(128), nullable=False)
+    code_verifier = Column(String(128), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+
+
 class RunStateModel(Base):
     __tablename__ = "run_states"
 

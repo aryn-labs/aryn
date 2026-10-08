@@ -91,13 +91,18 @@ def test_launchers_non_development_missing_endpoint_fail_before_start(launcher_t
 
 
 @pytest.mark.parametrize("environment", ["development", "production"])
-def test_studio_check_only_accepts_explicit_overrides_without_secret_output(launcher_tree, environment):
+def test_studio_check_only_requires_local_development_without_secret_output(launcher_tree, environment):
     result = run_launcher(launcher_tree, "start-studio.ps1", launcher_env(
         ARYN_ENV=environment, ARYN_STUDIO_HOST="localhost", ARYN_STUDIO_PORT="8715",
         ARYN_RUNTIME_BASE_URL="http://127.0.0.1:8645", ARYN_9ROUTER_BASE_URL="http://127.0.0.1:20129/v1",
         ARYN_9ROUTER_API_KEY="isolated-gateway-secret", API_SERVER_KEY="isolated-runtime-secret"), "-CheckOnly")
-    assert result.returncode == 0, result.stderr
-    assert "Konfigurasi Studio valid" in result.stdout
+    if environment == "development":
+        assert result.returncode == 0, result.stderr
+        assert "Konfigurasi Studio valid" in result.stdout
+    else:
+        assert result.returncode != 0
+        assert "Local development" in result.stderr
+        assert "Konfigurasi Studio valid" not in result.stdout
     assert "secret" not in result.stdout + result.stderr
     assert not (launcher_tree / ".local").exists()
 

@@ -10,8 +10,10 @@ _KEY = re.compile(r"api.?key|secret|password|auth.?token|^auth$|^authorization$|
 _CONTENT = {"prompt", "system_prompt", "system_instructions", "output", "raw_response", "raw_trace"}
 _PATTERNS = [
     (re.compile(r"Bearer\s+[^\s\"'<>]+", re.I), "Bearer [REDACTED]"),
+    (re.compile(r"Basic\s+[^\s\"'<>]+", re.I), "Basic [REDACTED]"),
+    (re.compile(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"), "[REDACTED]"),
     (re.compile(r"\b(?:sk-[\w-]{8,}|AIza[\w-]{12,}|gh[pousr]_[\w]{12,})"), "[REDACTED]"),
-    (re.compile(r"((?:api[_-]?key|secret|password|access[_-]?token)\s*[:=]\s*)[^\s,;\"'<>]+", re.I), r"\1[REDACTED]"),
+    (re.compile(r"((?:api[_-]?key|secret|password|access[_-]?token|id[_-]?token|__Host-aryn_session|__Host-aryn_login|aryn_studio_session)[\"']?\s*[:=]\s*[\"']?)[^\s,;\"'<>]+", re.I), r"\1[REDACTED]"),
 ]
 
 
@@ -36,6 +38,30 @@ def sanitize(value, *, audit=False, credentials=()):
         for pattern, replacement in _PATTERNS:
             value = pattern.sub(replacement, value)
     return value
+
+
+def protect_diagnostic_logging(credentials):
+    """Process diagnostics exclude dependency tracebacks and registered credential values."""
+    import logging
+    registered = getattr(logging, "_aryn_protected_credentials", set())
+    registered.update(value for value in credentials if value)
+    logging._aryn_protected_credentials = registered
+    if getattr(logging, "_aryn_record_protection", False):
+        return
+    factory = logging.getLogRecordFactory()
+
+    def protected_record(*args, **kwargs):
+        record = factory(*args, **kwargs)
+        record.msg = sanitize(record.getMessage(), credentials=registered)
+        record.args = ()
+        # Traceback frames and exception repr can contain request/token bodies.
+        if record.exc_info:
+            record.msg += " [exception=" + record.exc_info[0].__name__ + "]"
+        record.exc_info = record.exc_text = record.stack_info = None
+        return record
+
+    logging.setLogRecordFactory(protected_record)
+    logging._aryn_record_protection = True
 
 
 def public_error(exc=None, *, correlation_id=None, run_id=None):

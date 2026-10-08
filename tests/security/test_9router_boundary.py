@@ -37,6 +37,19 @@ def test_production_environment_reads_are_explicit_and_never_provider_credential
         "ARYN_IDENTITY_SECRET",
         "ARYN_EVIDENCE_SECRET",
         "ARYN_HISTORY_COMMITMENT_PATH",
+        "ARYN_DATABASE_URL",
+        "ARYN_AUTH_MODE",
+        "ARYN_PUBLIC_ORIGIN",
+        "ARYN_OIDC_ISSUER",
+        "ARYN_OIDC_CLIENT_ID",
+        "ARYN_OIDC_CLIENT_SECRET",
+        "ARYN_OIDC_AUTHORIZATION_ENDPOINT",
+        "ARYN_OIDC_TOKEN_ENDPOINT",
+        "ARYN_OIDC_JWKS_URI",
+        "ARYN_OIDC_REDIRECT_URI",
+        "ARYN_SESSION_SECRET",
+        "ARYN_SESSION_TTL",
+        "ARYN_TRUSTED_PROXIES",
     }
     for directory in ("services", "packages", "modules"):
         for path in (root / directory).rglob("*.py"):
@@ -54,6 +67,7 @@ def test_env_example_contains_only_safe_gateway_configuration():
     root = Path(__file__).resolve().parents[2]
     assert (root / ".env.example").read_text(encoding="utf-8").splitlines() == [
         "ARYN_ENV=development",
+        "ARYN_AUTH_MODE=local-development",
         "ARYN_STUDIO_HOST=127.0.0.1",
         "ARYN_STUDIO_PORT=8710",
         "ARYN_RUNTIME_BASE_URL=http://127.0.0.1:8642",

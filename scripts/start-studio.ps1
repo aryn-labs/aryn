@@ -13,6 +13,9 @@ $studioLocal = Join-Path $studioRoot '.local'
 . (Join-Path $PSScriptRoot 'aryn-config.ps1')
 if ($Port -ne 0) { $env:ARYN_STUDIO_PORT = "$Port" }
 Initialize-ArynConfiguration -Root $studioRoot
+if ($env:ARYN_ENV -ne 'development') { throw 'Gunakan hosted server entrypoint untuk OIDC; launcher ini khusus Local development.' }
+if (-not $env:ARYN_AUTH_MODE) { $env:ARYN_AUTH_MODE = 'local-development' }
+if ($env:ARYN_AUTH_MODE -ne 'local-development') { throw 'Local launcher memerlukan ARYN_AUTH_MODE=local-development.' }
 Initialize-ArynRuntimeAuthentication
 if ($CheckOnly) { Write-Host 'Konfigurasi Studio valid.'; return }
 New-Item -ItemType Directory -Path $studioLocal -Force | Out-Null
