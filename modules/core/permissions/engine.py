@@ -10,7 +10,8 @@ Enforces explicit project-level memberships for operators and viewers while main
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Set
+from contextlib import nullcontext
+from typing import Dict, Optional, Set
 
 from database.connection import DatabaseManager
 from database.schema import MembershipModel, ProjectModel, ProjectMembershipModel
@@ -72,10 +73,16 @@ class PermissionEngine:
         self,
         db_manager: Optional[DatabaseManager] = None,
         identity_binder: Optional[TrustedIdentityBinder] = None,
+        identity_binder_required: bool = False,
     ) -> None:
         self.db_manager = db_manager
+        if db_manager is not None:
+            db_manager.permission_engine = self
+            db_manager.engine._aryn_permission_engine = self
         if identity_binder is not None:
             self.identity_binder = identity_binder
+        elif identity_binder_required:
+            self.identity_binder = None
         else:
             try:
                 self.identity_binder = TrustedIdentityBinder()
@@ -88,6 +95,7 @@ class PermissionEngine:
         context: SecurityContext,
         target_org_id: str,
         target_project_id: Optional[str] = None,
+        session=None,
     ) -> PolicyDecision:
         # 1. Authoritative Identity Binding Verification (Fail-closed on untrusted/forged actor claims)
         if self.identity_binder is None:
@@ -150,7 +158,7 @@ class PermissionEngine:
 
         # 7. Database verification: Project existence, Tenant scoping, and Hierarchical Membership validation
         effective_project_id = target_project_id or context.project_id
-        with self.db_manager.session() as session:
+        with (nullcontext(session) if session is not None else self.db_manager.session()) as session:
             # 7a. Verify project belongs to target organization if project is specified
             if effective_project_id:
                 proj = session.query(ProjectModel).filter_by(id=effective_project_id).first()
@@ -171,7 +179,7 @@ class PermissionEngine:
             org_member = (
                 session.query(MembershipModel)
                 .filter_by(organization_id=target_org_id, user_id=context.actor.actor_id)
-                .first()
+                .populate_existing().first()
             )
             if not org_member:
                 return PolicyDecision(
@@ -179,6 +187,9 @@ class PermissionEngine:
                     reason=f"Actor '{context.actor.actor_id}' has no membership in organization '{target_org_id}'.",
                     matched_rules=["RULE_MEMBERSHIP_REQUIRED"],
                 )
+
+            if session.info.get("write") and org_member is not None:
+                org_member = session.query(MembershipModel).filter_by(id=org_member.id).with_for_update().populate_existing().one()
 
             # 7c. Verify organization membership status (active vs revoked vs suspended)
             org_status = getattr(org_member, "status", "active")
@@ -204,7 +215,7 @@ class PermissionEngine:
                             project_id=effective_project_id,
                             user_id=context.actor.actor_id,
                         )
-                        .first()
+                        .populate_existing().first()
                     )
                     if not proj_member:
                         return PolicyDecision(
@@ -216,6 +227,8 @@ class PermissionEngine:
                             matched_rules=["RULE_PROJECT_MEMBERSHIP_REQUIRED", "RULE_DENY_BY_DEFAULT"],
                         )
 
+                    if session.info.get("write"):
+                        proj_member = session.query(ProjectMembershipModel).filter_by(id=proj_member.id).with_for_update().populate_existing().one()
                     p_status = getattr(proj_member, "status", "active")
                     if p_status != "active":
                         return PolicyDecision(
@@ -230,6 +243,12 @@ class PermissionEngine:
                     effective_role = proj_member.role.lower()
             else:
                 effective_role = org_role
+
+        if action in {"version:approve", "bench:accept_baseline", "agent:rollback"} and org_role != "admin":
+            return PolicyDecision(allowed=False, reason="Active organization admin authority is required.", matched_rules=["RULE_ORG_ADMIN_REQUIRED"])
+
+        if action == "version:publish" and org_role not in {"admin", "operator"}:
+            return PolicyDecision(allowed=False, reason="Active organization publishing authority is required.", matched_rules=["RULE_ORG_PUBLICATION_AUTHORITY"])
 
         # 8. Agent confinement: autonomous agents cannot perform governance/approval actions
         if context.actor.actor_type != ActorType.USER and action in self.HUMAN_ONLY_ACTIONS:
@@ -260,7 +279,8 @@ class PermissionEngine:
         context: SecurityContext,
         target_org_id: str,
         target_project_id: Optional[str] = None,
+        session=None,
     ) -> None:
-        decision = self.evaluate(action, context, target_org_id, target_project_id)
+        decision = self.evaluate(action, context, target_org_id, target_project_id, session=session)
         if not decision.allowed:
             raise PermissionDeniedError(decision.reason)

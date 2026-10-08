@@ -150,13 +150,19 @@ async def test_recovery_is_project_scoped_and_never_claims_runtime_cancellation(
     coordinator = RunCoordinator(runtime, db_manager=db)
     own_id = await coordinator.start_managed_run(RunRequest(prompt="Own", model="mock-fast", idempotency_key="own-key"), ctx)
     other_id = await coordinator.start_managed_run(RunRequest(prompt="Other", model="mock-fast"), other)
+    assert coordinator.recover_in_flight_runs(ctx) == []  # Live owner is never abandoned.
+    from database.connection import DatabaseManager, create_db_engine
+    db.engine.dispose()
+    db = DatabaseManager(create_db_engine(str(db.engine.url)))
+    coordinator = RunCoordinator(runtime, db_manager=db)
     recovered = coordinator.recover_in_flight_runs(ctx)
     assert [x["run_id"] for x in recovered] == [own_id]
     assert recovered[0]["runtime_outcome"] == "unknown"
     assert recovered[0]["cancellation_confirmed"] is False
     with db.session() as s:
         assert RunStateRepository(s).get_run(other, other_id).status == "started"
-        assert RunStateRepository(s).get_run(ctx, own_id).status == "failed"
+        assert RunStateRepository(s).get_run(ctx, own_id).status == "outcome_unknown"
     before = len(runtime.requests)
     result = await coordinator.start_managed_run(RunRequest(prompt="Own", model="mock-fast", idempotency_key="own-key"), ctx)
     assert result == own_id and len(runtime.requests) == before
+    db.engine.dispose()

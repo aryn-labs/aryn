@@ -134,3 +134,41 @@ async def test_raw_runtime_secret_is_never_returned(lifecycle, location, caplog)
                     await adapter.execute_direct_turn(RunRequest(prompt="Isolated", model=MODEL), ctx)
             assert secret not in str(exc.value)
     assert secret not in caplog.text
+
+
+def test_gateway_output_cap_and_single_dispatch_even_after_success():
+    calls = []
+    def gateway(request):
+        calls.append(json.loads(request.content))
+        return httpx.Response(200, json=copy.deepcopy(COMPLETION))
+    receipt = ModelReceipt(MODEL, transport={"max_tokens": 64})
+    with httpx.Client(transport=ExactGatewayTransport(GatewaySettings(), receipt, httpx.MockTransport(gateway))) as client:
+        body = {"model": MODEL, "max_tokens": 9999, "max_completion_tokens": 9999, "n": 5}
+        assert client.post("http://127.0.0.1:20128/v1/chat/completions", json=body).status_code == 200
+        assert client.post("http://127.0.0.1:20128/v1/chat/completions", json=body).status_code == 400
+    assert calls == [{"model": MODEL, "max_tokens": 64}]
+    assert receipt.failure == "additional_dispatch_forbidden" and receipt.evidence() is None
+
+
+def test_concurrent_sdk_dispatches_share_receipt_latch():
+    from concurrent.futures import ThreadPoolExecutor
+    import threading
+    entered, release = threading.Event(), threading.Event()
+    calls = []
+    def gateway(request):
+        calls.append(request)
+        entered.set()
+        assert release.wait(5)
+        return httpx.Response(200, json=copy.deepcopy(COMPLETION))
+    receipt = ModelReceipt(MODEL, transport={"max_tokens": 64})
+    with httpx.Client(transport=ExactGatewayTransport(GatewaySettings(), receipt, httpx.MockTransport(gateway))) as client:
+        with ThreadPoolExecutor(2) as workers:
+            first = workers.submit(client.post, "http://127.0.0.1:20128/v1/chat/completions", json={"model": MODEL})
+            assert entered.wait(5)
+            second = workers.submit(client.post, "http://127.0.0.1:20128/v1/chat/completions", json={"model": MODEL})
+            try:
+                assert second.result(timeout=5).status_code == 400
+            finally:
+                release.set()
+            assert first.result(timeout=5).status_code == 200
+    assert len(calls) == 1 and receipt.evidence() is None

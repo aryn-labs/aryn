@@ -4,7 +4,6 @@ from __future__ import annotations
 import datetime
 import uuid
 
-from database.connection import DatabaseManager
 from database.repositories.agent_repo import AgentRepository
 from database.repositories.approval_repo import ApprovalRepository
 from database.repositories.bench_repo import BenchRepository
@@ -28,10 +27,12 @@ class AgentActivationRepository:
     def __init__(self, session, signer, permission_engine=None):
         self.session = session
         self.signer = signer
-        self.db = DatabaseManager(session.get_bind(), evidence_signer=signer)
+        self.db = session.info.get("db_manager")
+        if self.db is None:
+            raise HistoryUnverifiedError("Configured Core authority is required for governance revalidation.")
         self.agents = AgentRepository(session)
-        self.permissions = permission_engine or PermissionEngine(self.db)
-        self.approvals = ApprovalEngine(self.db, permission_engine=self.permissions)
+        self.permissions = permission_engine or getattr(self.db, "permission_engine", None) or PermissionEngine(self.db, identity_binder_required=True)
+        self.approvals = getattr(self.db, "approval_authority", None) or ApprovalEngine(self.db, permission_engine=self.permissions)
         self.bench = BenchRepository(session, signer)
         self.regression = BenchRegressionRepository(session, signer, self.permissions, self.approvals)
         self.audit = AuditLogger(self.db)
@@ -67,7 +68,7 @@ class AgentActivationRepository:
         comparison = (self.regression.verify_publication_comparison(context, approval.regression_comparison_id, version)
             if approval.regression_comparison_id else None)
         publisher = self.permissions.identity_binder.create_trusted_context(row.published_by, context.organization_id, context.project_id)
-        self.permissions.enforce("version:publish", publisher, context.organization_id, context.project_id)
+        self.permissions.enforce("version:publish", publisher, context.organization_id, context.project_id, session=self.session)
         if publisher.actor.actor_type != ActorType.USER:
             raise PermissionDeniedError("Publication must have a human publisher.")
         return row, evaluation, approval, baseline, comparison
@@ -234,7 +235,7 @@ class AgentActivationRepository:
         if kind not in {"initial", "rollback"}:
             raise InvalidStateTransitionError("Unsupported assignment transition.")
         self.permissions.enforce("agent:rollback" if kind == "rollback" else "agent:assign",
-            context, context.organization_id, context.project_id)
+            context, context.organization_id, context.project_id, session=self.session)
         target_row = self.agents.get_version(context, target)
         if target_row.blueprint_id != assignment.blueprint_id or self.known_good(context, target) != reference:
             raise VersionIntegrityError("Activation requires exact verified target publication evidence.")
@@ -285,7 +286,7 @@ class AgentActivationRepository:
 
     def rollback(self, context, assignment_id, intent: RollbackIntent):
         intent = RollbackIntent.model_validate(intent)
-        self.permissions.enforce("agent:rollback", context, context.organization_id, context.project_id)
+        self.permissions.enforce("agent:rollback", context, context.organization_id, context.project_id, session=self.session)
         assignment = self.lock_assignment(context, assignment_id)
         history = self.history(context, assignment)
         digest = evidence_hash({"actor": context.actor.actor_id, "intent": intent.model_dump(mode="json"), "assignment": assignment.id})

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import datetime
 import json
 from typing import Dict, List, Optional, Set
 from sqlalchemy.orm import Session
@@ -10,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 
 from database.schema import RunStateModel, utc_now
 from packages.contracts.core import SecurityContext
-from packages.contracts.runtime import RunStatus, RunUsage
+from packages.contracts.runtime import RunUsage
 from database.repositories.exceptions import (
     DuplicateEntityError,
     EntityNotFoundError,
@@ -24,17 +23,18 @@ class RunStateRepository:
 
     # Deterministic State Machine Map
     VALID_TRANSITIONS: Dict[str, Set[str]] = {
-        "queued": {"started", "cancelled", "failed"},
-        "started": {"running", "stopping", "completed", "cancelled", "failed"},
-        "running": {"completed", "stopping", "cancelled", "failed"},
-        "stopping": {"cancelled", "completed", "failed"},
+        "queued": {"started", "cancelled", "failed", "outcome_unknown"},
+        "started": {"running", "stopping", "completed", "cancelled", "failed", "outcome_unknown"},
+        "running": {"completed", "stopping", "cancelled", "failed", "outcome_unknown"},
+        "stopping": {"cancelled", "completed", "failed", "outcome_unknown"},
         # Terminal states have NO outgoing transitions
         "completed": set(),
         "cancelled": set(),
         "failed": set(),
+        "outcome_unknown": set(),
     }
 
-    TERMINAL_STATES = frozenset({"completed", "cancelled", "failed"})
+    TERMINAL_STATES = frozenset({"completed", "cancelled", "failed", "outcome_unknown"})
 
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -92,7 +92,28 @@ class RunStateRepository:
                 f"not context project '{context.project_id}'."
             )
         self.verify_assignment_provenance(run)
+        self.verify_execution_claim(run)
         return run
+
+    def verify_execution_claim(self, run):
+        if not run.execution_claim_json:
+            if run.execution_attestation or run.execution_owner_id:
+                raise InvalidStateTransitionError("Execution claim is incomplete.")
+            return False  # Historical read-only evidence, never new replay authority.
+        from packages.contracts.timestamps import canonical_timestamp
+        manager = self.session.info.get("db_manager")
+        try:
+            evidence = json.loads(run.execution_claim_json)
+            bindings = {"run_id": run.id, "organization_id": run.organization_id, "project_id": run.project_id,
+                "request_hash": run.request_hash, "model": run.model, "provider": run.provider,
+                "owner_id": run.execution_owner_id, "mode": run.execution_mode,
+                "deadline_at": canonical_timestamp(run.deadline_at, stored=True),
+                "limits": json.loads(run.effective_limits_json), "assignment_attestation": run.assignment_attestation}
+            if evidence != bindings or manager is None or not manager.evidence_signer.verify("execution_claim", evidence, run.execution_attestation):
+                raise ValueError("Claim differs.")
+            return True
+        except (ValueError, TypeError):
+            raise InvalidStateTransitionError("Captured Core execution claim is unverified.") from None
 
     def verify_assignment_provenance(self, run):
         if not run.assignment_provenance_json:
@@ -126,6 +147,7 @@ class RunStateRepository:
         )
         if row:
             self.verify_assignment_provenance(row)
+            self.verify_execution_claim(row)
         return row
 
     def transition_status(

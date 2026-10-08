@@ -1,6 +1,7 @@
 """Hermes SDK transport restriction and evidence capture, independently testable."""
 
 import json
+import threading
 from dataclasses import dataclass, field
 
 import httpx
@@ -15,6 +16,8 @@ class ModelReceipt:
     provider: str | None = None
     failure: str | None = None
     verified: bool = False
+    dispatched: bool = False
+    dispatch_lock: object = field(default_factory=threading.Lock, repr=False)
     transport: object = field(default=None, repr=False)
 
     def evidence(self):
@@ -52,6 +55,16 @@ class ExactGatewayTransport(httpx.BaseTransport):
                 or not isinstance(body, dict) or body.get("model") != self.receipt.requested_model
                 or body.get("stream") is True or body.get("tools") or body.get("functions")):
             return self._reject(request, "gateway_route_mismatch")
+        with self.receipt.dispatch_lock:
+            if self.receipt.dispatched:
+                return self._reject(request, "additional_dispatch_forbidden")
+            self.receipt.dispatched = True
+        options = self.receipt.transport or {}
+        cap = options.get("max_tokens")
+        if type(cap) is int and cap > 0:
+            body["max_tokens"] = min(cap, body.get("max_tokens", cap)) if type(body.get("max_tokens", cap)) is int else cap
+        body.pop("max_completion_tokens", None)
+        body.pop("n", None)
         # Strip all SDK/config headers. Only the optional gateway credential is forwarded.
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
         key = self.settings.api_key.get_secret_value()
@@ -59,7 +72,7 @@ class ExactGatewayTransport(httpx.BaseTransport):
             return self._reject(request, "gateway_secret_leak")
         if key:
             headers["Authorization"] = f"Bearer {key}"
-        forwarded = httpx.Request("POST", request.url, headers=headers, content=request.content)
+        forwarded = httpx.Request("POST", request.url, headers=headers, content=json.dumps(body).encode())
         try:
             response = self.inner.handle_request(forwarded)
             response.read()

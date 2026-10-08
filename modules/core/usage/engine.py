@@ -48,6 +48,8 @@ class BudgetEngine:
             )
 
     def record_usage(self, context: SecurityContext, usage: RunUsage) -> None:
+        if usage.availability != "measured":
+            raise BudgetExceededError("Estimated or missing usage cannot enter measured accounting.")
         key = f"{context.organization_id}:{context.project_id}"
         current = self._cumulative_tokens.get(key, 0)
         self._cumulative_tokens[key] = current + usage.total_tokens

@@ -77,13 +77,19 @@ class DatabaseManager:
     def __init__(self, engine: Engine | None = None, evidence_signer=None) -> None:
         self.engine = engine or create_db_engine()
         self.session_factory = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
-        self._evidence_signer = evidence_signer
+        self._evidence_signer = evidence_signer or getattr(self.engine, "_aryn_evidence_signer", None)
+        if evidence_signer is not None and not hasattr(self.engine, "_aryn_evidence_signer"):
+            self.engine._aryn_evidence_signer = evidence_signer
+        self.permission_engine = getattr(self.engine, "_aryn_permission_engine", None)
+        self.approval_authority = getattr(self.engine, "_aryn_approval_authority", None)
 
     @property
     def evidence_signer(self):
         from modules.core.evidence import EvidenceSigner
-        if self._evidence_signer is None:
-            self._evidence_signer = EvidenceSigner.for_database(self.engine)
+        with self._history_lock:
+            if self._evidence_signer is None:
+                self._evidence_signer = getattr(self.engine, "_aryn_evidence_signer", None) or EvidenceSigner.for_database(self.engine)
+                self.engine._aryn_evidence_signer = self._evidence_signer
         return self._evidence_signer
 
     @property

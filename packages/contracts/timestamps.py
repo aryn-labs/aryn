@@ -2,6 +2,11 @@
 import datetime
 
 
+def utc_datetime(value):
+    """Interpret persisted SQLite naive values as UTC, never host local time."""
+    return datetime.datetime.fromisoformat(canonical_timestamp(value, stored=True))
+
+
 def canonical_timestamp(value, *, stored=False):
     value = datetime.datetime.fromisoformat(value) if isinstance(value, str) else value
     if not isinstance(value, datetime.datetime):

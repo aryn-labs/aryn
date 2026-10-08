@@ -627,15 +627,15 @@ export function CanvasInspector({
                       <div className="usage-row mb-4">
                         <div>
                           <small>Token input</small>
-                          <strong className="mono">{number(run.input_tokens)}</strong>
+                          <strong className="mono">{(run.usage_availability === "unavailable" ? "Tidak tersedia" : number(run.input_tokens))}</strong>
                         </div>
                         <div>
                           <small>Token output</small>
-                          <strong className="mono">{number(run.output_tokens)}</strong>
+                          <strong className="mono">{(run.usage_availability === "unavailable" ? "Tidak tersedia" : number(run.output_tokens))}</strong>
                         </div>
                         <div>
                           <small>Total token</small>
-                          <strong className="mono">{number(run.total_tokens)}</strong>
+                          <strong className="mono">{(run.usage_availability === "unavailable" ? "Tidak tersedia" : number(run.total_tokens))}</strong>
                         </div>
                       </div>
                       <dl className="inspector-meta-list">
@@ -669,11 +669,11 @@ export function CanvasInspector({
                         <dd>{run.actual_provider || "Tidak dilaporkan"}</dd>
                         <dt>Token input / output</dt>
                         <dd className="mono">
-                          {number(run.input_tokens)} /{" "}
-                          {number(run.output_tokens)}
+                          {(run.usage_availability === "unavailable" ? "Tidak tersedia" : number(run.input_tokens))} /{" "}
+                          {(run.usage_availability === "unavailable" ? "Tidak tersedia" : number(run.output_tokens))}
                         </dd>
                         <dt>Total token</dt>
-                        <dd className="mono">{number(run.total_tokens)}</dd>
+                        <dd className="mono">{(run.usage_availability === "unavailable" ? "Tidak tersedia" : number(run.total_tokens))}</dd>
                         <dt>Dibuat</dt>
                         <dd>{date(run.created_at)}</dd>
                         <dt>Selesai</dt>
@@ -689,7 +689,7 @@ export function CanvasInspector({
                           <dl className="inspector-meta-list">
                             <dt>Temperature</dt>
                             <dd>{version.temperature}</dd>
-                            <dt>Batas token</dt>
+                            <dt>Batas output yang diminta</dt>
                             <dd>{version.max_tokens}</dd>
                           </dl>
                         </>
@@ -717,15 +717,15 @@ export function CanvasInspector({
                         <div className="usage-row">
                           <div>
                             <small>Token input</small>
-                            <strong className="mono">{number(run.input_tokens)}</strong>
+                            <strong className="mono">{(run.usage_availability === "unavailable" ? "Tidak tersedia" : number(run.input_tokens))}</strong>
                           </div>
                           <div>
                             <small>Token output</small>
-                            <strong className="mono">{number(run.output_tokens)}</strong>
+                            <strong className="mono">{(run.usage_availability === "unavailable" ? "Tidak tersedia" : number(run.output_tokens))}</strong>
                           </div>
                           <div>
                             <small>Total token</small>
-                            <strong className="mono">{number(run.total_tokens)}</strong>
+                            <strong className="mono">{(run.usage_availability === "unavailable" ? "Tidak tersedia" : number(run.total_tokens))}</strong>
                           </div>
                         </div>
                         <Button
@@ -822,7 +822,7 @@ export function CanvasInspector({
                           <dd className="mono">{version.model}</dd>
                           <dt>Temperature</dt>
                           <dd>{version.temperature}</dd>
-                          <dt>Batas token</dt>
+                          <dt>Batas output yang diminta</dt>
                           <dd>{version.max_tokens}</dd>
                         </dl>
                         <span

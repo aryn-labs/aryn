@@ -440,9 +440,10 @@ def test_output_html_remains_data_and_failed_runtime_not_completed(studio):
             "allow_remote_model": True,
         },
     )
-    assert response.status_code == 502 and "message" in response.json()
+    assert response.status_code == 200 and response.json()["status"] == "failed"
+    assert response.json()["error_code"] == "runtime_failed"
     with db.session() as s:
-        assert s.query(RunStateModel).one().status == "failed"
+        assert s.query(RunStateModel).filter(RunStateModel.execution_mode != "bench").one().status == "failed"
 
 
 def test_schema_upgrade_004_retains_data(tmp_path):
@@ -546,7 +547,7 @@ def test_unavailable_model_blocks_run_without_fallback(studio, availability, cod
     assert response.status_code == code
     assert len(runtime.requests) == before
     with db.session() as s:
-        assert s.query(RunStateModel).count() == 0
+        assert s.query(RunStateModel).filter(RunStateModel.execution_mode != "bench").count() == 0
 
 
 def test_historical_four_of_four_remains_stored_when_evidence_is_legacy(studio):

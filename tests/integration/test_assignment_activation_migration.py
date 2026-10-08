@@ -19,14 +19,15 @@ async def test_activation_upgrade_downgrade_keeps_versions_governance_and_existi
     config.set_main_option("script_location", str(ROOT / "database/migrations"))
     with db.engine.begin() as connection:
         config.attributes["connection"] = connection
-        records = {table: connection.exec_driver_sql(f"SELECT * FROM {table} ORDER BY id").all()
+        columns = {table: ",".join(c["name"] for c in inspect(db.engine).get_columns(table) if c["name"] != "evaluation_owner_id") for table in ("agent_versions", "bench_evaluations", "bench_baselines", "bench_comparisons", "approvals")}
+        records = {table: connection.exec_driver_sql(f"SELECT {columns[table]} FROM {table} ORDER BY id").all()
             for table in ("agent_versions", "bench_evaluations", "bench_baselines", "bench_comparisons", "approvals")}
         command.downgrade(config, "011_bench_baseline_regression")
         assert connection.exec_driver_sql("SELECT version_id FROM agent_assignments WHERE id=?", (assignment.id,)).scalar() == second.id
-        assert connection.exec_driver_sql("SELECT COUNT(*) FROM run_states").scalar() == 1
+        assert connection.exec_driver_sql("SELECT COUNT(*) FROM run_states WHERE execution_mode != 'bench'").scalar() == 1
         command.upgrade(config, "head")
         for table, before in records.items():
-            assert connection.exec_driver_sql(f"SELECT * FROM {table} ORDER BY id").all() == before
+            assert connection.exec_driver_sql(f"SELECT {columns[table]} FROM {table} ORDER BY id").all() == before
         assert connection.exec_driver_sql("SELECT COUNT(*) FROM agent_publications").scalar() == 0
         assert connection.exec_driver_sql("SELECT COUNT(*) FROM assignment_transitions").scalar() == 0
         assert connection.exec_driver_sql("SELECT current_transition_id,activation_origin FROM agent_assignments WHERE id=?", (assignment.id,)).one() == (None, "legacy")

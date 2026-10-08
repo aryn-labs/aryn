@@ -157,3 +157,13 @@ Rollback intent: `POST /api/projects/{project_id}/assignments/{assignment_id}/ro
 Snapshot memuat eligibility, activation history dan captured run version provenance. Historical
 run tanpa durable captured identity ditampilkan unavailable; current assignment tidak dipakai
 untuk menebak versi lama. Lihat [Factory contracts](agent-factory-contracts.md#8-version-registry-dan-known-good-rollback-af-07).
+
+## Captured execution result contract
+
+Run JSON/SSE/cache/history memakai persisted Core RunResult. IDs/version/payload/transition
+berasal dari captured claim, termasuk rollback saat preflight await. Terminal transport event
+run.completed harus dibaca bersama status: failed/cancelled/outcome_unknown bukan success.
+Usage unavailable ditampilkan Tidak tersedia; cost tanpa sourced evidence tetap NULL.
+Old flat token/id/session aliases tetap ada; timestamp menerima UTC epoch dan historical ISO.
+Public errors membawa safe code/correlation/run IDs tanpa dependency exception text. Important
+SSE events dan completion reader typed. Tidak ada visual redesign. Lihat [execution hardening](core-execution-hardening.md).

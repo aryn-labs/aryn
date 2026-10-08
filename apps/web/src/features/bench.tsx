@@ -340,7 +340,7 @@ export function BenchPage({
     step: string;
     scenarioIndex?: number;
     scenarioId?: string;
-    data?: any;
+    data?: import("../lib/types").StreamPayload | import("../lib/types").Evaluation;
     scenarioStatuses?: Record<number, { passed?: boolean; status: NodeStatus }>;
     scenarios?: import("../lib/types").ScenarioDefinition[];
   } | null>(null);
@@ -389,7 +389,7 @@ export function BenchPage({
         `/versions/${activeVersionId}/bench`,
         { allow_remote_model: consent },
         "Bench selesai dievaluasi.",
-        (evt: any) => {
+        (evt: import("../lib/types").StreamEvent) => {
           if (!evt) return;
           if (evt.type === "bench.started") {
             scenarioDefinitions = evt.data?.scenarios;
@@ -401,7 +401,7 @@ export function BenchPage({
           } else if (evt.type === "scenario.started") {
             const sId = evt.data?.scenario_id;
             const idx = Number.isInteger(evt.data?.index)
-              ? evt.data.index
+              ? evt.data.index!
               : (scenarioDefinitions?.findIndex((s) => s.scenario_id === sId) ??
                 -1);
             if (idx >= 0) {
@@ -416,7 +416,7 @@ export function BenchPage({
           } else if (evt.type === "scenario.completed") {
             const sId = evt.data?.scenario_id;
             const idx = Number.isInteger(evt.data?.index)
-              ? evt.data.index
+              ? evt.data.index!
               : (scenarioDefinitions?.findIndex((s) => s.scenario_id === sId) ??
                 -1);
             if (idx >= 0) {

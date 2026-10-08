@@ -1,4 +1,4 @@
-import type { BenchCompletion } from "./types";
+import type { BenchCompletion, StreamEvent, StreamPayload, RunResponse } from "./types";
 
 let csrf = "";
 let pendingSession: Promise<void> | undefined;
@@ -6,6 +6,9 @@ export class ApiError extends Error {
   constructor(
     message: string,
     public status: number,
+    public errorCode?: string,
+    public correlationId?: string,
+    public runId?: string,
   ) {
     super(message);
   }
@@ -71,16 +74,16 @@ export async function api<T>(path: string, body?: unknown): Promise<T> {
     throw new ApiError(
       data.message || "Permintaan belum dapat diselesaikan. Coba kembali.",
       response.status,
+      data.error_code, data.correlation_id, data.run_id,
     );
   return data;
 }
 
-export type StreamEvent = {
-  type: string;
-  data: any;
-};
+export type { StreamEvent } from "./types";
 
-export function readBenchCompletion(value: any): BenchCompletion {
+export function readBenchCompletion(input: unknown): BenchCompletion {
+  if (!input || typeof input !== "object") throw new ApiError("Kontrak hasil Bench tidak valid.", 502);
+  const value = input as Partial<BenchCompletion>;
   if (
     typeof value?.evaluation_id !== "string" ||
     !value.evaluation_id ||
@@ -92,10 +95,25 @@ export function readBenchCompletion(value: any): BenchCompletion {
   ) {
     throw new ApiError("Kontrak hasil Bench tidak valid.", 502);
   }
-  return value;
+  return value as BenchCompletion;
 }
 
-export async function apiStream<T = any>(
+export function readRunCompletion(input: unknown): RunResponse {
+  if (!input || typeof input !== "object") throw new ApiError("Kontrak hasil Core tidak valid.", 502);
+  const value = input as Partial<RunResponse>;
+  if (!value.run_id || value.id !== value.run_id || value.requested_model !== value.model ||
+      !["queued", "started", "running", "stopping", "completed", "failed", "cancelled", "outcome_unknown"].includes(value.status || "") ||
+      !["measured", "unavailable"].includes(value.usage?.availability || "") ||
+      (value.status === "completed" && (!value.execution_claim_verified || value.actual_model !== value.requested_model || !value.output_reference)) ||
+      (value.assignment_id && (!value.assignment_provenance_verified || !value.agent_version_id || !value.agent_payload_hash || !value.assignment_transition_id)) ||
+      (value.usage?.availability === "measured" && (value.usage.input_tokens < 0 || value.usage.output_tokens < 0 ||
+        value.usage.total_tokens !== value.usage.input_tokens + value.usage.output_tokens))) {
+    throw new ApiError("Kontrak hasil Core tidak valid.", 502);
+  }
+  return value as RunResponse;
+}
+
+export async function apiStream<T = Record<string, unknown>>(
   path: string,
   body: unknown,
   onEvent?: (event: StreamEvent) => void,
@@ -130,6 +148,7 @@ export async function apiStream<T = any>(
     throw new ApiError(
       data.message || "Permintaan belum dapat diselesaikan. Coba kembali.",
       response.status,
+      data.error_code, data.correlation_id, data.run_id,
     );
   }
 
@@ -137,7 +156,7 @@ export async function apiStream<T = any>(
   if (contentType.includes("application/json")) {
     const result = await response.json();
     return (
-      path.endsWith("/bench") ? readBenchCompletion(result) : result
+      path.endsWith("/bench") ? readBenchCompletion(result) : path.endsWith("/runs") ? readRunCompletion(result) : result
     ) as T;
   }
 
@@ -167,13 +186,14 @@ export async function apiStream<T = any>(
           const parsedData = JSON.parse(dataMatch[1].trim());
           if (evType === "bench.completed" || evType === "run.completed") {
             if (evType === "bench.completed") readBenchCompletion(parsedData);
+            else readRunCompletion(parsedData);
             finalResult = parsedData as T;
           }
           if (evType === "bench.error" || evType === "run.failed") {
-            throw new ApiError(parsedData.message || "Operasi gagal.", 500);
+            throw new ApiError(parsedData.message || "Operasi gagal.", 500, parsedData.error_code, parsedData.correlation_id, parsedData.run_id);
           }
           if (onEvent) {
-            onEvent({ type: evType, data: parsedData });
+            onEvent({ type: evType, data: parsedData as StreamPayload });
           }
         } catch (e) {
           if (e instanceof ApiError) throw e;

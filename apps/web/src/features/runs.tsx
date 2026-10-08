@@ -142,11 +142,11 @@ export function Runs({ data, workspace, pending, act, actStream }: Shared) {
         },
         "Penugasan operasional berhasil dibuat. Agent siap dijalankan.",
       );
-      if (res && (res as any).id) {
-        setParams({ penugasan: (res as any).id });
+      if (res && typeof res.id === "string") {
+        setParams({ penugasan: res.id });
       }
-    } catch (err: any) {
-      setValidation(err.message || "Gagal membuat penugasan");
+    } catch (err: unknown) {
+      setValidation((err instanceof Error ? err.message : "") || "Gagal membuat penugasan");
     } finally {
       setCreatingAssignment(false);
     }
@@ -175,20 +175,20 @@ export function Runs({ data, workspace, pending, act, actStream }: Shared) {
           allow_remote_model: consent,
         },
         "Eksekusi selesai. Hasil dan audit tersimpan.",
-        (evt: any) => {
+        (evt: import("../lib/types").StreamEvent) => {
           if (!evt) return;
           setLiveEvent({ step: evt.type, message: evt.data?.message });
         },
       );
       // Fresh runs return run_id; idempotency replay returns the persisted row id.
-      const newRunId = (r as any)?.run_id || (r as any)?.id;
+      const newRunId = r?.run_id || r?.id;
       if (typeof newRunId !== "string" || !newRunId) {
         throw new Error("Respons eksekusi belum menyertakan ID run.");
       }
       setRunKey(crypto.randomUUID());
       viewResult(newRunId);
-    } catch (err: any) {
-      setValidation(err.message || "Eksekusi belum dapat diselesaikan.");
+    } catch (err: unknown) {
+      setValidation((err instanceof Error ? err.message : "") || "Eksekusi belum dapat diselesaikan.");
       /* Retry preserves idempotency key; edits create a new key. */
     } finally {
       setExecuting(false);

@@ -9,7 +9,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from packages.contracts.core import SecurityContext
 
@@ -22,6 +22,7 @@ class RunStatus(str, Enum):
     CANCELLED = "cancelled"
     FAILED = "failed"
     STOPPING = "stopping"
+    OUTCOME_UNKNOWN = "outcome_unknown"
 
 
 class RuntimeHealth(BaseModel):
@@ -93,16 +94,29 @@ class RunRequest(BaseModel):
     model: str
     session_id: Optional[str] = None
     idempotency_key: Optional[str] = Field(default=None, min_length=1, max_length=255)
-    timeout_seconds: float = 30.0
+    timeout_seconds: float = Field(default=30.0, gt=0, le=3600, allow_inf_nan=False)
     temperature: float = Field(default=0.7, ge=0, le=2)
     max_tokens: int = Field(default=2048, ge=1, le=32768)
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    max_cost_usd: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    max_total_tokens: Optional[int] = Field(default=None, ge=1)
+    max_input_tokens: Optional[int] = Field(default=None, ge=1)
 
 
 class RunUsage(BaseModel):
-    input_tokens: int = 0
-    output_tokens: int = 0
-    total_tokens: int = 0
+    input_tokens: int = Field(default=0, ge=0, strict=True)
+    output_tokens: int = Field(default=0, ge=0, strict=True)
+    total_tokens: int = Field(default=0, ge=0, strict=True)
+    availability: Literal["measured", "unavailable"] = "unavailable"
+    cost_usd: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    cost_source: Optional[Literal["provider_usage", "runtime_meter"]] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def explicit_usage(cls, value):
+        if isinstance(value, dict) and "availability" not in value and all(k in value for k in ("input_tokens", "output_tokens", "total_tokens")):
+            value = {**value, "availability": "measured"}
+        return value
 
 
 class RunResult(BaseModel):
@@ -125,6 +139,13 @@ class RunResult(BaseModel):
     gateway: Optional[Literal["9Router"]] = None
     runtime_backend: Optional[Literal["Hermes"]] = None
     provider: Optional[str] = None
+    execution_claim_verified: bool = False
+    assignment_provenance_verified: bool = False
+    runtime_run_id: Optional[str] = None
+    execution_provenance: Optional[Dict[str, Any]] = None
+    effective_limits: Dict[str, Any] = Field(default_factory=dict)
+    output_reference: Optional[str] = None
+    error_code: Optional[str] = None
 
 
 class RuntimeTrace(BaseModel):

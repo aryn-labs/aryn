@@ -262,11 +262,11 @@ def test_restart_recovery_transitions_in_flight_runs(seeded_db):
     with seeded_db.session() as session:
         run_repo = RunStateRepository(session)
         r1 = run_repo.get_run(ctx, "run_interrupted_1")
-        assert r1.status == "failed"
+        assert r1.status == "outcome_unknown"
         assert "system restart / crash recovery" in r1.error_message
 
         r2 = run_repo.get_run(ctx, "run_interrupted_2")
-        assert r2.status == "failed"
+        assert r2.status == "outcome_unknown"
 
         r3 = run_repo.get_run(ctx, "run_normal_completed")
         assert r3.status == "completed"

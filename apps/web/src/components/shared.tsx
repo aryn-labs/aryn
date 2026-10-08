@@ -16,6 +16,7 @@ const labels: Record<string, string> = {
   deprecated: "Diarsipkan",
   completed: "Selesai",
   failed: "Gagal",
+  outcome_unknown: "Hasil belum dapat dipastikan",
   bench_passed: "Lulus",
   bench_unverified: "Tidak Terverifikasi",
   queued: "Antre",

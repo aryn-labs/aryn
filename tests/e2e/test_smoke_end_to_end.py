@@ -114,7 +114,7 @@ async def test_live_end_to_end_smoke():
     assert tokens_recorded == result.usage.total_tokens
 
     # 7. Assertions on Audit Ledger & Secret Redaction
-    events = audit_logger.get_events_for_correlation(context.correlation_id)
+    events = audit_logger.get_events_for_correlation(context.correlation_id, context)
     assert len(events) >= 2
 
     # Pre-event

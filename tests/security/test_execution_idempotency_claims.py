@@ -102,7 +102,7 @@ async def test_async_claim_is_persisted_before_runtime_start_and_shared(lifecycl
 
 
 @pytest.mark.asyncio
-async def test_cancelled_caller_is_failed_and_retry_is_cached(lifecycle):
+async def test_cancelled_caller_is_unknown_and_retry_is_cached(lifecycle):
     db, ctx, runtime, factory, bp, version = lifecycle
     entered, hold = asyncio.Event(), asyncio.Event()
     calls = 0
@@ -120,7 +120,8 @@ async def test_cancelled_caller_is_failed_and_retry_is_cached(lifecycle):
     with pytest.raises(asyncio.CancelledError):
         await task
     result = await RunCoordinator(runtime, db_manager=db).execute_managed_direct_turn(request, ctx)
-    assert result.status == RunStatus.FAILED
+    assert result.status == RunStatus.OUTCOME_UNKNOWN
+    assert result.usage.availability == "unavailable"
     assert calls == 1
 
 

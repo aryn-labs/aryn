@@ -413,12 +413,10 @@ class HermesRuntimeAdapter(RuntimeAdapter):
             }
             status = status_map.get(raw_status, RunStatus.RUNNING)
 
-            usage_dict = data.get("usage") or {}
-            usage = RunUsage(
-                input_tokens=usage_dict.get("input_tokens", 0),
-                output_tokens=usage_dict.get("output_tokens", 0),
-                total_tokens=usage_dict.get("total_tokens", 0),
-            )
+            usage_dict = data.get("usage")
+            usage = RunUsage()
+            if isinstance(usage_dict, dict) and all(type(usage_dict.get(k)) is int and usage_dict[k] >= 0 for k in ("input_tokens", "output_tokens", "total_tokens")):
+                usage = RunUsage(**{k: usage_dict[k] for k in ("input_tokens", "output_tokens", "total_tokens")})
 
             provenance = self._provenance(data, data.get("model", "")) if status == RunStatus.COMPLETED else {}
             self._assert_no_secret(data)

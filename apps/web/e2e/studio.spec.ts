@@ -397,13 +397,29 @@ test("vertical slice HTTP nyata ke Core dengan runtime pengujian terisolasi", as
     page.getByRole("button", { name: "Jalankan Bench" }),
   ).toBeDisabled();
   await page.getByRole("checkbox").check();
+  // Read the actual SSE body in the browser alongside its normal consumer.
+  // Chromium does not retain every EventStream body for Network.getResponseBody.
+  // Response.clone preserves streaming and sends no additional HTTP request.
+  await page.evaluate(() => {
+    const originalFetch = window.fetch;
+    window.fetch = async (...args: Parameters<typeof fetch>) => {
+      const response = await originalFetch.apply(window, args);
+      if (response.url.endsWith("/bench") && response.headers.get("content-type")?.includes("text/event-stream")) {
+        (window as Window & { arynBenchEvidence?: Promise<string> }).arynBenchEvidence = response.clone().text();
+        window.fetch = originalFetch;
+      }
+      return response;
+    };
+  });
   const benchTerminalResponse = page.waitForResponse(
     (response) =>
       response.url().endsWith("/bench") &&
       response.request().method() === "POST",
   );
   await page.getByRole("button", { name: "Jalankan Bench" }).click();
-  const benchFrames = (await (await benchTerminalResponse).text()).split(
+  expect((await benchTerminalResponse).status()).toBe(200);
+  await page.waitForFunction(() => Boolean((window as Window & { arynBenchEvidence?: Promise<string> }).arynBenchEvidence));
+  const benchFrames = (await page.evaluate(() => (window as Window & { arynBenchEvidence?: Promise<string> }).arynBenchEvidence!)).split(
     "\n\n",
   );
   const benchTerminalFrame = benchFrames.find((frame) =>

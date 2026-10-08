@@ -230,12 +230,45 @@ export type Approval = {
   created_at: string;
   status: string;
 };
+export type RunStatus = "queued" | "started" | "running" | "stopping" | "completed" | "failed" | "cancelled" | "outcome_unknown";
+export type RunResponse = {
+  run_id: string;
+  id: string;
+  status: RunStatus;
+  model: string;
+  requested_model: string;
+  actual_model: string | null;
+  provider: string | null;
+  runtime_backend: "Hermes" | null;
+  gateway: "9Router" | null;
+  assignment_id: string | null;
+  agent_version_id: string | null;
+  agent_payload_hash: string | null;
+  assignment_transition_id: string | null;
+  runtime_run_id: string | null;
+  execution_claim_verified: boolean;
+  assignment_provenance_verified: boolean;
+  execution_provenance: Record<string, unknown> | null;
+  effective_limits: Record<string, unknown>;
+  output: string;
+  output_reference: string | null;
+  error_code: string | null;
+  usage: { input_tokens: number; output_tokens: number; total_tokens: number; availability: "measured" | "unavailable"; cost_usd: number | null };
+};
+export type StreamPayload = Partial<Scenario & BenchCompletion & RunResponse> & {
+  message?: string; index?: number; scenarios?: ScenarioDefinition[]; correlation_id?: string; error_code?: string;
+};
+export type StreamEvent = { type: string; data: StreamPayload };
+
 export type Run = {
   assignment_id?: string | null;
   agent_version_id?: string | null;
   agent_payload_hash?: string | null;
   assignment_transition_id?: string | null;
   assignment_provenance_verified?: boolean;
+  usage_availability?: "measured" | "unavailable";
+  error_code?: string | null;
+  effective_limits?: Record<string, unknown>;
   id: string;
   status: string;
   prompt: string;
@@ -249,8 +282,8 @@ export type Run = {
   actual_provider?: string | null;
   input_tokens: number;
   output_tokens: number;
-  created_at: string;
-  completed_at?: string;
+  created_at: string | number;
+  completed_at?: string | number;
   error_message?: string;
   session_id: string;
 };
@@ -413,7 +446,7 @@ export type Shared = {
     path: string,
     body: unknown,
     success: string,
-    onEvent?: (event: { type: string; data: any }) => void,
-  ) => Promise<any>;
+    onEvent?: (event: StreamEvent) => void,
+  ) => Promise<Record<string, unknown>>;
   openBlueprint: () => void;
 };

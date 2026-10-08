@@ -8,11 +8,10 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import secrets
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Request
@@ -219,6 +218,8 @@ def create_app(
         path = ROOT / ".local/studio.sqlite3"
         path.parent.mkdir(exist_ok=True)
         engine = create_db_engine(f"sqlite:///{path.as_posix()}")
+        from modules.core.workflows.ownership import ExecutionAuthority
+        ExecutionAuthority.for_engine(engine)
         migrate(engine)
         db = DatabaseManager(engine=engine)
     binder = TrustedIdentityBinder(secret_key=secrets.token_bytes(32))
@@ -234,6 +235,7 @@ def create_app(
     gateway_client = getattr(adapter, "model_gateway", None)
     if gateway_client and hasattr(gateway_client, "settings"):
         protected_credentials.append(gateway_client.settings.api_key.get_secret_value())
+    db.protected_credentials = tuple(key for key in protected_credentials if key)
     model_router = ModelRouter(catalog={})
     factory = AgentFactoryService(
         db, BenchRunner(adapter), permission_engine=permissions, audit_logger=audit, model_router=model_router
@@ -267,6 +269,8 @@ def create_app(
             .all()
         )
         for version in interrupted:
+            if version.evaluation_owner_id == coordinator.authority.owner_id:
+                continue
             version.status = "rejected"
             interrupted_ctx = binder.create_trusted_context(
                 DEV_ACTOR, DEV_ORG, version.blueprint.project_id)
@@ -290,11 +294,16 @@ def create_app(
     app.state.coordinator = coordinator
     app.state.sessions = sessions
 
-    def fail(code, message):
-        return JSONResponse({"message": message}, status_code=code)
+    from contextvars import ContextVar
+    request_correlation = ContextVar("studio_correlation", default=None)
+
+    def fail(code, message, run_id=None):
+        return JSONResponse({"message": message, "error_code": f"http_{code}", "correlation_id": request_correlation.get(), "run_id": run_id}, status_code=code)
 
     @app.middleware("http")
     async def boundary(request: Request, call_next):
+        request.state.correlation_id = secrets.token_hex(16)
+        request_correlation.set(request.state.correlation_id)
         if request.client is None or request.client.host not in {"127.0.0.1", "::1"}:
             return fail(403, "Studio hanya dapat diakses melalui loopback lokal.")
         if request.headers.get("host") != origin.removeprefix("http://"):
@@ -335,15 +344,19 @@ def create_app(
                     return fail(
                         403, "Token keamanan sesi tidak valid. Muat ulang Studio."
                     )
-        if (
-            is_api
-            and request.method not in {"GET", "HEAD"}
-            and request.url.path != "/api/session"
-        ):
-            async with mutation_lock:
+        try:
+            if (
+                is_api
+                and request.method not in {"GET", "HEAD"}
+                and request.url.path != "/api/session"
+            ):
+                async with mutation_lock:
+                    response = await call_next(request)
+            else:
                 response = await call_next(request)
-        else:
-            response = await call_next(request)
+        except Exception as exc:
+            from modules.core.errors import public_error
+            response = JSONResponse(status_code=500, content=public_error(exc, correlation_id=request.state.correlation_id))
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["X-Frame-Options"] = "DENY"
@@ -426,26 +439,26 @@ def create_app(
     for error_type, (code, message) in exception_map.items():
 
         async def handler(request, exc, code=code, message=message):
-            return fail(code, message)
+            return fail(code, message, getattr(exc, "run_id", None))
 
         app.add_exception_handler(error_type, handler)
 
     @app.exception_handler(ModelUnavailableError)
     async def unavailable_model(request, exc):
-        return fail(409 if exc.availability == "unavailable" else 503, str(exc))
+        return fail(409 if exc.availability == "unavailable" else 503, "Model tidak tersedia melalui Model Gateway." if exc.availability == "unavailable" else "Ketersediaan model belum dapat diverifikasi.")
 
     @app.exception_handler(RegressionGateFailedError)
     async def regression_blocked(request, exc):
-        return JSONResponse(status_code=409, content={"message": "Promotion diblokir oleh regression gate.",
+        return JSONResponse(status_code=409, content={"error_code": "regression_gate_failed", "message": "Promotion diblokir oleh regression gate.",
             "comparison": exc.comparison.model_dump(mode="json")})
 
     for gateway_error in (GatewayUnavailableError, RuntimeGatewayError, ModelIdentityError):
         async def gateway_handler(request, exc):
-            return fail(409 if isinstance(exc, ModelIdentityError) else 503, str(exc))
+            return fail(409 if isinstance(exc, ModelIdentityError) else 503, "Bukti routing atau identitas model belum valid. Eksekusi ditolak.")
         app.add_exception_handler(gateway_error, gateway_handler)
 
     def context(project_id, action="run:read"):
-        ctx = binder.create_trusted_context(DEV_ACTOR, DEV_ORG, project_id)
+        ctx = binder.create_trusted_context(DEV_ACTOR, DEV_ORG, project_id, correlation_id=request_correlation.get())
         try:
             permissions.enforce(action, ctx, DEV_ORG, project_id)
         except PermissionDeniedError:
@@ -510,7 +523,7 @@ def create_app(
 
     @app.exception_handler(HTTPException)
     async def http_error(request, exc):
-        return fail(exc.status_code, str(exc.detail))
+        return fail(exc.status_code, "Permintaan ditolak oleh kebijakan API Studio.")
 
     @app.post("/api/session")
     async def local_session(request: Request):
@@ -701,10 +714,13 @@ def create_app(
                     assignment["activation_reason"] = "verified_activation_history" if history else "pre_existing_assignment_origin"
                 except (ValueError, RuntimeError):
                     assignment["activation_reason"] = "activation_integrity_invalid"
+            data["runs"] = [run for run in data["runs"] if run["execution_mode"] != "bench"]
             from database.repositories.run_state_repo import RunStateRepository
             for run in data["runs"]:
                 try:
-                    run["assignment_provenance_verified"] = RunStateRepository(s).verify_assignment_provenance(s.get(RunStateModel, run["id"]))
+                    stored_run = RunStateRepository(s).get_run(ctx, run["id"])
+                    run["assignment_provenance_verified"] = RunStateRepository(s).verify_assignment_provenance(stored_run)
+                    run.update(run_response(coordinator.stored_result(stored_run)))
                 except (ValueError, RuntimeError):
                     run["assignment_provenance_verified"] = False
             data["budget"] = row(budget) if budget else None
@@ -719,7 +735,8 @@ def create_app(
                     "agent:rollback",
                 )
             }
-        return data
+        from modules.core.errors import sanitize
+        return sanitize(data, credentials=protected_credentials)
 
     @app.post("/api/projects/{project_id}/blueprints", status_code=201)
     async def create_blueprint(project_id: str, body: BlueprintInput):
@@ -742,6 +759,18 @@ def create_app(
             **body.model_dump(),
         )
 
+    from modules.core.errors import public_error, sanitize
+
+    def run_response(result):
+        return {**result.model_dump(mode="json", exclude={"raw_response", "execution_evidence"}),
+            "id": result.run_id, "session_id": result.assignment_id, "actual_provider": result.provider,
+            "input_tokens": result.usage.input_tokens, "output_tokens": result.usage.output_tokens,
+            "total_tokens": result.usage.total_tokens, "usage_availability": result.usage.availability}
+
+    @app.exception_handler(Exception)
+    async def internal_error(request, exc):
+        return JSONResponse(status_code=500, content=public_error(exc))
+
     def bench_completion(ctx, result):
         """JSON/SSE completion identifies the persisted, server-verified evaluation."""
         with db.session() as s:
@@ -757,7 +786,7 @@ def create_app(
                     ctx, result.version_id).model_dump(mode="json")
             except (QualityGateFailedError, VersionIntegrityError):
                 pass
-        return {**result.model_dump(mode="json"), "evaluation": evaluation}
+        return sanitize({**result.model_dump(mode="json"), "evaluation": evaluation}, credentials=protected_credentials)
 
     @app.post("/api/projects/{project_id}/versions/{version_id}/bench")
     async def bench(project_id: str, version_id: str, body: dict, request: Request):
@@ -793,19 +822,14 @@ def create_app(
                     # Runner completion precedes persistence. The public completion
                     # is emitted only after storage and evidence verification below.
                     if ev_name != "bench.completed":
-                        await queue.put((ev_name, payload))
+                        await queue.put((ev_name, sanitize(payload, credentials=protected_credentials)))
 
                 async def run_eval():
                     try:
                         res = await factory.evaluate_version_with_bench(ctx, version_id, on_event=queue_event)
-                        from packages.contracts.runtime import RunUsage
-                        coordinator.budget_engine.record_usage(
-                            ctx,
-                            RunUsage(total_tokens=sum(r.total_tokens for r in res.scenario_results)),
-                        )
                         await queue.put(("bench.completed", bench_completion(ctx, res)))
                     except Exception as err:
-                        await queue.put(("bench.error", {"message": str(err)}))
+                        await queue.put(("bench.error", public_error(err, correlation_id=ctx.correlation_id)))
                     finally:
                         await queue.put(None)
 
@@ -821,12 +845,6 @@ def create_app(
             return StreamingResponse(event_generator(), media_type="text/event-stream")
 
         result = await factory.evaluate_version_with_bench(ctx, version_id)
-        from packages.contracts.runtime import RunUsage
-
-        coordinator.budget_engine.record_usage(
-            ctx,
-            RunUsage(total_tokens=sum(r.total_tokens for r in result.scenario_results)),
-        )
         return bench_completion(ctx, result)
 
     @app.post("/api/projects/{project_id}/blueprints/{blueprint_id}/baseline")
@@ -872,123 +890,59 @@ def create_app(
                 "Konfirmasikan pengiriman instruksi riset melalui ARYN Runtime dan Model Gateway.",
             )
         is_stream = request.headers.get("accept") == "text/event-stream" or request.query_params.get("stream") == "true"
-        # Core validates the full fingerprint even for cached results, without runtime dispatch.
+        # Availability is advisory preflight. Identity is captured only by Core
+        # after the await; all public metadata comes from that persisted claim.
         cached = None
+        from database.repositories.run_state_repo import RunStateRepository
         with db.session() as s:
-            from database.repositories.run_state_repo import RunStateRepository
             existing = RunStateRepository(s).get_run_by_idempotency_key(ctx, body.idempotency_key)
             if existing:
-                if existing.prompt != body.prompt or existing.session_id != body.assignment_id:
-                    raise IdempotencyConflictError("Key belongs to different input or assignment.")
-                if existing.status != "completed":
-                    raise RunInProgressError(existing.id, existing.status)
-                cached = row(existing)
-        if cached is not None:
-            await coordinator.execute_assigned_agent_turn(body.assignment_id, body.prompt, ctx, body.idempotency_key)
-            if is_stream:
-                async def cached_stream():
-                    yield f"event: run.requested\ndata: {json.dumps({'assignment_id': body.assignment_id, 'cached': True})}\n\n"
-                    yield f"event: core.validating\ndata: {json.dumps({'message': 'Hasil ditemukan dari cache idempotency Core'})}\n\n"
-                    yield f"event: run.completed\ndata: {json.dumps(cached)}\n\n"
-                return StreamingResponse(cached_stream(), media_type="text/event-stream")
-            return cached
-        with db.session() as s:
-            asgn = AgentRepository(s).get_assignment(ctx, body.assignment_id)
-            v = AgentRepository(s).get_version(ctx, asgn.version_id)
-            if (
-                asgn.status != "active"
-                or v.status != "published"
-            ):
-                raise PermissionDeniedError(
-                    "Inactive assignment or unpublished version"
-                )
-            coordinator.budget_engine.check_preflight(
-                ctx, v.max_tokens + (len(body.prompt) + len(v.system_prompt)) // 3
-            )
-            assigned_version_id = v.id
-            selected_model = v.model
-        await require_runtime()
-        await adapter.require_model_available(selected_model)
-        await model_catalog()
+                if (existing.prompt != body.prompt or existing.assignment_id != body.assignment_id
+                        or json.loads(existing.effective_limits_json).get("actor_id") != ctx.actor.actor_id):
+                    raise IdempotencyConflictError("Key belongs to another input or assignment.")
+                cached = coordinator.stored_result(existing)
+                if not cached.execution_claim_verified:
+                    raise PermissionDeniedError("Historical execution claims are read-only.")
+        if cached is None:
+            with db.session() as s:
+                asgn = AgentRepository(s).get_assignment(ctx, body.assignment_id)
+                advisory_model = AgentRepository(s).get_version(ctx, asgn.version_id).model
+            await require_runtime()
+            await adapter.require_model_available(advisory_model)
+            await model_catalog()
+
+        async def execute():
+            if cached is not None and cached.status.value not in RunStateRepository.TERMINAL_STATES:
+                permissions.enforce("run:read", ctx, ctx.organization_id, ctx.project_id)
+                return cached
+            result = await coordinator.execute_assigned_agent_turn(body.assignment_id, body.prompt, ctx, body.idempotency_key)
+            permissions.enforce("run:read", ctx, ctx.organization_id, ctx.project_id)
+            audit.record("studio.run.assignment", ctx, result.run_id,
+                AuditStatus.COMPLETED if result.status.value == "completed" else AuditStatus.FAILED,
+                {"assignment_id": result.assignment_id, "version_id": result.agent_version_id,
+                 "payload_hash": result.agent_payload_hash, "transition_id": result.assignment_transition_id,
+                 "actual_model": result.actual_model, "requested_model": result.requested_model,
+                 "provider": result.provider, "gateway": result.gateway, "runtime_backend": result.runtime_backend,
+                 "status": result.status.value, "trace_available": False})
+            return run_response(result)
 
         if is_stream:
             async def run_stream():
                 try:
-                    yield f"event: run.requested\ndata: {json.dumps({'assignment_id': body.assignment_id, 'version_id': assigned_version_id, 'model': selected_model})}\n\n"
-                    yield f"event: core.validating\ndata: {json.dumps({'message': 'Core memvalidasi budget dan kepatuhan kebijakan'})}\n\n"
-                    yield f"event: runtime.dispatching\ndata: {json.dumps({'message': 'Dispatching ke ARYN Runtime', 'model': selected_model, 'gateway': '9Router'})}\n\n"
-                    result = await coordinator.execute_assigned_agent_turn(
-                        body.assignment_id, body.prompt, ctx, body.idempotency_key
-                    )
-                    yield f"event: runtime.completed\ndata: {json.dumps({'message': 'Runtime selesai', 'status': result.status.value, 'model': result.model})}\n\n"
-                    yield f"event: core.persisting\ndata: {json.dumps({'message': 'Core menyimpan hasil dan jejak audit'})}\n\n"
-                    with db.session() as s:
-                        saved = s.get(RunStateModel, result.run_id)
-                        saved.session_id = body.assignment_id
-                        saved.model = result.model
-                        audit.record(
-                            "studio.run.assignment",
-                            ctx,
-                            result.run_id,
-                            AuditStatus.COMPLETED,
-                            {
-                                "assignment_id": body.assignment_id,
-                                "version_id": assigned_version_id,
-                                "actual_model": result.model,
-                                "requested_model": selected_model,
-                                "gateway": result.gateway,
-                                "provider": result.provider,
-                                "runtime_backend": result.runtime_backend,
-                                "runtime": "Hermes",
-                                "trace_available": False,
-                            },
-                        )
-                    payload = {
-                        "run_id": result.run_id,
-                        "status": result.status.value,
-                        "output": result.output,
-                        "model": result.model,
-                        "provider": result.provider,
-                        "gateway": result.gateway,
-                        "runtime_backend": result.runtime_backend,
-                        "actual_provider": result.provider,
-                        "input_tokens": result.usage.input_tokens,
-                        "output_tokens": result.usage.output_tokens,
-                        "total_tokens": result.usage.total_tokens,
-                        "session_id": body.assignment_id,
-                    }
+                    yield f"event: run.requested\ndata: {json.dumps({'assignment_id': body.assignment_id, 'correlation_id': ctx.correlation_id})}\n\n"
+                    yield f"event: core.validating\ndata: {json.dumps({'message': 'Core memvalidasi execution claim dan budget'})}\n\n"
+                    payload = await execute()
+                    if hasattr(payload, "model_dump"):
+                        payload = run_response(payload)
+                    # Transport completion is a result envelope, not a success claim;
+                    # clients inspect the captured status, including outcome_unknown.
                     yield f"event: run.completed\ndata: {json.dumps(payload)}\n\n"
                 except Exception as err:
-                    yield f"event: run.failed\ndata: {json.dumps({'message': str(err)})}\n\n"
-
+                    error = public_error(err, correlation_id=ctx.correlation_id, run_id=getattr(err, "run_id", None))
+                    yield f"event: run.failed\ndata: {json.dumps(error)}\n\n"
             return StreamingResponse(run_stream(), media_type="text/event-stream")
-
-        # Core binds all configuration from DB, browser supplies only task input.
-        result = await coordinator.execute_assigned_agent_turn(
-            body.assignment_id, body.prompt, ctx, body.idempotency_key
-        )
-        with db.session() as s:
-            saved = s.get(RunStateModel, result.run_id)
-            saved.session_id = body.assignment_id
-            saved.model = result.model
-            audit.record(
-                "studio.run.assignment",
-                ctx,
-                result.run_id,
-                AuditStatus.COMPLETED,
-                {
-                    "assignment_id": body.assignment_id,
-                    "version_id": assigned_version_id,
-                    "actual_model": result.model,
-                    "requested_model": selected_model,
-                    "gateway": result.gateway,
-                    "provider": result.provider,
-                    "runtime_backend": result.runtime_backend,
-                    "runtime": "Hermes",
-                    "trace_available": False,
-                },
-            )
-        return result
+        result = await execute()
+        return run_response(result) if hasattr(result, "model_dump") else result
 
     assets = ROOT / "apps/web/dist/assets"
     if assets.is_dir():

@@ -34,7 +34,17 @@ class ApprovalEngine:
     def __init__(self, db_manager: DatabaseManager, audit_logger=None, permission_engine=None):
         self.db_manager = db_manager
         self.audit_logger = audit_logger or AuditLogger(db_manager=db_manager)
-        self.permission_engine = permission_engine or PermissionEngine(db_manager=db_manager)
+        self.permission_engine = permission_engine or getattr(db_manager, "permission_engine", None) or PermissionEngine(db_manager=db_manager)
+        db_manager.approval_authority = self
+        db_manager.engine._aryn_approval_authority = self
+
+    def for_session(self, session):
+        """Share the trusted engine while revalidation locks its mutation transaction."""
+        authority = self
+        class BoundApprovalAuthority:
+            def verify_record(self, record):
+                return authority.verify_record(record, session=session)
+        return BoundApprovalAuthority()
 
     @staticmethod
     def contract(row):
@@ -50,25 +60,26 @@ class ApprovalEngine:
             regression_comparison_id=row.regression_comparison_id,
         )
 
-    def verify_signature(self, row):
-        return self.verify_record(self.contract(row))
+    def verify_signature(self, row, session=None):
+        return self.verify_record(self.contract(row), session=session)
 
-    def verify_record(self, record):
-        """Verify a captured approval through existing durable Core authority."""
-        with self.db_manager.session() as session:
-            stored = session.get(ApprovalModel, record.approval_id)
+    def verify_record(self, record, session=None):
+        """Revalidate signature and current human authority in the mutation transaction."""
+        with (nullcontext(session) if session is not None else self.db_manager.session()) as active:
+            stored = active.get(ApprovalModel, record.approval_id)
             if stored is None or self.contract(stored) != record:
                 raise ApprovalRequiredError("Approval no longer matches current Core evidence.")
-        payload = record.evidence_payload()
-        if not self.db_manager.evidence_signer.verify("human_approval", payload, record.attestation):
-            raise ApprovalRequiredError("Approval provenance is not verified.")
-        approver = self.permission_engine.identity_binder.create_trusted_context(
-            record.approved_by, record.organization_id, record.project_id)
-        try:
-            self.permission_engine.enforce("version:approve", approver, record.organization_id, record.project_id)
-        except PermissionDeniedError as exc:
-            raise ApprovalRequiredError("Human approver no longer has valid authority.") from exc
-        return record
+            if not self.db_manager.evidence_signer.verify("human_approval", record.evidence_payload(), record.attestation):
+                raise ApprovalRequiredError("Approval provenance is not verified.")
+            if self.permission_engine.identity_binder is None:
+                raise ApprovalRequiredError("Trusted Core identity authority is unavailable.")
+            approver = self.permission_engine.identity_binder.create_trusted_context(
+                record.approved_by, record.organization_id, record.project_id)
+            try:
+                self.permission_engine.enforce("version:approve", approver, record.organization_id, record.project_id, session=active)
+            except PermissionDeniedError as exc:
+                raise ApprovalRequiredError("Human approver no longer has valid authority.") from exc
+            return record
 
     def current_evidence(self, context, target_type, target_id, payload_hash, session, for_approval=True):
         if target_type != "agent_version":
@@ -94,10 +105,11 @@ class ApprovalEngine:
         try:
             self.permission_engine.enforce("version:approve", context, context.organization_id, context.project_id)
         except PermissionDeniedError as exc:
-            raise UnauthorizedApproverError(f"Actor lacks 'admin' role required to grant approvals: {exc}") from exc
+            raise UnauthorizedApproverError("Actor lacks 'admin' role with active organization authority required to grant approvals.") from exc
         with (nullcontext(session) if session is not None else self.db_manager.session(write=True)) as active:
-            # All governance writers lock version before membership to avoid lock inversion.
+            # Factory approval/publication lock version before membership.
             evaluation_id = self.current_evidence(context, target_type, target_id, payload_hash, active)
+            self.permission_engine.enforce("version:approve", context, context.organization_id, context.project_id, session=active)
             member = active.query(MembershipModel).filter_by(
                 organization_id=context.organization_id, user_id=context.actor.actor_id,
             ).with_for_update().first()
@@ -115,7 +127,7 @@ class ApprovalEngine:
                 try:
                     if existing.regression_comparison_id != comparison_id:
                         raise ApprovalRequiredError("Previous approval reviewed a different baseline comparison.")
-                    return self.verify_signature(existing)
+                    return self.verify_signature(existing, session=active)
                 except ApprovalRequiredError:
                     # A fresh, authorized human decision does not rewrite stale evidence.
                     pass
@@ -151,4 +163,4 @@ class ApprovalEngine:
                     comparison = active.info.get("bench_comparisons", {}).get(target_id)
                     if comparison is None or approval.regression_comparison_id != comparison.comparison_id:
                         raise ApprovalRequiredError("Baseline changed since human review; a new approval is required.")
-            return self.verify_signature(approval)
+            return self.verify_signature(approval, session=active)

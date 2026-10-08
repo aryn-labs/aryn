@@ -67,7 +67,7 @@ class AgentFactoryService:
         self.db_manager = db_manager
         self.bench_runner = bench_runner
         self.audit_logger = audit_logger or AuditLogger(db_manager=db_manager)
-        self.permission_engine = permission_engine or PermissionEngine(db_manager=db_manager)
+        self.permission_engine = permission_engine or getattr(db_manager, "permission_engine", None) or PermissionEngine(db_manager=db_manager)
         self.approval_engine = approval_engine or ApprovalEngine(
             db_manager=db_manager,
             audit_logger=self.audit_logger,
@@ -77,6 +77,9 @@ class AgentFactoryService:
         self.quality_gate = BenchQualityGate(min_score_threshold=1.0)
         self.bench_runner.evidence_signer = db_manager.evidence_signer
         self.bench_runner.approval_authority = self.approval_engine
+        from modules.core.workflows.coordinator import RunCoordinator
+        self.execution_coordinator = self.bench_runner.coordinator = RunCoordinator(bench_runner.runtime_adapter, db_manager=db_manager,
+            permission_engine=self.permission_engine, audit_logger=self.audit_logger, model_router=self.model_router)
 
     # -------------------------------------------------------------------------
     # 1. Blueprint Management
@@ -97,6 +100,7 @@ class AgentFactoryService:
 
         blueprint_id = f"abp_{uuid.uuid4().hex[:16]}"
         with self.db_manager.session(write=True) as session:
+            self.permission_engine.enforce("blueprint:create", context, context.organization_id, context.project_id, session=session)
             repo = AgentRepository(session)
             model = repo.create_blueprint(
                 context=context,
@@ -187,6 +191,7 @@ class AgentFactoryService:
         version_id = f"av_{uuid.uuid4().hex[:16]}"
 
         with self.db_manager.session(write=True) as session:
+            self.permission_engine.enforce("version:create", context, context.organization_id, context.project_id, session=session)
             repo = AgentRepository(session)
             blueprint = repo.get_blueprint(context, blueprint_id)
 
@@ -271,6 +276,10 @@ class AgentFactoryService:
         on_event: Optional[Callable[[str, Dict[str, Any]], Any]] = None,
     ) -> BenchEvaluationResult:
         self.permission_engine.enforce("run:create", context, context.organization_id, context.project_id)
+        self.bench_runner.coordinator = self.execution_coordinator
+        self.bench_runner.coordinator.runtime_adapter = self.bench_runner.runtime_adapter
+        self.bench_runner.evidence_signer = self.db_manager.evidence_signer
+        self.bench_runner.approval_authority = self.approval_engine
         # Retrieve version
         with self.db_manager.session(write=True) as session:
             repo = AgentRepository(session)
@@ -285,6 +294,9 @@ class AgentFactoryService:
                 raise InvalidStateTransitionError("Bench evaluation is already active or version is immutable.")
             self.bench_runner.resolve_suite(version_contract, scenarios)
             # Mark version as evaluating
+            self.bench_runner.coordinator._fence()
+            self.permission_engine.enforce("run:create", context, context.organization_id, context.project_id, session=session)
+            m.evaluation_owner_id = self.bench_runner.coordinator.authority.owner_id
             repo.update_version_status(context, version_id, "evaluating")
 
         # Execute isolated bench evaluation
@@ -293,6 +305,10 @@ class AgentFactoryService:
             result = await self.bench_runner.evaluate_agent_version(context, version_contract, scenarios, on_event=on_event)
         except BaseException:
             with self.db_manager.session(write=True) as session:
+                self.bench_runner.coordinator._fence()
+                current = AgentRepository(session).get_version(context, version_id, for_update=True)
+                if current.evaluation_owner_id != self.bench_runner.coordinator.authority.owner_id:
+                    raise InvalidStateTransitionError("Stale Bench owner cannot write outcome.")
                 AgentRepository(session).update_version_status(context, version_id, "rejected")
             raise
 
@@ -301,6 +317,10 @@ class AgentFactoryService:
             bench_repo = BenchRepository(session, self.db_manager.evidence_signer)
             agent_repo = AgentRepository(session)
             current = agent_repo.get_version(context, version_id, for_update=True)
+            self.bench_runner.coordinator._fence()
+            self.permission_engine.enforce("run:create", context, context.organization_id, context.project_id, session=session)
+            if current.evaluation_owner_id != self.bench_runner.coordinator.authority.owner_id:
+                raise InvalidStateTransitionError("Stale Bench owner cannot publish evidence.")
             if current.status != "evaluating" or current.payload_hash != result.payload_hash:
                 raise InvalidStateTransitionError("Evaluation no longer owns the current version state.")
             bench_repo.record_evaluation(context, result)
@@ -346,6 +366,7 @@ class AgentFactoryService:
         with self.db_manager.session(write=True) as session:
             agent_repo = AgentRepository(session)
             version = agent_repo.get_version(context, version_id, for_update=True)
+            self.permission_engine.enforce("version:approve", context, context.organization_id, context.project_id, session=session)
             if expected_payload_hash is not None and version.payload_hash != expected_payload_hash:
                 from modules.core.approvals.engine import PayloadHashMismatchError
                 raise PayloadHashMismatchError("Browser review differs from current canonical payload.")
@@ -387,6 +408,7 @@ class AgentFactoryService:
             agent_repo = AgentRepository(session)
             bench_repo = BenchRepository(session, self.db_manager.evidence_signer)
             m = agent_repo.get_version(context, version_id, for_update=True)
+            self.permission_engine.enforce("version:publish", context, context.organization_id, context.project_id, session=session)
             version_contract = AgentVersion.from_stored(m)
             if version_contract.canonical_format != 3:
                 raise InvalidStateTransitionError(
@@ -473,6 +495,7 @@ class AgentFactoryService:
         with self.db_manager.session(write=True) as session:
             repo = AgentRepository(session)
             version = repo.get_version(context, version_id, for_update=True)
+            self.permission_engine.enforce("agent:assign", context, context.organization_id, context.project_id, session=session)
             if version.status == "published":
                 self.approval_engine.verify_approval(
                     context, "agent_version", version_id, version.payload_hash, session=session)

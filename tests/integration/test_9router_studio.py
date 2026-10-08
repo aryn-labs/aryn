@@ -44,7 +44,7 @@ def test_model_gate_blocks_bench_and_run_preserving_historical_evidence(studio, 
     assert len(runtime.requests) == calls_before
     with db.session() as session:
         assert session.execute(text("SELECT COUNT(*) FROM bench_evaluations")).scalar() == 1
-        assert session.execute(text("SELECT COUNT(*) FROM run_states")).scalar() == 0
+        assert session.execute(text("SELECT COUNT(*) FROM run_states WHERE execution_mode != 'bench'")).scalar() == 0
         assert session.execute(text("PRAGMA integrity_check")).scalar() == "ok"
         assert session.execute(text("PRAGMA foreign_key_check")).all() == []
 
@@ -82,7 +82,7 @@ def test_exact_model_provenance_persists_and_cached_result_works_offline(studio)
     assert repeat.status_code == 200 and repeat.json()["actual_model"] == version["model"]
     assert len(runtime.requests) == 5
     with db.session() as session:
-        assert session.execute(text("SELECT actual_model, gateway, runtime_backend FROM run_states")).one() == (version["model"], "9Router", "Hermes")
+        assert session.execute(text("SELECT actual_model, gateway, runtime_backend FROM run_states WHERE execution_mode != 'bench'")).one() == (version["model"], "9Router", "Hermes")
         assert session.execute(text("PRAGMA integrity_check")).scalar() == "ok"
 
 

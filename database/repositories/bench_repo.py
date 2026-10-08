@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import json
 import datetime
-from typing import List, Optional
+from typing import Optional
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
-from database.schema import BenchEvaluationModel, utc_now
+from database.schema import BenchEvaluationModel
 from packages.contracts.core import SecurityContext
 from packages.contracts.bench import BenchEvaluationResult
 from modules.bench.quality_gate import BenchQualityGate, QualityGateFailedError
@@ -67,9 +67,15 @@ class BenchRepository:
         return model
 
     def approval_authority(self):
-        from database.connection import DatabaseManager
-        from modules.core.approvals.engine import ApprovalEngine
-        return ApprovalEngine(DatabaseManager(self.session.get_bind(), evidence_signer=self.evidence_signer))
+        manager = self.session.info.get("db_manager")
+        authority = getattr(manager, "approval_authority", None)
+        if authority is None:
+            from modules.core.approvals.engine import ApprovalEngine
+            permissions = getattr(manager, "permission_engine", None)
+            if manager is None or permissions is None:
+                return None
+            authority = ApprovalEngine(manager, permission_engine=permissions)
+        return authority
 
     def verify_result(self, context, result, version, evaluated_by):
         if (result.blueprint_id != version.blueprint_id or result.version_id != version.id
@@ -88,7 +94,7 @@ class BenchRepository:
                         or execution.organization_id != context.organization_id or execution.project_id != context.project_id):
                     raise QualityGateFailedError("Execution attestation or tenant boundary differs.")
         BenchQualityGate.validate_evidence(result, evaluation_reference=version.evaluation_reference,
-            signer=self.evidence_signer, approval_authority=self.approval_authority())
+            signer=self.evidence_signer, approval_authority=self.approval_authority().for_session(self.session) if self.approval_authority() else None)
 
     def validate_stored(self, context, row, version):
         try:
@@ -153,7 +159,7 @@ class BenchRepository:
             raise QualityGateFailedError("Latest evaluation differs from the version evidence reference.")
         BenchQualityGate().enforce(self.validate_stored(context, latest, version),
             evaluation_reference=version.evaluation_reference, signer=self.evidence_signer,
-            approval_authority=self.approval_authority())
+            approval_authority=self.approval_authority().for_session(self.session) if self.approval_authority() else None)
         stored_version = AgentRepository(self.session).get_version(context, version_id)
         if stored_version.status not in {"published", "deprecated"}:
             from database.repositories.bench_regression_repo import BenchRegressionRepository

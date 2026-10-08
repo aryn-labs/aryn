@@ -120,6 +120,17 @@ class RunStateModel(Base):
     input_tokens = Column(Integer, default=0, nullable=False)
     output_tokens = Column(Integer, default=0, nullable=False)
     total_tokens = Column(Integer, default=0, nullable=False)
+    execution_claim_json = Column(Text, nullable=True)
+    execution_attestation = Column(String(64), nullable=True)
+    execution_owner_id = Column(String(64), nullable=True)
+    deadline_at = Column(DateTime(timezone=True), nullable=True)
+    effective_limits_json = Column(Text, nullable=False, default="{}", server_default="{}")
+    reserved_tokens = Column(Integer, nullable=False, default=0, server_default="0")
+    usage_settled = Column(Integer, nullable=False, default=0, server_default="0")
+    usage_availability = Column(String(32), nullable=False, default="unavailable", server_default="unavailable")
+    usage_cost_usd = Column(Float, nullable=True)
+    usage_cost_source = Column(String(64), nullable=True)
+    error_code = Column(String(64), nullable=True)
     error_message = Column(Text, nullable=True)
     idempotency_key = Column(String(255), nullable=True, index=True)
     request_hash = Column(String(64), nullable=False, default="")
@@ -147,7 +158,8 @@ class RunStateModel(Base):
 def protect_run_assignment_provenance(mapper, connection, target):
     state = inspect(target)
     protected = ("assignment_id", "agent_version_id", "agent_payload_hash", "assignment_transition_id",
-        "assignment_provenance_json", "assignment_attestation")
+        "assignment_provenance_json", "assignment_attestation", "execution_claim_json", "execution_attestation",
+        "execution_owner_id", "deadline_at", "effective_limits_json")
     if any(state.attrs[key].history.has_changes() for key in protected) and not getattr(target, "_provenance_authorized", False):
         from packages.contracts.agent import VersionIntegrityError
         raise VersionIntegrityError("Run assignment provenance is immutable.")
@@ -184,6 +196,8 @@ class UsageBudgetModel(Base):
     max_tokens_per_run = Column(Integer, default=4096, nullable=False)
     max_turns = Column(Integer, default=10, nullable=False)
     max_cost_usd = Column(Float, default=0.50, nullable=False)
+    max_total_tokens = Column(Integer, nullable=True)
+    reserved_tokens = Column(Integer, nullable=False, default=0, server_default="0")
     cumulative_tokens = Column(Integer, default=0, nullable=False)
     cumulative_cost_usd = Column(Float, default=0.0, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
@@ -233,6 +247,7 @@ class AgentVersionModel(Base):
     max_tokens = Column(Integer, default=2048, nullable=False)
     metadata_json = Column(Text, nullable=False, default="{}")
     payload_hash = Column(String(64), nullable=False, index=True)
+    evaluation_owner_id = Column(String(64), nullable=True)
     evaluation_id = Column(String(64), nullable=True, index=True)
     published_at = Column(DateTime(timezone=True), nullable=True)
     published_by = Column(String(64), nullable=True)

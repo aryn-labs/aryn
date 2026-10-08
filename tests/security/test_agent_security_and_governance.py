@@ -301,10 +301,12 @@ async def test_concurrent_idempotency_race_condition(multi_tenant_db, alpha_admi
     task1 = asyncio.create_task(coordinator.execute_managed_direct_turn(req, alpha_admin_context))
     task2 = asyncio.create_task(coordinator.execute_managed_direct_turn(req, alpha_admin_context))
 
-    res1, res2 = await asyncio.gather(task1, task2)
-
+    from modules.core.workflows.coordinator import RunInProgressError
+    res1, pending = await asyncio.gather(task1, task2, return_exceptions=True)
     assert res1.status == RunStatus.COMPLETED
-    assert res2.status == RunStatus.COMPLETED
+    assert isinstance(pending, RunInProgressError) and pending.run_id == res1.run_id
+    res2 = await coordinator.execute_managed_direct_turn(req, alpha_admin_context)
+    assert res2.status == RunStatus.COMPLETED and res2.run_id == res1.run_id
 
     # Check database: exactly ONE run row must exist for this idempotency key in this project
     with multi_tenant_db.session() as s:

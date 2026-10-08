@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict, List, Optional
 from packages.contracts.core import SecurityContext
 from packages.contracts.agent import AgentVersion, AgentEvaluationReference
 from packages.contracts.bench import BenchEvaluationResult, BenchScenario, ScenarioExecutionEvidence, SuiteAggregateResult, evidence_hash
-from packages.contracts.runtime import ModelUnavailableError, RunRequest, RunStatus, RuntimeAdapter
+from packages.contracts.runtime import ModelIdentityError, ModelUnavailableError, RunRequest, RunStatus, RuntimeAdapter
 from modules.bench.scenarios import get_bench_suite
 from modules.bench.graders import execute_graders, validate_output_contract
 from modules.bench.evidence import grading_context, normalize_observations
@@ -22,6 +22,7 @@ class BenchRunner:
         self.runtime_adapter = runtime_adapter
         self.evidence_signer = None
         self.approval_authority = None
+        self.coordinator = None
 
     def resolve_suite(self, version, scenarios=None):
         version.verify_integrity(require_canonical=True)
@@ -38,7 +39,20 @@ class BenchRunner:
                 raise QualityGateFailedError("Agent output contract requires schema grading in every scenario.")
         return suite
 
-    async def _execute(self, request, context):
+    async def _execute(self, request, context, allowed_tools=()):
+        if self.coordinator is not None:
+            self.coordinator.runtime_adapter = self.runtime_adapter
+            try:
+                return await self.coordinator.execute_managed_direct_turn(request, context,
+                    _allowed_tools=allowed_tools, _execution_mode="bench")
+            except ModelIdentityError as exc:
+                if not hasattr(exc, "observed_result"):
+                    raise
+                # Retain the rejected observation for deterministic policy-violation
+                # grading. Core has persisted failure, and promotion remains denied.
+                return exc.observed_result
+        # Standalone diagnostic BenchRunner has no persisted authority or promotion evidence.
+
         if hasattr(self.runtime_adapter, "execute_direct_turn"):
             return await self.runtime_adapter.execute_direct_turn(request, context)
         run_id = await self.runtime_adapter.start_run(request, context)
@@ -52,7 +66,15 @@ class BenchRunner:
         scenarios: Optional[List[BenchScenario]] = None,
         on_event: Optional[Callable[[str, Dict[str, Any]], Any]] = None) -> BenchEvaluationResult:
         suite = self.resolve_suite(version, scenarios)
-        caps = await self.runtime_adapter.capabilities()
+        preflight_timeout = min(version.budget_policy.timeout_seconds,
+            version.constraints.max_execution_time_seconds,
+            getattr(self.runtime_adapter, "timeout", version.budget_policy.timeout_seconds),
+            *[scenario.max_latency_seconds for scenario in suite.scenarios])
+        if suite.resource_limits.max_latency_seconds is not None:
+            preflight_timeout = min(preflight_timeout, suite.resource_limits.max_latency_seconds)
+        preflight_deadline = time.monotonic() + preflight_timeout
+        bounded = self.coordinator._bounded if self.coordinator is not None else asyncio.wait_for
+        caps = await bounded(self.runtime_adapter.capabilities(), max(0, preflight_deadline - time.monotonic()))
         for scenario in suite.scenarios:
             grants = set(scenario.allowed_tools) & set(version.tool_grants)
             if not caps.tools_confined or not set(caps.enabled_toolsets).issubset(grants):
@@ -61,7 +83,7 @@ class BenchRunner:
                 raise QualityGateFailedError("This suite requires an isolated runtime without tools.")
             if scenario.runtime_requirements.write_isolation == "mocked" and caps.details.get("write_isolation") != "mocked":
                 raise QualityGateFailedError("Bench requires verified mocked write isolation.")
-        await self.runtime_adapter.require_model_available(version.model)
+        await bounded(self.runtime_adapter.require_model_available(version.model), max(0, preflight_deadline - time.monotonic()))
         result = BenchEvaluationResult(
             evaluation_id=f"eval_{uuid.uuid4().hex[:16]}", blueprint_id=version.blueprint_id,
             version_id=version.id, passed=False, total_scenarios=len(suite.scenarios), passed_scenarios=0, score=0,
@@ -94,6 +116,10 @@ class BenchRunner:
                                  metadata={"bench_evaluation": True, "evaluation_id": result.evaluation_id,
                                            "suite_id": suite.suite_id, "scenario_id": scenario.scenario_id,
                                            "fixtures": [f.model_dump(mode="json") for f in scenario.fixtures]})
+            request.max_total_tokens = version.budget_policy.max_tokens_per_run
+            request.max_cost_usd = version.budget_policy.max_cost_usd
+            request.idempotency_key = f"bench:{result.evaluation_id}:{scenario.scenario_id}"
+            allowed_tools = set(scenario.allowed_tools) & set(version.tool_grants)
             execution = ScenarioExecutionEvidence(
                 evaluation_id=result.evaluation_id, organization_id=context.organization_id, project_id=context.project_id,
                 version_id=version.id, payload_hash=version.payload_hash, suite_id=suite.suite_id, suite_hash=suite.suite_hash,
@@ -104,7 +130,7 @@ class BenchRunner:
             )
             started = time.perf_counter()
             try:
-                observed = await asyncio.wait_for(self._execute(request, context), timeout=timeout)
+                observed = await self._execute(request, context, allowed_tools) if self.coordinator is not None else await asyncio.wait_for(self._execute(request, context, allowed_tools), timeout=timeout)
                 execution.run_id = observed.run_id
                 execution.runtime_status = observed.status.value
                 execution.output = observed.output
@@ -114,16 +140,17 @@ class BenchRunner:
                 execution.provider = observed.provider
                 execution.runtime_backend = observed.runtime_backend
                 execution.gateway = observed.gateway
-                execution.usage = observed.usage.model_dump(mode="json")
+                execution.usage = observed.usage.model_dump(mode="json", include={"input_tokens", "output_tokens", "total_tokens"}) if observed.usage.availability == "measured" else None
                 normalize_observations(execution, observed)
                 if any(g.type == "forbidden_action" and g.evidence_mode == "action_trace" for g in scenario.graders) and not execution.trace_available:
                     try:
-                        trace = await self.runtime_adapter.get_trace(observed.run_id, context)
+                        trace_id = observed.runtime_run_id or observed.run_id
+                        trace = await bounded(self.runtime_adapter.get_trace(trace_id, context), max(0, timeout - (time.perf_counter() - started)))
                     except Exception:
                         trace = None
                     if trace is None:
                         execution.trace_available = False
-                    elif trace.run_id != observed.run_id:
+                    elif trace.run_id != trace_id:
                         execution.trace_error = "trace_identity_mismatch"
                     elif trace.available:
                         # Only explicit complete structured traces can prove action absence.
@@ -139,9 +166,9 @@ class BenchRunner:
                                 execution.trace_error = "action_trace_malformed"
             except ModelUnavailableError:
                 raise
-            except Exception as exc:
-                execution.runtime_status = "failed"
-                execution.runtime_error = type(exc).__name__
+            except Exception:
+                execution.runtime_status = "outcome_unknown"
+                execution.runtime_error = "execution_unverified"
             execution.latency_seconds = round(time.perf_counter() - started, 3)
             for spec in scenario.graders:
                 if spec.type == "approval_enforcement" and self.approval_authority:

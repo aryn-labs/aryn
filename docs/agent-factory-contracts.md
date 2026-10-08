@@ -433,3 +433,14 @@ bench_regression_repo,run_state_repo}.py`, migration 012, `modules/agent_factory
 `modules/core/{permissions/engine,workflows/coordinator}.py`, `services/api/studio.py`, Factory UI,
 frontend `types`/`studio-state`, component fixtures/tests, Playwright, migration compatibility tests,
 README, STATUS dan existing Factory/Bench/Studio documentation.
+
+## Effective execution policy dan current authority
+
+Immutable budget_policy dan AgentConstraints membatasi run/Bench melalui Core. Timeout paling
+ketat berlaku pada dispatch/state; input admission estimate, provider output cap dan total
+measured postflight dibedakan. Core claim mengikat owner/deadline/effective limits dan
+assignment publication/version/payload/transition, sehingga rollback tidak mengubah run lama.
+Approval, explicit baseline acceptance dan rollback memerlukan human organization admin.
+Publication memerlukan organization admin/operator serta project permission yang sesuai.
+Capabilities mengikuti aturan itu; membership direvalidate pada transaction commit.
+Tidak ada perluasan project admin rights. Lihat [execution hardening](core-execution-hardening.md).

@@ -31,7 +31,7 @@ def test_upgrade_from_005_retains_legacy_governance_and_run_data(tmp_path):
         assert tuple(run) == ("Original", 3, "", None, "legacy")
         assert connection.exec_driver_sql("PRAGMA integrity_check").scalar() == "ok"
         assert connection.exec_driver_sql("PRAGMA foreign_key_check").all() == []
-        assert connection.exec_driver_sql("SELECT version_num FROM alembic_version").scalar() == "013_history_integrity"
+        assert connection.exec_driver_sql("SELECT version_num FROM alembic_version").scalar() == "014_execution_authority"
         assert tuple(connection.exec_driver_sql("SELECT actual_model,gateway,runtime_backend,actual_provider FROM run_states WHERE id='legacy'").one()) == (None, None, None, None)
         assert any(index["unique"] and index["column_names"] == ["project_id", "idempotency_key"]
                    for index in inspect(engine).get_indexes("run_states"))
@@ -49,6 +49,10 @@ def test_postgresql_migrations_compile_offline_without_cloud_connection(monkeypa
     from alembic.script import ScriptDirectory
     assert len(ScriptDirectory.from_config(config).get_current_head()) <= 32
     sql = output.getvalue()
+    assert "ADD COLUMN execution_attestation VARCHAR(64)" in sql
+    assert "ADD COLUMN deadline_at TIMESTAMP WITH TIME ZONE" in sql
+    assert "ADD COLUMN reserved_tokens INTEGER" in sql
+    assert "ADD COLUMN usage_availability VARCHAR(32)" in sql
     assert "ADD COLUMN attestation VARCHAR(64)" in sql
     assert "ADD COLUMN request_hash VARCHAR(64)" in sql
     assert "ADD COLUMN runtime_run_id VARCHAR(128)" in sql
@@ -124,3 +128,31 @@ def test_duplicate_legacy_keys_stop_upgrade_without_removing_runs(tmp_path):
         assert connection.exec_driver_sql("SELECT COUNT(*) FROM run_states").scalar() == 2
         assert connection.exec_driver_sql("SELECT version_num FROM alembic_version").scalar() == "007_execution_claim"
     engine.dispose()
+
+
+def test_execution_migration_downgrade_upgrade_preserves_legacy_without_fabrication(tmp_path, monkeypatch):
+    engine = create_db_engine(f"sqlite:///{(tmp_path / 'execution-migration.sqlite3').as_posix()}")
+    config = Config(str(ROOT / "alembic.ini"))
+    config.set_main_option("script_location", str(ROOT / "database/migrations"))
+    with engine.begin() as connection:
+        config.attributes["connection"] = connection
+        command.upgrade(config, "013_history_integrity")
+        connection.exec_driver_sql("INSERT INTO organizations (id,name,slug,created_at,updated_at) VALUES ('org','Test','test',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)")
+        connection.exec_driver_sql("INSERT INTO projects (id,organization_id,name,slug,created_at,updated_at) VALUES ('project','org','Test','test',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)")
+        connection.exec_driver_sql("INSERT INTO run_states (id,organization_id,project_id,status,prompt,model,provider,input_tokens,output_tokens,total_tokens,created_at,updated_at) VALUES ('legacy','org','project','completed','Preserve','mock-fast','mock',1,2,3,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)")
+        command.upgrade(config, "head")
+        assert connection.exec_driver_sql("SELECT execution_claim_json,execution_attestation,execution_owner_id,deadline_at,usage_availability,total_tokens FROM run_states").one() == (None, None, None, None, "unavailable", 3)
+        command.downgrade(config, "013_history_integrity")
+        assert connection.exec_driver_sql("SELECT prompt,total_tokens FROM run_states").one() == ("Preserve", 3)
+        assert connection.exec_driver_sql("SELECT COUNT(*) FROM audit_events").scalar() == 0
+        command.upgrade(config, "head")
+        assert connection.exec_driver_sql("SELECT execution_attestation,usage_availability FROM run_states").one() == (None, "unavailable")
+        assert connection.exec_driver_sql("PRAGMA foreign_key_check").all() == []
+    engine.dispose()
+    monkeypatch.setenv("ARYN_DATABASE_URL", "postgresql://offline-placeholder/aryn")
+    output = io.StringIO()
+    offline = Config(str(ROOT / "alembic.ini"), output_buffer=output)
+    offline.set_main_option("script_location", str(ROOT / "database/migrations"))
+    command.downgrade(offline, "014_execution_authority:013_history_integrity", sql=True)
+    assert "DROP COLUMN execution_attestation" in output.getvalue()
+    assert "DROP COLUMN max_total_tokens" in output.getvalue()

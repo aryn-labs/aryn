@@ -328,3 +328,15 @@ dan tidak dimasukkan dalam commit ini.
 - `tests/studio_runtime.py`
 - `tests/unit/test_gemini_status_audit.py`
 - `tests/unit/test_model_router.py`
+
+## Core deadline, usage dan bounded dispatch
+
+Core memasang deadline dan full effective token reservation sebelum Hermes dispatch. Transport
+meneruskan Core output max_tokens, membuang override n/max_completion_tokens, dan hanya
+mengizinkan satu upstream dispatch per receipt termasuk setelah successful completion.
+Model/provider aktual tetap evidence runtime/gateway; missing usage bukan angka nol terukur.
+Input token admission estimated; total/input/output measured postflight. Provider tidak
+diklaim mempunyai hard total-token/cost cap. BYOK/local/9Router tidak otomatis Managed AI.
+Timeout/ACK cancellation bukan proof provider berhenti; unknown retains reservation.
+Lihat [Core execution/runtime hardening](core-execution-hardening.md) untuk owner, recovery,
+contract, security evidence dan PostgreSQL limitations.

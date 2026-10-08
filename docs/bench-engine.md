@@ -228,3 +228,15 @@ Rollback tidak menjalankan comparison terbalik, mengubah evaluation atau memundu
 Perubahan current baseline adalah governed Bench action yang terpisah. Explicit accepted evaluation
 tanpa publication tidak memenuhi known-good. Lihat [Factory registry/rollback contracts](agent-factory-contracts.md#8-version-registry-dan-known-good-rollback-af-07)
 untuk publication receipts, assignment history, legacy limits dan test evidence.
+
+## Core execution authority dan accounting
+
+Factory evaluation, termasuk direct service invocation, selalu melewati RunCoordinator dan
+usage_budgets existing. Tiap scenario menyimpan Core claim/accounting; operational Studio run
+list menyembunyikan execution_mode bench, bukan menghapus consumption. Effective timeout/min
+agent/scenario/suite/runtime dan token reservation berlaku sebelum dispatch. Missing usage
+tetap unavailable, bukan nol terukur; unknown outcome tidak menjadi passing evidence.
+Injected Core signer/approval/permission authority dipakai juga untuk persisted revalidation.
+Evaluation owner process mencegah startup lain menandai live Bench interrupted. Standalone
+BenchRunner hanya diagnostic tanpa publication authority. Lihat [execution hardening](core-execution-hardening.md)
+untuk transaction, tests, compatibility dan batas token/cost/provider.

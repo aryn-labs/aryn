@@ -33,21 +33,8 @@ class AuditLogger:
 
     def redact_secrets(self, data: Any) -> Any:
         """Recursively scrubs secret keys and sensitive credential patterns."""
-        if isinstance(data, dict):
-            redacted = {}
-            for k, v in data.items():
-                if self.SENSITIVE_KEY_PATTERNS.search(str(k)):
-                    redacted[k] = "[REDACTED]"
-                else:
-                    redacted[k] = self.redact_secrets(v)
-            return redacted
-        elif isinstance(data, list):
-            return [self.redact_secrets(item) for item in data]
-        elif isinstance(data, str):
-            # Scrub explicit Bearer tokens
-            scrubbed = self.BEARER_PATTERN.sub("Bearer [REDACTED]", data)
-            return scrubbed
-        return data
+        from modules.core.errors import sanitize
+        return sanitize(data, audit=True, credentials=getattr(self.db_manager, "protected_credentials", ()))
 
     def record(
         self,
@@ -92,15 +79,18 @@ class AuditLogger:
         return event
 
     def get_events_for_correlation(self, correlation_id: str, context: Optional[SecurityContext] = None) -> List[AuditEvent]:
+        if context is None:
+            raise ValueError("Organization/project context is required for persistent audit reads.")
         if self.db_manager and context:
             from database.repositories.audit_repo import AuditRepository
             with self.db_manager.session() as session:
                 repo = AuditRepository(session)
                 db_models = repo.list_by_correlation(context, correlation_id)
-                if db_models:
-                    return [AuditRepository.contract(m) for m in db_models]
+                return [AuditRepository.contract(m) for m in db_models]
 
-        return [e for e in self._events if e.correlation_id == correlation_id]
+        return [e for e in self._events if e.correlation_id == correlation_id and (context is None or (e.organization_id == context.organization_id and e.project_id == context.project_id))]
 
-    def all_events(self) -> List[AuditEvent]:
-        return list(self._events)
+    def all_events(self, context: Optional[SecurityContext] = None) -> List[AuditEvent]:
+        if context is None:
+            raise ValueError("Organization/project context is required for persistent audit reads.")
+        return [e for e in self._events if context is None or (e.organization_id == context.organization_id and e.project_id == context.project_id)]

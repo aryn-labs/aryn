@@ -222,6 +222,8 @@ export function buildExecutionNodesAndEdges(
               : "idle";
   }
 
+  if (run?.status === "outcome_unknown") runtimeStatus = "unverified";
+
   const outputStatus: NodeStatus = liveEvent
     ? liveEvent.step === "run.completed"
       ? "completed"
@@ -230,7 +232,9 @@ export function buildExecutionNodesAndEdges(
         : isPersistingActive
           ? "running"
           : "idle"
-    : run?.status === "failed"
+    : run?.status === "outcome_unknown"
+      ? "unverified"
+      : run?.status === "failed"
       ? "failed"
       : run?.status === "completed"
         ? "completed"

@@ -48,3 +48,5 @@ Thumbs.db
 .local/
 playwright-report/
 test-results/
+
+*.execution.lock

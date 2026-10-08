@@ -105,11 +105,11 @@ export function App() {
     path: string,
     body: unknown,
     success: string,
-    onEvent?: (event: { type: string; data: any }) => void,
-  ): Promise<any> => {
+    onEvent?: (event: import("./lib/types").StreamEvent) => void,
+  ): Promise<Record<string, unknown>> => {
     try {
       const result = await apiStream(`/projects/${project}${path}`, body, onEvent);
-      if (success) setToast(success);
+      if (success && (!path.endsWith("/runs") || result.status === "completed")) setToast(success);
       await queryClient.invalidateQueries({ queryKey: ["snapshot", project] });
       return result;
     } catch (err: any) {

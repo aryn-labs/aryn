@@ -4,7 +4,6 @@ from __future__ import annotations
 import datetime
 import uuid
 
-from database.connection import DatabaseManager
 from database.repositories.agent_repo import AgentRepository
 from database.repositories.bench_repo import BenchRepository
 from database.repositories.exceptions import TenantIsolationError
@@ -48,11 +47,13 @@ class BenchRegressionRepository:
     def __init__(self, session, signer, permission_engine=None, approval_authority=None):
         self.session = session
         self.signer = signer
-        self.db = DatabaseManager(session.get_bind(), evidence_signer=signer)
+        self.db = session.info.get("db_manager")
+        if self.db is None:
+            raise HistoryUnverifiedError("Configured Core authority is required for governance revalidation.")
         self.bench = BenchRepository(session, signer)
         self.agents = AgentRepository(session)
         self.audit = AuditLogger(self.db)
-        self.permissions = permission_engine or PermissionEngine(self.db)
+        self.permissions = permission_engine or getattr(self.db, "permission_engine", None) or PermissionEngine(self.db, identity_binder_required=True)
         self.approval_authority = approval_authority or self.bench.approval_authority()
 
     def scope(self, context, blueprint_id, lock=False):
@@ -274,7 +275,7 @@ class BenchRegressionRepository:
 
     def accept(self, context, evaluation_id, *, expected_baseline_id=None, reason, transition=False, approval=None):
         action = "version:publish" if approval else "bench:accept_baseline"
-        self.permissions.enforce(action, context, context.organization_id, context.project_id)
+        self.permissions.enforce(action, context, context.organization_id, context.project_id, session=self.session)
         if context.actor.actor_type != ActorType.USER:
             raise PermissionDeniedError("Baseline acceptance requires a human actor.")
         if not reason.strip():
@@ -315,7 +316,7 @@ class BenchRegressionRepository:
             raise PermissionDeniedError("Baseline actor lacks current authority.")
         accepted_by = context.actor.actor_id
         if approval:
-            self.approval_authority.verify_record(approval)
+            self.approval_authority.verify_record(approval, session=self.session)
             if (approval.target_type != "agent_version" or approval.target_id != version.id
                     or approval.payload_hash != version.payload_hash or approval.evaluation_id != evaluation_id
                     or approval.regression_comparison_id != comparison.comparison_id):
