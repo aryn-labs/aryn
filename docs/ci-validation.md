@@ -97,9 +97,12 @@ PostgreSQL superuser disabling guards. Those deployment requirements remain open
 
 ## GitHub Actions evidence
 
-Initial status before commit/push: **UNVERIFIED**. YAML parsing and local actionlint
-are not evidence of a successful hosted workflow. Run URLs, terminal job results,
-durations, retries and exact remote SHA are recorded after the actual push.
+The corrected hosted workflow is **PASS**, with all 14 jobs successful, on
+`0df83f3ddd22af361bbf4f0bbb8890944668ecbf`:
+[validated run](https://github.com/aryn-labs/aryn/actions/runs/37788230163).
+It ran from 13:55:23 to 14:03:27 UTC, **8m04s**, one attempt, no rerun or test retry.
+The initial status before pushing had correctly been UNVERIFIED; YAML parsing alone
+was never treated as a hosted PASS.
 
 First pushed source: `e71ad56ead7ecbb4b4d35cd34e31ace9912b74a9`.
 [Initial hosted run](https://github.com/aryn-labs/aryn/actions/runs/37783317962)
@@ -136,8 +139,10 @@ The installed Windows Hermes launcher uses additional dependency directories;
 auditing its base site-packages alone found only pip. That incomplete inventory is
 **not** a dependency security PASS. CI instead materializes the pinned upstream
 lock plus the reviewed security profile on Linux and rejects incomplete inventory with eight positive/negative checker
-tests. Its dependency audit and clean exact-commit delivery remain UNVERIFIED until
-their hosted jobs finish.
+tests. The corrected Linux native job passed the actual route test in **10.65s** and
+verified **78 installed distributions**, exact versions, with **zero advisories**.
+No native dependency advisory was ignored. This does not certify an existing user
+installation or a live paid provider.
 
 The initial hosted run finished **FAIL** after 20m19s: native setup failed and the
 Windows backend timed out, so delivery was correctly skipped. Its interrupted JUnit
@@ -151,6 +156,55 @@ commit evidence is rejected by **6 local tests**. Actual local collection verifi
 **717 cases**, split **180/179/179/179** with no missing/duplicated identity. This
 addresses runner throughput without relaxing SQLite durability. The added timeout
 stack dump only improves diagnosis and does not change test success semantics.
+
+
+## Hosted terminal results and delivery verification
+
+| Required job / artifact job | Result | Job duration |
+|---|---|---|
+| [PostgreSQL Integration](https://github.com/aryn-labs/aryn/actions/runs/37788230163/job/113348432506) | PASS | 1m02s |
+| [Backend Quality (ubuntu-24.04)](https://github.com/aryn-labs/aryn/actions/runs/37788230163/job/113348432874) | PASS | 4m08s |
+| [Browser E2E (3/3)](https://github.com/aryn-labs/aryn/actions/runs/37788230163/job/113348432925) | PASS | 2m14s |
+| [Browser E2E (2/3)](https://github.com/aryn-labs/aryn/actions/runs/37788230163/job/113348433015) | PASS | 1m35s |
+| [Backend Quality (windows-2025, 4/4)](https://github.com/aryn-labs/aryn/actions/runs/37788230163/job/113348433067) | PASS | 5m49s |
+| [Browser E2E (1/3)](https://github.com/aryn-labs/aryn/actions/runs/37788230163/job/113348433123) | PASS | 1m39s |
+| [Native Hermes Boundary](https://github.com/aryn-labs/aryn/actions/runs/37788230163/job/113348433145) | PASS | 0m42s |
+| [Frontend Quality](https://github.com/aryn-labs/aryn/actions/runs/37788230163/job/113348433147) | PASS | 0m40s |
+| [Backend Quality (windows-2025, 3/4)](https://github.com/aryn-labs/aryn/actions/runs/37788230163/job/113348433208) | PASS | 5m37s |
+| [Backend Quality (windows-2025, 1/4)](https://github.com/aryn-labs/aryn/actions/runs/37788230163/job/113348433247) | PASS | 4m30s |
+| [Security and Configuration](https://github.com/aryn-labs/aryn/actions/runs/37788230163/job/113348433291) | PASS | 0m30s |
+| [Backend Quality (windows-2025, 2/4)](https://github.com/aryn-labs/aryn/actions/runs/37788230163/job/113348433369) | PASS | 6m53s |
+| [Required Quality Gates](https://github.com/aryn-labs/aryn/actions/runs/37788230163/job/113351844464) | PASS | 0m08s |
+| [Validated Delivery Artifact](https://github.com/aryn-labs/aryn/actions/runs/37788230163/job/113351941373) | PASS | 0m31s |
+
+Linux JUnit has **717 cases: 694 passed / 23 skipped**. Four Windows manifests/JUnit
+files cover the identical **717-case** collection: **711 passed / 6 skipped**, split
+180/179/179/179 cases, zero overlaps. Windows pytest durations were
+245.35/368.05/304.08/316.21s; the per-runner timeout remains 20 minutes. The actual
+downloaded manifests passed the coverage verifier locally as well as in the hosted
+gate. Linux skips 17 Windows-only launcher cases plus the same six live/optional
+runtime cases; Windows executes every launcher case. The separate native job tests
+the real source/route table without credentials or external inference.
+
+Hosted PostgreSQL: **33 passed in 26.26s**, digest-pinned live service and restricted
+non-owner product sessions. Frontend: **86 passed**, TypeScript/build/format PASS.
+Browser: **6 + 6 + 5 = 17 passed**, no retries, fresh state for every case. Python/Node,
+source-history secrets, configuration, actual actionlint and complete native dependency
+checks all passed. Existing benign dependency deprecation/chunk-size warnings remain.
+
+[Delivery artifact](https://github.com/aryn-labs/aryn/actions/runs/37788230163/artifacts/11555956402):
+`aryn-delivery-0df83f3ddd22af361bbf4f0bbb8890944668ecbf`, **968,897 bytes**, artifact
+SHA-256 `c5cc018d077bd711cce57a02430a6dcdaf8d028b33141932a09f1b1ec292aade`.
+The download was checked against exact source SHA, `source_modified=false`, workflow
+run/attempt **37788230163/1**, every one of **19 file SHA-256 entries**, exact file inventory
+and exclusion of databases/authority keys/logs. It contains the verified Python wheel,
+Studio static build, frozen dependency/config descriptions, README and build metadata.
+The same clean commit also built/imported/scanned locally. No release was published.
+
+The final documentation-only commit repeats these unchanged source gates. Consult
+[development runs](https://github.com/aryn-labs/aryn/actions?query=branch%3Adevelopment)
+for its exact terminal SHA/status and delivery artifact; the evidence above is explicitly
+bound to the already-validated implementation commit, not a fabricated future result.
 
 ## Repository gates and residuals
 

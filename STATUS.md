@@ -57,8 +57,16 @@ lock order. No schema migration or historical evidence rewrite was introduced.
 
 Final local source validation: **712 backend passed / 5 live opt-in skipped**, **86 frontend
 passed**, **17 isolated browser E2E passed**, TypeScript/Vite, configured Ruff, Prettier,
-dependency/secret scans and review artifact generation PASS. GitHub-hosted execution and
-clean exact-commit delivery are **UNVERIFIED until actual workflow completion**. See
+dependency/secret scans and review artifact generation PASS. GitHub-hosted run
+[37788230163](https://github.com/aryn-labs/aryn/actions/runs/37788230163) is **PASS**:
+all 14 jobs, complete 717-case coverage on both platforms (Linux **694 passed / 23 skipped**,
+Windows **711 passed / 6 skipped**), PostgreSQL **33 passed**, native Hermes **1 passed**
+with **78 distributions / zero advisories**, frontend **86 passed**, isolated browser
+**17 passed**, quality gates and clean exact-SHA artifact. Duration **8m04s**, no test
+retry. Initial run failed on missing native dependencies and Windows throughput;
+secure locked dependencies and four complete Windows partitions fixed both without
+weakening assertions or durability. Downloaded artifact metadata and all 19 file hashes
+were verified. The documentation-only follow-up reruns the same required gates. See
 [CI delivery contracts](docs/ci-delivery.md) and [actual validation evidence](docs/ci-validation.md).
 Real IdP, VPS TLS/proxy/runtime networking, production PostgreSQL operations and durable
 commitment storage ACL/backup verification remain blocked; this is not production readiness.
