@@ -7,6 +7,8 @@ Strictly prohibits default or hardcoded secrets in production source files.
 from __future__ import annotations
 
 import os
+import json
+from pathlib import Path
 from typing import Generator
 
 import pytest
@@ -17,7 +19,11 @@ from packages.contracts.core import SecurityContext
 TEST_IDENTITY_SECRET = "aryn-test-explicit-entropy-secret-key-32b-secure"
 
 
-def pytest_collection_modifyitems(items):
+def pytest_addoption(parser):
+    parser.addoption("--backend-shard", default=None, help="Deterministic offline backend partition, INDEX/COUNT")
+
+
+def pytest_collection_modifyitems(items, config):
     """A normal regression run must never submit a live model request."""
     model_tests = {
         "test_live_end_to_end_smoke",
@@ -28,6 +34,24 @@ def pytest_collection_modifyitems(items):
         for item in items:
             if item.name in model_tests:
                 item.add_marker(pytest.mark.skip(reason="Live model tests require explicit opt-in after owner authorization."))
+    shard = config.getoption("backend_shard")
+    if shard:
+        from tests.backend_selection import select_backend_tests
+        selected, full = select_backend_tests(items, shard)
+        deselected = [item for item in items if item not in selected]
+        config._aryn_backend_collection = full
+        config.hook.pytest_deselected(items=deselected)
+        items[:] = selected
+
+
+def pytest_collection_finish(session):
+    shard = session.config.getoption("backend_shard")
+    if shard:
+        path = Path(".local/backend-selection.json")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"platform": os.name, "shard": shard,
+            "commit": os.getenv("GITHUB_SHA"), "complete": session.config._aryn_backend_collection,
+            "selected": [item.nodeid for item in session.items]}, indent=2) + "\n", encoding="utf-8")
 
 
 @pytest.fixture(autouse=True)

@@ -10,7 +10,7 @@ Validation date: 2026-10-08. Source baseline:
 | Check and actual command | Result |
 |---|---|
 | Python 3.12.12 / uv 0.12.0: `uv sync --frozen --extra dev` | PASS, isolated clean environment from committed lock |
-| `python -m pytest -m 'not postgresql' -q --junitxml=backend-final.xml` | **704 passed, 5 skipped, 33 deselected**, 463.89s |
+| `python -m pytest -m 'not postgresql' -q --junitxml=.local/backend-final-current.xml` | **712 passed, 5 skipped, 33 deselected**, 499.89s; initial proposed-source verification was 704 passed / 5 skipped in 463.89s |
 | `python -m pytest tests/postgresql -q --junitxml=.local/postgresql.xml` | **33 passed**, 70.91s; actual PostgreSQL 16.13 |
 | Dedicated history, execution, authentication and Hermes security files | **113 passed**, 166.75s; also included in full suite |
 | `python -m pytest tests/integration/test_hermes_9router_binding.py -q` | **1 passed**, 14.78s; installed native source, offline SDK doubles and denied outbound network |
@@ -37,12 +37,14 @@ skip its configured runtime. Two backend/PostgreSQL deprecation warnings concern
 Starlette TestClient/httpx and Authlib/httpx, not failed assertions. Vite reports the
 existing approximately 712 KiB JavaScript chunk; size optimization remains separate.
 
-The full backend command ran from an ignored verification source tree containing
+The initial full backend command ran from an ignored verification source tree containing
 all proposed code changes and the original `.env.example`. A concurrent local edit
 to that file removed the loopback defaults and caused an initial endpoint example
 assertion failure. That unrelated edit is preserved locally and excluded from this
-commit. It was never overwritten to obtain a passing result. The exact checked-in
-source will be tested again by Actions.
+commit. It was never overwritten to obtain a passing result. That example subsequently
+returned to its original contents without a task edit. The latest full **712-test**
+validation ran directly from the repository after adding the coverage/security tests.
+The exact checked-in source will be tested again by Actions.
 
 Initial Ruff autofixes removed imports that also register Studio fixtures. The full
 suite caught those missing fixtures; explicit fixture import aliases restore them.
@@ -99,12 +101,56 @@ Initial status before commit/push: **UNVERIFIED**. YAML parsing and local action
 are not evidence of a successful hosted workflow. Run URLs, terminal job results,
 durations, retries and exact remote SHA are recorded after the actual push.
 
+First pushed source: `e71ad56ead7ecbb4b4d35cd34e31ace9912b74a9`.
+[Initial hosted run](https://github.com/aryn-labs/aryn/actions/runs/37783317962)
+exposed a native environment setup defect: JSON Schema is an optional upstream
+Hermes dependency but required by ARYN's imported contracts. The confined HTTP adapter
+also requires optional aiohttp. The route test correctly
+failed with a missing dependency; it was not skipped or weakened. CI now installs
+the required contract/HTTP/security closure from ARYN's immutable lock, with wheel hashes,
+no dependency resolution and consistency verification. The audit gate also requires
+that contract dependency and exact installed versions; its positive/negative tests now total **8 passed**.
+Materializing the complete environment also exposed **18 advisories in 3 packages**
+(multidict 6.7.1, PyJWT 2.13.0 and urllib3 2.7.0). They were not waived or excluded
+from scanning. Native source remains pinned, but its obsolete distribution metadata
+is not installed; the reviewed source profile overlays secure dependencies from
+ARYN's lock before native imports. The lock adds seven optional runtime dependencies,
+now **80 packages** in total, with the existing Core/dev resolution preserved.
+The source probe passed **1 test in 10.14s** with this profile, `uv pip check` passed,
+and a complete **88-distribution** Windows profile audit reported **zero advisories**.
+The installed user runtime is untouched; it does not inherit that security PASS.
+
+Artifact upload moves to a pinned Node 24 action to remove the obsolete action
+runtime warning. Exact-SHA mismatch and modified-source artifact guards were also
+tested locally and rejected both cases before writing an artifact.
+
+The first Linux backend job passed **686 / 23 skipped / 33 deselected** in 179.63s;
+skips are 17 Windows PowerShell tests, 3 live paid-model scenarios, 2 live credential
+tests and 1 uninstalled native runtime (covered by the separate mandatory native job).
+Hosted PostgreSQL passed **33** in 44.90s; frontend, all three browser shards and
+security/configuration passed. The Linux Python audit verified **71 distributions**,
+with no advisory; different platform inventory is explicitly checked, not assumed
+equal to Windows. The final corrected run must pass all gates before delivery.
+
 The installed Windows Hermes launcher uses additional dependency directories;
 auditing its base site-packages alone found only pip. That incomplete inventory is
 **not** a dependency security PASS. CI instead materializes the pinned upstream
-lock on Linux and rejects incomplete inventory with six positive/negative checker
+lock plus the reviewed security profile on Linux and rejects incomplete inventory with eight positive/negative checker
 tests. Its dependency audit and clean exact-commit delivery remain UNVERIFIED until
 their hosted jobs finish.
+
+The initial hosted run finished **FAIL** after 20m19s: native setup failed and the
+Windows backend timed out, so delivery was correctly skipped. Its interrupted JUnit
+contains 360 passes / 6 skips, zero assertion errors, covering only 366 of 709 cases.
+The slowest captured case took 36.66s; progress was continuing, not a stalled worker.
+Windows now partitions sorted test identities across four independent runners,
+keeping the original 20-minute limit and all assertions. Linux still runs the whole
+suite. The gate validates both full collections, commit identity, disjoint Windows
+union and actual JUnit case counts; missing, overlapping, interrupted and substituted
+commit evidence is rejected by **6 local tests**. Actual local collection verifies
+**717 cases**, split **180/179/179/179** with no missing/duplicated identity. This
+addresses runner throughput without relaxing SQLite durability. The added timeout
+stack dump only improves diagnosis and does not change test success semantics.
 
 ## Repository gates and residuals
 
@@ -195,10 +241,13 @@ packages/runtime_adapters/hermes/.gitkeep
 pyproject.toml
 scripts/.gitkeep
 scripts/build_delivery.py
+scripts/check_backend_coverage.py
 scripts/check_dependency_audit.py
 scripts/check_repository.py
 scripts/install_quality_tools.py
 services/api/.gitkeep
+tests/backend_selection.py
+tests/conftest.py
 tests/e2e/.gitkeep
 tests/e2e/test_smoke_end_to_end.py
 tests/hermes_gateway_check.py
@@ -231,6 +280,7 @@ tests/security/test_version_payload_integrity.py
 tests/unit/.gitkeep
 tests/unit/test_agent_contracts.py
 tests/unit/test_agent_factory_and_bench.py
+tests/unit/test_backend_selection.py
 tests/unit/test_bench_graders.py
 tests/unit/test_bench_regression.py
 tests/unit/test_contracts.py

@@ -11,15 +11,17 @@ def verify_report(path, *, native=False, site_packages=None):
     report = json.loads(Path(path).read_text(encoding="utf-8"))
     records = report["dependencies"]
     audited = {canonicalize_name(item["name"]) for item in records}
-    required = {"aiohttp", "openai", "httpx", "pydantic"} if native else {"authlib", "pyjwt", "cryptography", "sqlalchemy", "fastapi", "jsonschema", "alembic", "httpx", "pydantic"}
+    required = {"aiohttp", "openai", "httpx", "pydantic", "jsonschema"} if native else {"authlib", "pyjwt", "cryptography", "sqlalchemy", "fastapi", "jsonschema", "alembic", "httpx", "pydantic"}
     assert required <= audited, "Audit did not inspect the actual application/runtime dependencies."
-    inventory = {canonicalize_name(item.metadata["Name"]) for item in importlib.metadata.distributions(
+    inventory = {canonicalize_name(item.metadata["Name"]): item.version for item in importlib.metadata.distributions(
         **({"path": [site_packages]} if site_packages else {}))}
-    assert inventory <= audited, "Installed dependency inventory differs from scanner report."
+    assert inventory.keys() <= audited, "Installed dependency inventory differs from scanner report."
     for item in records:
         assert not item.get("vulns"), "Known vulnerability blocks delivery."
         if item.get("skip_reason"):
             assert canonicalize_name(item["name"]) in {"aryn", "hermes-agent"}, "Unverifiable third-party dependency."
+        elif canonicalize_name(item["name"]) in inventory:
+            assert item["version"] == inventory[canonicalize_name(item["name"])], "Audit inspected a different installed version."
     print(f"Verified complete dependency audit: {len(audited)} distributions.")
 
 

@@ -55,7 +55,7 @@ stale owner fencing, authenticated sessions and migrations through 015. Two real
 concurrency defects were fixed: run settlement row locking and Factory membership/resource
 lock order. No schema migration or historical evidence rewrite was introduced.
 
-Final local source validation: **704 backend passed / 5 live opt-in skipped**, **86 frontend
+Final local source validation: **712 backend passed / 5 live opt-in skipped**, **86 frontend
 passed**, **17 isolated browser E2E passed**, TypeScript/Vite, configured Ruff, Prettier,
 dependency/secret scans and review artifact generation PASS. GitHub-hosted execution and
 clean exact-commit delivery are **UNVERIFIED until actual workflow completion**. See

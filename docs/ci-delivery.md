@@ -17,13 +17,13 @@ The reviewed dependency set builds/tests successfully without lifecycle scripts.
 | Stable check | Scope |
 |---|---|
 | Backend Quality (ubuntu-24.04) | Ruff and full offline backend suite |
-| Backend Quality (windows-2025) | Same suite, including Windows launcher/OS ownership contracts |
+| Backend Quality (windows-2025, 1/4) through (4/4) | Four disjoint partitions of the same full suite, including Windows launcher/OS ownership contracts |
 | Frontend Quality | Prettier, unit/components, TypeScript and Vite |
 | PostgreSQL Integration | Real PostgreSQL 16.13, role separation, migrations and concurrency |
 | Security and Configuration | actionlint, source hygiene, full Git secret scan, dependency audit and inventory verification |
 | Native Hermes Boundary | Exact native source/dependency lock, actual HTTP route dispatch, network-denied SDK doubles and dependency audit |
 | Browser E2E (1/3), (2/3), (3/3) | Chromium, one worker per shard, fresh API/Core/database/authority per test |
-| Required Quality Gates | Requires every preceding check to succeed; failures, cancellation and skipped jobs cannot pass |
+| Required Quality Gates | Requires every preceding check and exact full Linux/Windows partition coverage; failure, cancellation, missing execution or skipped jobs cannot pass |
 | Validated Delivery Artifact | Push/dispatch only; builds and scans the review artifact after all required gates |
 
 Every action uses a full immutable commit SHA. Workflow token permissions are
@@ -32,7 +32,7 @@ receives production secrets. There is no `pull_request_target`, privileged follo
 workflow, write token, automatic dependency merge or deployment step.
 SHA pinning follows [GitHub's secure-use guidance](https://docs.github.com/en/actions/reference/security/secure-use).
 
-The backend suite includes all existing BN-06, AF-07, migrations 013–015, signed
+The backend suite includes all existing BN-06, AF-07, migrations 013â€“015, signed
 history, immutable version, regression/approval/publication/rollback, budget/usage,
 owner/fencing/recovery, captured provenance, OIDC/CSRF and runtime boundary assertions.
 Live model tests remain opt-in and CI fixes the opt-in to `0`. Missing live runtime
@@ -85,7 +85,7 @@ is tested against populated protected tables. A compromised owner/superuser capa
 of changing DDL remains outside the claimed persistence boundary.
 
 Live tests cover fresh migration chain through `015_authentication_boundary`, full
-empty downgrade/re-upgrade, populated 015↔014 roundtrip preserving signed history/run
+empty downgrade/re-upgrade, populated 015â†”014 roundtrip preserving signed history/run
 evidence, visibility and NOWAIT row locking, atomic failed publication, concurrent
 publication/idempotency, baseline CAS, rollback CAS/idempotency, reservation admission,
 concurrent settlement, replayed assignment pointers, unavailable/corrupt commitments,
@@ -131,7 +131,18 @@ production credentials. The strategy removes prior-test growth from CI; it is no
 a claim that large production snapshots have been performance-qualified.
 
 Native Hermes source is `937f23db2d707cde1c87337fde3aafee514d117c` from
-`NousResearch/hermes-agent`, with its own frozen dependency lock on Python 3.14.0.
+`NousResearch/hermes-agent`, on Python 3.14.0. Its frozen base lock is installed
+without installing the native distribution: the test executes the exact checked-out
+source directly. Upstream package metadata pins vulnerable PyJWT 2.13.0; that
+metadata is not the dependency authority for ARYN's confined source deployment.
+Before any native import, CI overlays the JSON Schema/aiohttp/PyJWT/urllib3 closure
+from ARYN's hashed `uv.lock` (`runtime` extra records the HTTP dependencies).
+This uses secure PyJWT 2.15.1, urllib3 2.8.0 and multidict 6.9.1, then verifies every
+installed third-party dependency's metadata with `uv pip check` and a complete
+vulnerability inventory. No tool/provider extras are enabled. This reviewed profile
+is deliberately different from an unmodified upstream installation; existing local
+Hermes installations are not rewritten and must be reprovisioned/verified before
+being treated as passing this dependency security gate.
 CI verifies the **actual** application's route/middleware dispatch and listener,
 including forbidden native routes with a valid internal key, not merely a separate
 allowlist constant. SDK calls are HTTP doubles with outbound socket connections
@@ -200,3 +211,15 @@ For a disposable local PostgreSQL service, use the workflow's pinned image with 
 loopback-only port mapping and explicit provisioning URL. Never use a production DB
 for these destructive fixture/migration tests. `build_delivery.py` requires fresh
 ignored output/verification directories and never silently deletes an existing artifact.
+## Backend runner isolation and coverage
+
+Linux executes the complete offline backend collection. Windows uses four
+deterministic partitions of sorted pytest identities, keeping the original execution
+order within each partition. A normal local pytest invocation still runs the whole
+suite; PostgreSQL has its own required gate. No test or assertion is removed.
+Every backend runner uploads its exact commit, complete collection, selected
+identities and JUnit execution evidence. `Required Quality Gates` checks identical
+collections/commits, all five runners, disjoint complete Windows coverage, full Linux
+coverage and executed case counts; a green subset or interrupted suite cannot pass.
+Backend logs include per-case progress, durations and a 120s diagnostic stack dump
+for a stalled case. The 20-minute per-runner limit remains unchanged.
