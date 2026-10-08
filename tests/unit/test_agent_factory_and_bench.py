@@ -9,32 +9,26 @@ Tests:
 
 import json
 import pytest
-from sqlalchemy.orm import sessionmaker
 
 from database.connection import create_db_engine, DatabaseManager
-from database.schema import Base, AuditEventModel
+from database.schema import Base
 from database.repositories.organization_repo import OrganizationRepository
 from database.repositories.agent_repo import AgentRepository
-from database.repositories.bench_repo import BenchRepository
-from database.repositories.approval_repo import ApprovalRepository
 from database.repositories.audit_repo import AuditRepository
 from database.repositories.exceptions import (
     DuplicateEntityError,
-    EntityNotFoundError,
     InvalidStateTransitionError,
     TenantIsolationError,
 )
 from packages.contracts.core import Actor, ActorType, AuditStatus, SecurityContext
 from packages.contracts.agent import AgentVersion, AgentVersionStatus
-from packages.contracts.bench import BenchCategory, BenchScenario, ScenarioResult, BenchEvaluationResult
+from packages.contracts.bench import BenchCategory, ScenarioResult, BenchEvaluationResult
 from packages.contracts.runtime import RunRequest, RunResult, RunStatus, RunUsage, RuntimeAdapter, RuntimeHealth, RuntimeCapabilities, RuntimeTrace
 from tests.conftest import bind_test_context
-from modules.bench.scenarios import get_standard_research_bench_scenarios
 from modules.bench.runner import BenchRunner
 from modules.bench.quality_gate import BenchQualityGate, QualityGateFailedError
 from modules.core.approvals.engine import (
     ApprovalEngine,
-    ApprovalRequiredError,
     UnauthorizedApproverError,
     PayloadHashMismatchError,
 )
@@ -331,8 +325,7 @@ def test_approval_engine_role_and_hash_binding(test_db, admin_context):
 # -----------------------------------------------------------------------------
 
 def test_audit_integrity_verification_and_tamper_detection(test_db, admin_context):
-    from database.repositories.audit_repo import AuditRepository
-    from packages.contracts.core import AuditEvent, AuditStatus
+    from packages.contracts.core import AuditEvent
 
     with test_db.session() as session:
         repo = AuditRepository(session)

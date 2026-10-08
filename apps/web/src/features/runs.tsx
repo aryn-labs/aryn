@@ -146,7 +146,9 @@ export function Runs({ data, workspace, pending, act, actStream }: Shared) {
         setParams({ penugasan: res.id });
       }
     } catch (err: unknown) {
-      setValidation((err instanceof Error ? err.message : "") || "Gagal membuat penugasan");
+      setValidation(
+        (err instanceof Error ? err.message : "") || "Gagal membuat penugasan",
+      );
     } finally {
       setCreatingAssignment(false);
     }
@@ -188,7 +190,10 @@ export function Runs({ data, workspace, pending, act, actStream }: Shared) {
       setRunKey(crypto.randomUUID());
       viewResult(newRunId);
     } catch (err: unknown) {
-      setValidation((err instanceof Error ? err.message : "") || "Eksekusi belum dapat diselesaikan.");
+      setValidation(
+        (err instanceof Error ? err.message : "") ||
+          "Eksekusi belum dapat diselesaikan.",
+      );
       /* Retry preserves idempotency key; edits create a new key. */
     } finally {
       setExecuting(false);

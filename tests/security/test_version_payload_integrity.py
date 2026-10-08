@@ -83,7 +83,7 @@ async def test_tampering_without_hash_change_blocks_all_lifecycle_gates(lifecycl
         assignment = factory.assign_agent(ctx, bp.id, version.id, "researcher")
     with db.session() as s:
         s.execute(text("UPDATE agent_versions SET system_prompt='Changed' WHERE id=:id"), {"id": version.id})
-    before = len(runtime.requests)
+    _before = len(runtime.requests)
     with pytest.raises(ValueError, match="integrity"):
         if stage == "approve":
             factory.approve_version(ctx, version.id)

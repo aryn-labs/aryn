@@ -17,13 +17,7 @@ import type { Blueprint, Assignment, Version } from "../lib/types";
 import { date, number } from "../lib/utils";
 import { Button } from "../components/ui/button";
 import { Modal } from "../components/ui/dialog";
-import {
-  Busy,
-  Empty,
-  Notice,
-  PageHeading,
-  Status,
-} from "../components/shared";
+import { Busy, Empty, Notice, PageHeading, Status } from "../components/shared";
 import type { Shared } from "../lib/types";
 import { Panel, Lifecycle, AuditList } from "../components/workspace";
 import { VersionForm } from "../components/version-form";
@@ -346,38 +340,44 @@ export function AgentDetail({
         </Notice>
       )}
 
-      {selected && selected.status === "published" && selected.governance_valid && (
-        <div className="published-callout flex items-center justify-between gap-3 p-3 mb-4 rounded border">
-          <div>
-            <strong>Versi dipublikasikan (immutable)</strong>
-            <p className="text-sm subtle">
-              Versi ini dipublikasikan dan tidak dapat diubah. Konfigurasi terkunci dan valid. Lanjutkan dengan menugaskan peran atau jalankan agent.
-            </p>
+      {selected &&
+        selected.status === "published" &&
+        selected.governance_valid && (
+          <div className="published-callout flex items-center justify-between gap-3 p-3 mb-4 rounded border">
+            <div>
+              <strong>Versi dipublikasikan (immutable)</strong>
+              <p className="text-sm subtle">
+                Versi ini dipublikasikan dan tidak dapat diubah. Konfigurasi
+                terkunci dan valid. Lanjutkan dengan menugaskan peran atau
+                jalankan agent.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button
+                size="sm"
+                disabled={pending || !data.permissions["agent:assign"]}
+                onClick={() => openDialog("assign")}
+              >
+                <Plus size={14} />
+                Buat Penugasan
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  const a = data.assignments.find(
+                    (asg) => asg.version_id === selected.id,
+                  );
+                  if (a) navigate(`/runs?penugasan=${a.id}`);
+                  else navigate("/runs");
+                }}
+              >
+                <ArrowRight size={14} />
+                Buka Eksekusi
+              </Button>
+            </div>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <Button
-              size="sm"
-              disabled={pending || !data.permissions["agent:assign"]}
-              onClick={() => openDialog("assign")}
-            >
-              <Plus size={14} />
-              Buat Penugasan
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                const a = data.assignments.find((asg) => asg.version_id === selected.id);
-                if (a) navigate(`/runs?penugasan=${a.id}`);
-                else navigate("/runs");
-              }}
-            >
-              <ArrowRight size={14} />
-              Buka Eksekusi
-            </Button>
-          </div>
-        </div>
-      )}
+        )}
 
       {/* Primary Workspace: Laboratory Canvas */}
       <div className="factory-canvas-workspace mb-6">
@@ -410,7 +410,9 @@ export function AgentDetail({
             openDialog("assign");
           }}
           onOpenExecution={() => {
-            const a = data.assignments.find((asg) => asg.version_id === selected?.id);
+            const a = data.assignments.find(
+              (asg) => asg.version_id === selected?.id,
+            );
             if (a) navigate(`/runs?penugasan=${a.id}`);
             else navigate("/runs");
           }}
@@ -455,7 +457,8 @@ export function AgentDetail({
                 title="Publikasikan versi terlebih dahulu"
                 description="Core menolak penugasan versi yang belum dipublikasikan. Selesaikan Bench, persetujuan, dan publikasi pada Inspector canvas."
               />
-            ) : data.assignments.filter((a) => a.version_id === selected.id).length ? (
+            ) : data.assignments.filter((a) => a.version_id === selected.id)
+                .length ? (
               <div className="assignment-list">
                 {data.assignments
                   .filter((a) => a.version_id === selected.id)
@@ -652,9 +655,7 @@ export function AgentDetail({
                   hash yang tepat. Versi yang dipublikasikan tidak dapat diedit.
                 </Notice>
               )}
-              {pending && (
-                <Busy label="Core sedang memproses aksi…" />
-              )}
+              {pending && <Busy label="Core sedang memproses aksi…" />}
             </div>
             <div className="dialog-footer">
               <Button

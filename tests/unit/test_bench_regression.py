@@ -94,14 +94,22 @@ def test_grader_regressions_and_governance_criticality(state, grader_type):
 @pytest.mark.parametrize("change", ["scenario_missing", "scenario_added", "scenario_version", "grader_missing", "grader_version", "suite_hash", "suite_version", "evidence_format"])
 def test_missing_or_changed_identities_never_pass(change):
     before, after, suite = evaluations()
-    if change == "scenario_missing": after.scenario_results.pop()
-    elif change == "scenario_added": after.scenario_results.append(after.scenario_results[0].model_copy(update={"scenario_id": "new"}))
-    elif change == "scenario_version": after.scenario_results[0].scenario_version = "2.0.0"
-    elif change == "grader_missing": after.scenario_results[0].grader_results.pop()
-    elif change == "grader_version": after.scenario_results[0].grader_results[0].grader_version = "2.0.0"
-    elif change == "suite_hash": after.suite_hash = "different"
-    elif change == "suite_version": after.evaluation_version = "3.0.0"
-    else: after.evidence_format = 1
+    if change == "scenario_missing":
+        after.scenario_results.pop()
+    elif change == "scenario_added":
+        after.scenario_results.append(after.scenario_results[0].model_copy(update={"scenario_id": "new"}))
+    elif change == "scenario_version":
+        after.scenario_results[0].scenario_version = "2.0.0"
+    elif change == "grader_missing":
+        after.scenario_results[0].grader_results.pop()
+    elif change == "grader_version":
+        after.scenario_results[0].grader_results[0].grader_version = "2.0.0"
+    elif change == "suite_hash":
+        after.suite_hash = "different"
+    elif change == "suite_version":
+        after.evaluation_version = "3.0.0"
+    else:
+        after.evidence_format = 1
     result = compare_evaluations(comparison(before, after), before, after, suite)
     assert result.state == "incompatible" and result.promotion_blocked
 
@@ -111,7 +119,7 @@ def test_score_latency_token_cost_resource_deltas_are_real_and_policy_bound():
         max_token_increase=4, max_cost_increase_usd=0.1, max_resource_increases={"cpu": 1})
     before, after, suite = evaluations(generic_suite(required_scenarios=[], regression_policy=policy))
     after.score = 0.5
-    for old, new in zip(before.scenario_results, after.scenario_results):
+    for old, new in zip(before.scenario_results, after.scenario_results, strict=True):
         old.execution.cost_usd, new.execution.cost_usd = 0.1, 0.2
         old.execution.resources, new.execution.resources = {"cpu": 1}, {"cpu": 2}
         new.execution.usage["total_tokens"] = 8
@@ -141,16 +149,21 @@ def test_invalid_metric_does_not_create_fabricated_delta(value):
 @pytest.mark.parametrize("policy", [{"max_score_drop": -1}, {"max_resource_increases": {"cpu": -1}},
     {"max_latency_increase_seconds": float("nan")}, {"critical_scenarios": ["unknown"]}, {"critical_graders": ["unknown"]}])
 def test_invalid_regression_policy_rejected(policy):
-    with pytest.raises(ValueError): generic_suite(regression_policy=policy)
+    with pytest.raises(ValueError):
+        generic_suite(regression_policy=policy)
 
 
 @pytest.mark.parametrize("change", ["blueprint", "payload", "evaluation", "tenant"])
 def test_comparison_rejects_execution_or_version_identity_mismatch(change):
     before, after, suite = evaluations()
     result = comparison(before, after)
-    if change == "blueprint": before.blueprint_id = "foreign"
-    elif change == "payload": after.payload_hash = evidence_hash({"tampered": True})
-    elif change == "evaluation": after.evaluation_id = "forged"
-    else: after.scenario_results[0].execution.project_id = "foreign"
+    if change == "blueprint":
+        before.blueprint_id = "foreign"
+    elif change == "payload":
+        after.payload_hash = evidence_hash({"tampered": True})
+    elif change == "evaluation":
+        after.evaluation_id = "forged"
+    else:
+        after.scenario_results[0].execution.project_id = "foreign"
     result = compare_evaluations(result, before, after, suite)
     assert result.state in {"invalid", "incompatible"} and result.promotion_blocked

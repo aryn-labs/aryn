@@ -10,15 +10,21 @@ import pytest
 
 
 def test_installed_hermes_executes_via_guarded_gateway_double(tmp_path):
-    command = shutil.which("hermes.exe")
-    source = Path.home() / "AppData/Local/hermes/hermes-agent"
-    if not command or not source.is_dir():
-        pytest.skip("Installed Hermes interpreter not available; transport unit regressions remain mandatory.")
-    runtime = json.loads(subprocess.check_output([command, "--print-runtime-command"], text=True))[0]
+    configured = os.getenv("ARYN_TEST_HERMES_SOURCE")
+    if configured:
+        source = Path(configured)
+        runtime = os.environ["ARYN_TEST_HERMES_PYTHON"]
+        assert source.is_dir() and Path(runtime).is_file(), "Configured native Hermes verification must not skip."
+    else:
+        command = shutil.which("hermes.exe")
+        source = Path.home() / "AppData/Local/hermes/hermes-agent"
+        if not command or not source.is_dir():
+            pytest.skip("Installed Hermes interpreter not available; dedicated native CI verification is mandatory.")
+        runtime = json.loads(subprocess.check_output([command, "--print-runtime-command"], text=True))[0]
     home = tmp_path / "hermes-isolated"
     home.mkdir()
     (home / "config.yaml").write_text("platform_toolsets:\n  api_server: []\nmemory:\n  memory_enabled: false\ncompression:\n  enabled: false\n", encoding="utf-8")
-    env = {k: os.environ[k] for k in ("SystemRoot", "PATH", "APPDATA", "LOCALAPPDATA", "USERPROFILE", "TEMP", "TMP") if k in os.environ}
+    env = {k: os.environ[k] for k in ("SystemRoot", "PATH", "HOME", "APPDATA", "LOCALAPPDATA", "USERPROFILE", "TEMP", "TMP") if k in os.environ}
     key = secrets.token_hex(32)
     env.update(HERMES_HOME=str(source.parent), ARYN_TEST_HERMES_HOME=str(home), API_SERVER_KEY=key)
     root = Path(__file__).resolve().parents[2]

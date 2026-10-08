@@ -7,7 +7,6 @@ from sqlalchemy import text
 from modules.bench.runner import BenchRunner
 from modules.core.workflows.coordinator import RunCoordinator
 from packages.contracts.runtime import ModelUnavailableError, RunRequest, RuntimeModelAvailability
-from packages.runtime_adapters import HermesRuntimeAdapter
 
 from tests.gateway_fixtures import MODEL, make_adapter, standard_handler
 

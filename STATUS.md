@@ -4,8 +4,19 @@
 melanjutkan baseline `5e9392c5f976b4725813dd98ccd8c6811472d9ae`; authoritative claim,
 reservation/settlement, single process ownership dan unified result contract didokumentasikan
 di [Core execution hardening](docs/core-execution-hardening.md). Provider hard total-token/cost
-cap, Managed AI monetary reservation, distributed workers dan live PostgreSQL belum terbukti.
+cap, Managed AI monetary reservation dan distributed workers belum terbukti. Disposable
+live PostgreSQL contracts kini diuji; deployment PostgreSQL VPS tetap memerlukan UAT.
 Historical PASS rows di bawah tetap evidence revision sebelumnya.
+
+CI/CD melanjutkan baseline `58bde394`: reproducible uv/npm locks, pinned read-only
+GitHub Actions, correctness Ruff, frontend formatting, Linux/Windows backend,
+actual native Hermes boundary, disposable PostgreSQL restricted-role integration,
+isolated browser E2E dan commit-bound review artifacts. PostgreSQL verification
+menemukan dan memperbaiki concurrent settlement serta inverted governance lock order.
+Tidak ada migration baru; chain tetap `015_authentication_boundary`. Hasil lokal dan
+status Actions yang benar-benar diamati dicatat pada [CI validation](docs/ci-validation.md);
+kontrak/gates/settings pada [CI delivery](docs/ci-delivery.md). Branch protection dan
+production release/deploy tidak diubah. **Hosted production readiness tetap BLOCKED.**
 
 Deployment Boundary Hardening melanjutkan `27c3f0e`: Local identity hanya pada mode development eksplisit, hosted OIDC issuer/subject mapping dan server sessions/CSRF masuk Core authority existing, dan dedicated Hermes application memakai minimal route allowlist. Migration `015_authentication_boundary` membuat auth tables kosong tanpa evidence/membership backfill. [Deployment security](docs/deployment-security.md) dan [validation](docs/deployment-validation.md) membedakan signed mocks/installed-runtime tests dari IdP/PostgreSQL/TLS/VPS/firewall UAT yang belum dijalankan. **Hosted production readiness tetap BLOCKED.**
 
@@ -34,3 +45,20 @@ atau database superuser resistance.
 | Tauri packaging PoC | NOT STARTED | — | — |
 
 Only mark **PASS** with reproducible test evidence, including failing/negative tests where applicable.
+
+## CI/CD and PostgreSQL follow-up — 8 October 2026
+
+The historical rows above describe their original revisions. Live disposable PostgreSQL
+16.13 verification now passes **33 tests**, including restricted writer privileges,
+concurrent publication/baseline/rollback, exact-once settlement, actual advisory locking,
+stale owner fencing, authenticated sessions and migrations through 015. Two real
+concurrency defects were fixed: run settlement row locking and Factory membership/resource
+lock order. No schema migration or historical evidence rewrite was introduced.
+
+Final local source validation: **704 backend passed / 5 live opt-in skipped**, **86 frontend
+passed**, **17 isolated browser E2E passed**, TypeScript/Vite, configured Ruff, Prettier,
+dependency/secret scans and review artifact generation PASS. GitHub-hosted execution and
+clean exact-commit delivery are **UNVERIFIED until actual workflow completion**. See
+[CI delivery contracts](docs/ci-delivery.md) and [actual validation evidence](docs/ci-validation.md).
+Real IdP, VPS TLS/proxy/runtime networking, production PostgreSQL operations and durable
+commitment storage ACL/backup verification remain blocked; this is not production readiness.

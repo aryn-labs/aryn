@@ -4,7 +4,7 @@ from __future__ import annotations
 import math
 from pydantic import TypeAdapter
 from packages.contracts.bench import (
-    ActionEvidence, IdempotencyObservation, ScenarioExecutionEvidence, SuiteAggregateResult, EvaluationReference, evidence_hash,
+    ActionEvidence, IdempotencyObservation, ScenarioExecutionEvidence, SuiteAggregateResult, EvaluationReference,
 )
 from modules.bench.graders import GradingContext, execute_graders
 from modules.bench.aggregation import aggregate_scenario, aggregate_suite
@@ -60,7 +60,7 @@ def validate_legacy(evaluation, suite):
     import re
     if not suite.legacy_suite_hash or evaluation.suite_hash != suite.legacy_suite_hash:
         raise ValueError("Legacy suite hash unavailable or differs.")
-    for scenario, result in zip(suite.scenarios, evaluation.scenario_results):
+    for scenario, result in zip(suite.scenarios, evaluation.scenario_results, strict=True):
         passed = (result.runtime_status == "completed" and result.actual_model == evaluation.requested_model
                   and all(type(v) is int and v >= 0 for v in (result.input_tokens, result.output_tokens, result.total_tokens))
                   and result.total_tokens == result.input_tokens + result.output_tokens
@@ -92,7 +92,7 @@ def validate_evaluation(evaluation, suite, *, reference=None, signer=None, appro
         return
     if evaluation.suite_id != suite.suite_id or evaluation.suite_hash != suite.suite_hash:
         raise ValueError("Suite configuration differs.")
-    for scenario, result in zip(suite.scenarios, evaluation.scenario_results):
+    for scenario, result in zip(suite.scenarios, evaluation.scenario_results, strict=True):
         if result.execution is None:
             raise ValueError("Execution evidence missing.")
         # Reparse copies because model_copy and runtime mutation can bypass Pydantic validation.

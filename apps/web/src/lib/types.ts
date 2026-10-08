@@ -230,7 +230,15 @@ export type Approval = {
   created_at: string;
   status: string;
 };
-export type RunStatus = "queued" | "started" | "running" | "stopping" | "completed" | "failed" | "cancelled" | "outcome_unknown";
+export type RunStatus =
+  | "queued"
+  | "started"
+  | "running"
+  | "stopping"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "outcome_unknown";
 export type RunResponse = {
   run_id: string;
   id: string;
@@ -253,10 +261,22 @@ export type RunResponse = {
   output: string;
   output_reference: string | null;
   error_code: string | null;
-  usage: { input_tokens: number; output_tokens: number; total_tokens: number; availability: "measured" | "unavailable"; cost_usd: number | null };
+  usage: {
+    input_tokens: number;
+    output_tokens: number;
+    total_tokens: number;
+    availability: "measured" | "unavailable";
+    cost_usd: number | null;
+  };
 };
-export type StreamPayload = Partial<Scenario & BenchCompletion & RunResponse> & {
-  message?: string; index?: number; scenarios?: ScenarioDefinition[]; correlation_id?: string; error_code?: string;
+export type StreamPayload = Partial<
+  Scenario & BenchCompletion & RunResponse
+> & {
+  message?: string;
+  index?: number;
+  scenarios?: ScenarioDefinition[];
+  correlation_id?: string;
+  error_code?: string;
 };
 export type StreamEvent = { type: string; data: StreamPayload };
 

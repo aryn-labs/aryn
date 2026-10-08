@@ -1,0 +1,281 @@
+name: ARYN Quality
+
+on:
+  push:
+    branches: [development]
+  pull_request:
+    branches: [development, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_VERSION: 0.12.0
+  UV_NO_PROGRESS: 1
+  ARYN_RUN_LIVE_MODEL_TESTS: 0
+
+jobs:
+  backend:
+    name: Backend Quality (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv sync --frozen --extra dev
+      - run: uv run --frozen --extra dev ruff check .
+      - name: All offline backend and security regressions
+        run: uv run --frozen --extra dev pytest -m 'not postgresql' -q --junitxml=.local/backend.xml
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: backend-results-${{ matrix.os }}-${{ github.sha }}
+          path: .local/backend.xml
+          include-hidden-files: true
+          retention-days: 7
+
+  frontend:
+    name: Frontend Quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - run: npm run format:check
+      - run: npm test
+      - run: npm run typecheck
+      - run: npm run build
+
+  postgresql:
+    name: PostgreSQL Integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16.13-alpine@sha256:4e6e670bb069649261c9c18031f0aded7bb249a5b6664ddec29c013a89310d50
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: aryn-disposable-ci-password
+          POSTGRES_DB: aryn_ci_admin
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d aryn_ci_admin"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      # Disposable provisioning only. Every product operation uses a generated,
+      # non-owner role, with neither schema CREATE nor history mutation grants.
+      ARYN_TEST_POSTGRES_ADMIN_URL: postgresql+psycopg://postgres:aryn-disposable-ci-password@127.0.0.1:5432/aryn_ci_admin
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv sync --frozen --extra dev
+      - run: uv run --frozen --extra dev pytest tests/postgresql -q --junitxml=.local/postgresql.xml
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: postgresql-results-${{ github.sha }}
+          path: .local/postgresql.xml
+          include-hidden-files: true
+          retention-days: 7
+
+  security:
+    name: Security and Configuration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - run: uv sync --frozen --extra dev
+      - run: uv run --frozen --extra dev python scripts/install_quality_tools.py
+      - run: .local/quality-tools/actionlint
+      - run: uv run --frozen --extra dev python scripts/check_repository.py
+      - name: Entire Git history secret scan (redacted)
+        run: .local/quality-tools/gitleaks git . --redact --log-opts='--all'
+      - name: Lockfile must match current Python manifest
+        run: uv lock --check --offline
+      - name: Python dependencies (any known advisory blocks)
+        run: uv run --frozen --extra dev pip-audit --skip-editable --format json --output .local/python-audit.json
+      - run: uv run --frozen --extra dev python scripts/check_dependency_audit.py .local/python-audit.json
+      - name: Node dependencies (high/critical block; all severities reported)
+        working-directory: apps/web
+        run: |
+          npm ci --ignore-scripts
+          npm audit --audit-level=high --json > ../../.local/node-audit.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: dependency-audit-${{ github.sha }}
+          path: |
+            .local/python-audit.json
+            .local/node-audit.json
+          include-hidden-files: true
+          retention-days: 7
+
+  native-runtime:
+    name: Native Hermes Boundary
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv sync --frozen --extra dev
+      - name: Exact native runtime checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: NousResearch/hermes-agent
+          ref: 937f23db2d707cde1c87337fde3aafee514d117c
+          path: .local/hermes-source
+          persist-credentials: false
+      - name: Native dependency lock (no tool/provider extras)
+        run: |
+          env -u UV_PROJECT_ENVIRONMENT uv sync --project .local/hermes-source --frozen --no-dev --python 3.14.0
+          uv pip check --python .local/hermes-source/.venv/bin/python
+      - name: Actual route table and network-denied gateway execution
+        env:
+          ARYN_TEST_HERMES_SOURCE: ${{ github.workspace }}/.local/hermes-source
+          ARYN_TEST_HERMES_PYTHON: ${{ github.workspace }}/.local/hermes-source/.venv/bin/python
+        run: uv run --frozen --extra dev pytest tests/integration/test_hermes_9router_binding.py -q --junitxml=.local/native-runtime.xml
+      - name: Native runtime dependency vulnerabilities
+        run: uv run --frozen --extra dev pip-audit --path .local/hermes-source/.venv/lib/python3.14/site-packages --skip-editable --format json --output .local/native-python-audit.json
+      - run: uv run --frozen --extra dev python scripts/check_dependency_audit.py .local/native-python-audit.json --native --site-packages .local/hermes-source/.venv/lib/python3.14/site-packages
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: native-runtime-results-${{ github.sha }}
+          path: |
+            .local/native-runtime.xml
+            .local/native-python-audit.json
+          include-hidden-files: true
+          retention-days: 7
+
+  browser:
+    name: Browser E2E (${{ matrix.shard }}/3)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - run: uv sync --frozen --extra dev
+      - working-directory: apps/web
+        run: |
+          npm ci --ignore-scripts
+          npx --no-install playwright install --with-deps chromium
+          npm run build
+          mkdir -p ../../.local/evidence
+      - name: Fresh API/Core/database per browser case
+        working-directory: apps/web
+        env:
+          ARYN_TEST_PYTHON: ${{ github.workspace }}/.venv/bin/python
+        run: npm run test:e2e -- --shard=${{ matrix.shard }}/3
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: failure()
+        with:
+          name: browser-failure-${{ matrix.shard }}-${{ github.sha }}
+          path: |
+            apps/web/test-results
+            apps/web/playwright-report
+          retention-days: 7
+
+  gates:
+    name: Required Quality Gates
+    runs-on: ubuntu-24.04
+    if: always()
+    needs: [backend, frontend, postgresql, security, native-runtime, browser]
+    timeout-minutes: 2
+    steps:
+      - name: Every required gate must succeed
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python - <<'PY'
+          import json, os
+          results = json.loads(os.environ['RESULTS'])
+          assert all(job['result'] == 'success' for job in results.values()), {name: job['result'] for name, job in results.items()}
+          PY
+
+  delivery:
+    name: Validated Delivery Artifact
+    runs-on: ubuntu-24.04
+    needs: gates
+    if: github.event_name != 'pull_request'
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - run: uv sync --frozen --extra dev
+      - working-directory: apps/web
+        run: |
+          npm ci --ignore-scripts
+          npm run build
+      - run: uv run --frozen --extra dev python scripts/build_delivery.py
+      - run: uv run --frozen --extra dev python scripts/install_quality_tools.py
+      - name: Scan delivery text and unpacked wheel for secrets
+        run: |
+          .local/quality-tools/gitleaks dir .local/delivery --redact
+          .local/quality-tools/gitleaks dir .local/wheel-verification --redact
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: aryn-delivery-${{ github.sha }}
+          path: .local/delivery
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14

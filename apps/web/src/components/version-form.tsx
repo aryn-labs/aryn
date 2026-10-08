@@ -143,9 +143,10 @@ export function VersionForm({
         </div>
         <Notice>
           Mode riset teks. Semua tool ARYN Runtime harus dinonaktifkan. Model
-          dan credential provider dikelola oleh Model Gateway. Batas output dikirim
-          ke provider; input memakai estimasi admission, dan batas total diverifikasi
-          dari usage aktual. Usage yang tidak tersedia memblokir hasil terverifikasi.
+          dan credential provider dikelola oleh Model Gateway. Batas output
+          dikirim ke provider; input memakai estimasi admission, dan batas total
+          diverifikasi dari usage aktual. Usage yang tidak tersedia memblokir
+          hasil terverifikasi.
         </Notice>
         {validation && <Notice tone="error">{validation}</Notice>}
       </div>

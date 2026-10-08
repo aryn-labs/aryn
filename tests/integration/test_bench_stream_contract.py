@@ -1,9 +1,10 @@
 """Public Bench completion is persisted and verified before the terminal event."""
+from tests.integration.test_studio_api import studio as studio
 import json
 
 import pytest
 
-from tests.integration.test_studio_api import studio, draft, PREFIX
+from tests.integration.test_studio_api import draft, PREFIX
 
 
 def events(response):

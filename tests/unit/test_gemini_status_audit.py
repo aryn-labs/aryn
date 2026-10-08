@@ -5,7 +5,6 @@ model specification and request structure definitions.
 Complies with User Requirement #6: Never claim live Gemini PASS without actual requests and actual model proof.
 """
 
-import pytest
 from packages.model_adapters import GeminiModelAdapter
 from packages.contracts.model import ModelProviderType
 

@@ -340,7 +340,8 @@ export function BenchPage({
     step: string;
     scenarioIndex?: number;
     scenarioId?: string;
-    data?: import("../lib/types").StreamPayload | import("../lib/types").Evaluation;
+    data?:
+      import("../lib/types").StreamPayload | import("../lib/types").Evaluation;
     scenarioStatuses?: Record<number, { passed?: boolean; status: NodeStatus }>;
     scenarios?: import("../lib/types").ScenarioDefinition[];
   } | null>(null);

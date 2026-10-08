@@ -5,10 +5,9 @@ Verifies SQLite local persistence, deterministic state machine, and tenant isola
 """
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from database.connection import create_db_engine, init_db
+from database.connection import create_db_engine
 from database.schema import Base
 from database.repositories.organization_repo import OrganizationRepository
 from database.repositories.run_state_repo import RunStateRepository
@@ -16,7 +15,6 @@ from database.repositories.audit_repo import AuditRepository
 from database.repositories.budget_repo import BudgetRepository
 from database.repositories.exceptions import (
     DuplicateEntityError,
-    EntityNotFoundError,
     InvalidStateTransitionError,
     TenantIsolationError,
 )
@@ -25,7 +23,6 @@ from packages.contracts.core import (
     ActorType,
     AuditEvent,
     AuditStatus,
-    BudgetRule,
     SecurityContext,
 )
 from packages.contracts.runtime import RunUsage

@@ -1,7 +1,6 @@
 """Integration tests against live Hermes Gateway on 127.0.0.1:8642."""
 
 import os
-import importlib
 import pytest
 from tests.live_gateway import selected_live_model
 from packages.contracts.core import Actor, SecurityContext

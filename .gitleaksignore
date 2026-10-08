@@ -1,0 +1,3 @@
+# Reviewed synthetic test fixtures in two historical commits; never service credentials.
+033ce68b88c1c729cdf6dc463b3f35167a82e7ff:tests/security/test_rbac_authorization_boundary.py:generic-api-key:245
+f67ef76806a10c4e147c36500f3fd0b83a06f3b6:tests/security/test_core_persistence_security.py:generic-api-key:192

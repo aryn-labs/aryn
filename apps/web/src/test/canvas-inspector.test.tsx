@@ -177,6 +177,8 @@ describe("inspector dan motion", () => {
     expect(
       screen.getByRole("heading", { name: "INSTRUKSI SISTEM · HANYA BACA" }),
     ).toBeInTheDocument();
-    expect(screen.getAllByText(versionA.system_prompt).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(versionA.system_prompt).length).toBeGreaterThan(
+      0,
+    );
   });
 });

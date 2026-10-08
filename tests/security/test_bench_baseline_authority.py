@@ -1,12 +1,10 @@
 """Negative evidence, tenant, actor, and alternate promotion path coverage."""
-import json
 import pytest
 from sqlalchemy import text
 
 from database.repositories.bench_regression_repo import BenchRegressionRepository, RegressionGateFailedError
-from database.repositories.bench_repo import BenchRepository
 from database.repositories.exceptions import TenantIsolationError
-from database.schema import AgentBlueprintModel, BenchBaselineModel, BenchComparisonModel
+from database.schema import BenchBaselineModel, BenchComparisonModel
 from modules.bench.quality_gate import QualityGateFailedError
 from modules.core.permissions.engine import PermissionDeniedError
 from packages.contracts.core import ActorType
@@ -50,13 +48,15 @@ async def test_baseline_scope_is_enforced(lifecycle, monkeypatch, boundary):
     foreign = ctx.model_copy(deep=True)
     if boundary == "organization":
         foreign.organization_id = foreign.actor.organization_id = "another-org"
-    elif boundary == "project": foreign.project_id = "another-project"
+    elif boundary == "project":
+        foreign.project_id = "another-project"
     with db.session() as s:
         repo = BenchRegressionRepository(s, db.evidence_signer)
         with pytest.raises(TenantIsolationError):
             repo.receipt(foreign, baseline.baseline_id, "another-blueprint" if boundary == "blueprint" else None)
         if boundary != "blueprint":
-            with pytest.raises(TenantIsolationError): repo.verify_current_comparison(foreign, repo.compare(ctx, version.id).comparison_id)
+            with pytest.raises(TenantIsolationError):
+                repo.verify_current_comparison(foreign, repo.compare(ctx, version.id).comparison_id)
 
 
 @pytest.mark.asyncio
@@ -90,7 +90,7 @@ async def test_baseline_acceptance_requires_current_admin_authority(lifecycle, m
 async def test_governance_evidence_tampering_blocks_promotion(lifecycle, monkeypatch, target):
     db, ctx, runtime, factory, bp, version, prior, baseline = await accepted(lifecycle, monkeypatch)
     next_version = candidate(factory, ctx, bp)
-    result = await factory.evaluate_version_with_bench(ctx, next_version.id)
+    _result = await factory.evaluate_version_with_bench(ctx, next_version.id)
     with db.session() as s:
         comparison = BenchRegressionRepository(s, db.evidence_signer).compare(ctx, next_version.id)
     with corrupt_storage(db.engine) as s:
@@ -102,8 +102,10 @@ async def test_governance_evidence_tampering_blocks_promotion(lifecycle, monkeyp
             s.execute(text("UPDATE agent_versions SET system_prompt='tampered' WHERE id=:id"), {"id": version.id})
         else:
             s.execute(text("UPDATE bench_comparisons SET attestation='forged' WHERE id=:id"), {"id": comparison.comparison_id})
-    with pytest.raises(QualityGateFailedError): factory.approve_version(ctx, next_version.id)
-    with pytest.raises(QualityGateFailedError): factory.publish_version(ctx, next_version.id)
+    with pytest.raises(QualityGateFailedError):
+        factory.approve_version(ctx, next_version.id)
+    with pytest.raises(QualityGateFailedError):
+        factory.publish_version(ctx, next_version.id)
     with pytest.raises(QualityGateFailedError):
         factory.approval_engine.grant_approval(ctx, "agent_version", next_version.id, next_version.payload_hash)
 
@@ -118,7 +120,8 @@ async def test_removing_current_baseline_pointer_does_not_restore_bootstrap(life
     with db.session() as s:
         comparison = BenchRegressionRepository(s, db.evidence_signer).compare(ctx, next_version.id)
         assert comparison.state == "invalid" and comparison.reason == "baseline_integrity_invalid"
-    with pytest.raises(RegressionGateFailedError): factory.approve_version(ctx, next_version.id)
+    with pytest.raises(RegressionGateFailedError):
+        factory.approve_version(ctx, next_version.id)
 
 
 @pytest.mark.asyncio
@@ -137,15 +140,19 @@ async def test_new_unsafe_signed_scenario_failure_is_durable_and_critical(lifecy
     prior = await factory.evaluate_version_with_bench(ctx, version.id)
     assert prior.passed
     with db.session(write=True) as s:
-        baseline = BenchRegressionRepository(s, db.evidence_signer).accept(ctx, prior.evaluation_id, reason="Verified safe baseline.")
+        _baseline = BenchRegressionRepository(s, db.evidence_signer).accept(ctx, prior.evaluation_id, reason="Verified safe baseline.")
     next_version = candidate(factory, ctx, bp)
     original = runtime.execute_direct_turn
     async def unsafe(request, context):
-        if state == "runtime_error": raise RuntimeError("Isolated execution failure")
+        if state == "runtime_error":
+            raise RuntimeError("Isolated execution failure")
         result = await original(request, context)
-        if state == "policy_violation": result.actual_model = "silent-fallback"
-        elif state == "invalid_evidence": result.execution_evidence = {"run_id": result.run_id, "passed": True}
-        else: result.execution_evidence = None
+        if state == "policy_violation":
+            result.actual_model = "silent-fallback"
+        elif state == "invalid_evidence":
+            result.execution_evidence = {"run_id": result.run_id, "passed": True}
+        else:
+            result.execution_evidence = None
         return result
     runtime.execute_direct_turn = unsafe
     result = await factory.evaluate_version_with_bench(ctx, next_version.id)
@@ -155,8 +162,10 @@ async def test_new_unsafe_signed_scenario_failure_is_durable_and_critical(lifecy
         assert comparison.promotion_blocked
         assert any(r.kind == "scenario" and r.candidate_state == state and r.critical for r in comparison.regressions)
         assert s.get(BenchComparisonModel, comparison.comparison_id).attestation
-    with pytest.raises(QualityGateFailedError): factory.approve_version(ctx, next_version.id)
-    with pytest.raises(QualityGateFailedError): factory.publish_version(ctx, next_version.id)
+    with pytest.raises(QualityGateFailedError):
+        factory.approve_version(ctx, next_version.id)
+    with pytest.raises(QualityGateFailedError):
+        factory.publish_version(ctx, next_version.id)
 
 
 @pytest.mark.asyncio
@@ -165,12 +174,14 @@ async def test_baseline_and_comparison_records_cannot_be_rewritten_by_orm(lifecy
     with db.session() as s:
         row = s.get(BenchBaselineModel, baseline.baseline_id)
         row.accepted_by = "another-actor"
-        with pytest.raises(ValueError, match="append-only"): s.flush()
+        with pytest.raises(ValueError, match="append-only"):
+            s.flush()
         s.rollback()
     with db.session() as s:
         comparison = s.query(BenchComparisonModel).first()
         comparison.attestation = "edited"
-        with pytest.raises(ValueError, match="append-only"): s.flush()
+        with pytest.raises(ValueError, match="append-only"):
+            s.flush()
         s.rollback()
 
 

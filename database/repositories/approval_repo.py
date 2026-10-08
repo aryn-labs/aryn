@@ -10,8 +10,6 @@ from database.schema import ApprovalModel, utc_now
 from packages.contracts.core import SecurityContext
 from database.repositories.exceptions import (
     DuplicateEntityError,
-    EntityNotFoundError,
-    TenantIsolationError,
 )
 
 

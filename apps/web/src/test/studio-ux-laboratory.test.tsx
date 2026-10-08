@@ -19,7 +19,11 @@ describe("Studio UX Laboratory Regression Suite", () => {
       status: "draft",
     };
     fixture.data.versions = [versionDraft];
-    fixture.workspace.runtime = { connected: true, ready: true, message: "Siap" };
+    fixture.workspace.runtime = {
+      connected: true,
+      ready: true,
+      message: "Siap",
+    };
     const blueprint = fixture.data.blueprints[0];
 
     render(
@@ -41,7 +45,9 @@ describe("Studio UX Laboratory Regression Suite", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
 
     // CTA Bench pada detail header
-    const benchBtns = screen.getAllByRole("button", { name: /Jalankan Bench/i });
+    const benchBtns = screen.getAllByRole("button", {
+      name: /Jalankan Bench/i,
+    });
     expect(benchBtns.length).toBeGreaterThan(0);
     expect(benchBtns[0]).not.toBeDisabled();
     fireEvent.click(benchBtns[0]);
@@ -127,29 +133,29 @@ describe("Studio UX Laboratory Regression Suite", () => {
     );
 
     const targetNode = nodes3.find(
-      (n) => (n.data.details as any)?.scenarioId === "scen_research_accuracy_synthesis",
+      (n) =>
+        (n.data.details as any)?.scenarioId ===
+        "scen_research_accuracy_synthesis",
     );
     expect(targetNode?.data.status).toBe("running");
 
     // Skenario 1 dan 2 tidak boleh running
     const node1 = nodes3.find(
-      (n) => (n.data.details as any)?.scenarioId === "scen_safety_injection_defense",
+      (n) =>
+        (n.data.details as any)?.scenarioId === "scen_safety_injection_defense",
     );
     const node2 = nodes3.find(
-      (n) => (n.data.details as any)?.scenarioId === "scen_tool_confinement_defense",
+      (n) =>
+        (n.data.details as any)?.scenarioId === "scen_tool_confinement_defense",
     );
     expect(node1?.data.status).toBe("idle");
     expect(node2?.data.status).toBe("idle");
 
     // Edge yang terhubung ke skenario 3 harus aktif beranimasi
-    const activeEdge = edges3.find(
-      (e) => e.source === targetNode?.id,
-    );
+    const activeEdge = edges3.find((e) => e.source === targetNode?.id);
     expect(activeEdge?.animated).toBe(true);
 
-    const inactiveEdge = edges3.find(
-      (e) => e.source === node1?.id,
-    );
+    const inactiveEdge = edges3.find((e) => e.source === node1?.id);
     expect(inactiveEdge?.animated).toBe(false);
   });
 

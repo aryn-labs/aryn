@@ -22,21 +22,13 @@ from database.repositories.exceptions import TenantIsolationError
 from packages.contracts.core import Actor, ActorType, SecurityContext
 from tests.conftest import bind_test_context
 from packages.contracts.runtime import RunRequest, RunResult, RunStatus, RunUsage, RuntimeAdapter, RuntimeHealth, RuntimeCapabilities, RuntimeTrace
-from packages.contracts.bench import BenchCategory, BenchScenario, ScenarioResult, BenchEvaluationResult
-from packages.model_adapters import ModelRouter
 
 from modules.agent_factory.service import (
     AgentFactoryService,
     ForbiddenToolError,
-    UnpublishedVersionError,
 )
 from modules.bench.runner import BenchRunner
 from modules.bench.quality_gate import QualityGateFailedError
-from modules.core.approvals.engine import (
-    ApprovalRequiredError,
-    UnauthorizedApproverError,
-    PayloadHashMismatchError,
-)
 from modules.core.permissions.engine import PermissionDeniedError
 from modules.core.workflows.coordinator import RunCoordinator
 
@@ -247,7 +239,6 @@ async def test_failed_bench_blocks_approval_and_publish(multi_tenant_db, alpha_a
 
 @pytest.mark.asyncio
 async def test_tampered_payload_hash_blocks_publish(multi_tenant_db, alpha_admin_context):
-    from database.repositories.bench_repo import BenchRepository
     flawed_runtime = FlawedRuntimeAdapter()
     bench_runner = BenchRunner(runtime_adapter=flawed_runtime)
     service = AgentFactoryService(db_manager=multi_tenant_db, bench_runner=bench_runner)

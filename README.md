@@ -2,7 +2,7 @@
 
 **Define. Run. Govern. Evaluate. Evolve.**
 
-This is the private primary monorepo for ARYN Cloud and ARYN Local.
+This is the primary monorepo for ARYN Cloud and ARYN Local.
 
 ## Bounded domains
 - `modules/core/`: identity, organization/project scoping, divisions, workflows, permissions, approvals, audit, and usage authority.
@@ -27,7 +27,13 @@ This is the private primary monorepo for ARYN Cloud and ARYN Local.
 All private resources are organization-scoped and project-scoped where applicable. Sensitive writes require service-side policy enforcement. Agent output is untrusted. Approval binds to exact action payload. Replays never invoke live write tools. Local has no silent cloud sync/fallback. Never commit secrets.
 
 ## Current status
-Core governance/persistence, Agent Factory, Bench, and the Hermes adapter are implemented. **ARYN Studio** supports explicit loopback Local development and a configured hosted OIDC authentication boundary, using the same Core governance for blueprint → version → Bench → approval → publish → assignment → execution → result/audit. Hosted production readiness remains unverified until real IdP, PostgreSQL, TLS, reverse proxy and runtime network UAT.
+Core governance/persistence, Agent Factory, Bench, and the Hermes adapter are implemented. **ARYN Studio** supports explicit loopback Local development and a configured hosted OIDC authentication boundary, using the same Core governance for blueprint → version → Bench → approval → publish → assignment → execution → result/audit. Disposable live PostgreSQL integration is tested; real IdP, hosted database operations, TLS, reverse proxy and runtime network UAT still block production readiness.
+
+## Quality and delivery
+
+Development pushes and reviewed PRs run backend checks on Linux/Windows, live PostgreSQL with a restricted writer, security/dependency scans, native Hermes boundary checks, frontend tests/build and isolated browser E2E. Successful development gates produce commit-bound review artifacts; there is no automatic production deployment or release. See [CI contracts, commands and repository settings](docs/ci-delivery.md) and [actual validation evidence](docs/ci-validation.md).
+
+Use Python/Node versions in `.python-version`/`.node-version`, `uv sync --frozen --extra dev`, and `npm ci --ignore-scripts --prefix apps/web`. Python dependency resolution is committed in `uv.lock`. Install the hosted PostgreSQL driver with `--extra postgresql`; migration owner and application writer must remain separate.
 
 ```powershell
 Set-Location D:\ARYN\aryn-labs\aryn

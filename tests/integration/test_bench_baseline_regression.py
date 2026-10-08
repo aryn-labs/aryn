@@ -1,6 +1,5 @@
 """Accepted evaluation history enforces promotion through existing Core authority."""
 import asyncio
-import json
 from concurrent.futures import ThreadPoolExecutor
 import threading
 
@@ -8,7 +7,7 @@ import pytest
 from sqlalchemy import text
 
 from database.repositories.bench_regression_repo import BenchRegressionRepository, RegressionGateFailedError
-from database.schema import BenchBaselineModel, BenchComparisonModel, AgentBlueprintModel
+from database.schema import BenchBaselineModel, AgentBlueprintModel
 from modules.bench.quality_gate import QualityGateFailedError
 from modules.core.approvals.engine import ApprovalRequiredError
 from packages.contracts.bench import RegressionPolicy
@@ -118,8 +117,10 @@ async def test_passing_aggregate_cannot_hide_required_or_policy_critical_regress
         assert any(r.kind == "grader" and r.grader_id == "schema" for r in comparison.regressions)
         assert comparison.promotion_blocked == critical
     if critical:
-        with pytest.raises(RegressionGateFailedError): factory.approve_version(ctx, next_version.id)
-        with pytest.raises(RegressionGateFailedError): factory.publish_version(ctx, next_version.id)
+        with pytest.raises(RegressionGateFailedError):
+            factory.approve_version(ctx, next_version.id)
+        with pytest.raises(RegressionGateFailedError):
+            factory.publish_version(ctx, next_version.id)
         with pytest.raises(RegressionGateFailedError):
             factory.approval_engine.grant_approval(ctx, "agent_version", next_version.id, next_version.payload_hash)
         with db.session(write=True) as s:
@@ -149,8 +150,10 @@ async def test_metric_policy_blocks_even_when_all_graders_pass(lifecycle, monkey
         assert comparison.metrics["total_tokens"].delta == 20
         assert comparison.metrics["cost_usd"].state == "unavailable"
         assert len(comparison.critical_regressions) == 2
-    with pytest.raises(RegressionGateFailedError): factory.approve_version(ctx, next_version.id)
-    with pytest.raises(RegressionGateFailedError): factory.publish_version(ctx, next_version.id)
+    with pytest.raises(RegressionGateFailedError):
+        factory.approve_version(ctx, next_version.id)
+    with pytest.raises(RegressionGateFailedError):
+        factory.publish_version(ctx, next_version.id)
 
 
 @pytest.mark.asyncio
@@ -159,13 +162,14 @@ async def test_baseline_change_invalidates_comparison_and_requires_new_human_rev
     first, second = candidate(factory, ctx, bp), candidate(factory, ctx, bp, "4.0.0")
     await factory.evaluate_version_with_bench(ctx, first.id)
     await factory.evaluate_version_with_bench(ctx, second.id)
-    first_approval = factory.approve_version(ctx, first.id)
+    _first_approval = factory.approve_version(ctx, first.id)
     old_approval = factory.approve_version(ctx, second.id)
     factory.publish_version(ctx, first.id)
     with db.session() as s:
         with pytest.raises(QualityGateFailedError, match="stale"):
             BenchRegressionRepository(s, db.evidence_signer).verify_current_comparison(ctx, old_approval.regression_comparison_id)
-    with pytest.raises(ApprovalRequiredError): factory.publish_version(ctx, second.id)
+    with pytest.raises(ApprovalRequiredError):
+        factory.publish_version(ctx, second.id)
     refreshed = factory.approve_version(ctx, second.id)
     assert refreshed.approval_id != old_approval.approval_id
     assert refreshed.regression_comparison_id != old_approval.regression_comparison_id
@@ -184,7 +188,8 @@ async def test_suite_evolution_requires_explicit_governed_rebaseline(lifecycle, 
     with db.session() as s:
         comparison = BenchRegressionRepository(s, db.evidence_signer).compare(ctx, next_version.id)
         assert comparison.state == "incompatible" and comparison.promotion_blocked
-    with pytest.raises(RegressionGateFailedError): factory.approve_version(ctx, next_version.id)
+    with pytest.raises(RegressionGateFailedError):
+        factory.approve_version(ctx, next_version.id)
     with db.session(write=True) as s:
         with pytest.raises(RegressionGateFailedError):
             BenchRegressionRepository(s, db.evidence_signer).accept(ctx, result.evaluation_id,
@@ -211,7 +216,8 @@ async def test_published_history_cannot_use_no_baseline_bootstrap(lifecycle, mon
     with db.session() as s:
         comparison = BenchRegressionRepository(s, db.evidence_signer).compare(ctx, next_version.id)
         assert comparison.state == "baseline_required" and comparison.promotion_blocked
-    with pytest.raises(RegressionGateFailedError): factory.approve_version(ctx, next_version.id)
+    with pytest.raises(RegressionGateFailedError):
+        factory.approve_version(ctx, next_version.id)
     # An admin can adopt the verified historical publication, never an arbitrary new candidate.
     with db.session(write=True) as s:
         baseline = BenchRegressionRepository(s, db.evidence_signer).accept(ctx, prior.evaluation_id,
@@ -257,7 +263,8 @@ async def test_later_failed_evaluation_invalidates_prior_comparison(lifecycle, m
     with db.session() as s:
         with pytest.raises(QualityGateFailedError):
             BenchRegressionRepository(s, db.evidence_signer).verify_current_comparison(ctx, approval.regression_comparison_id)
-    with pytest.raises(QualityGateFailedError): factory.publish_version(ctx, next_version.id)
+    with pytest.raises(QualityGateFailedError):
+        factory.publish_version(ctx, next_version.id)
 
 
 @pytest.mark.asyncio
@@ -268,7 +275,8 @@ async def test_publication_failure_rolls_back_baseline_pointer_history_and_audit
     factory.approve_version(ctx, next_version.id)
     original = factory.audit_logger.record
     def fail_publication(event_type, *args, **kwargs):
-        if event_type == "factory.version.published": raise RuntimeError("Isolated audit persistence failure")
+        if event_type == "factory.version.published":
+            raise RuntimeError("Isolated audit persistence failure")
         return original(event_type, *args, **kwargs)
     monkeypatch.setattr(factory.audit_logger, "record", fail_publication)
     with pytest.raises(RuntimeError, match="audit persistence"):
@@ -292,8 +300,10 @@ async def test_concurrent_publication_rechecks_baseline_and_expires_other_review
     barrier = threading.Barrier(2)
     def publish(version):
         barrier.wait(timeout=5)
-        try: return factory.publish_version(ctx, version.id)
-        except ApprovalRequiredError as exc: return exc
+        try:
+            return factory.publish_version(ctx, version.id)
+        except ApprovalRequiredError as exc:
+            return exc
     with ThreadPoolExecutor(max_workers=2) as pool:
         outcomes = list(pool.map(publish, versions))
     assert sum(isinstance(outcome, ApprovalRequiredError) for outcome in outcomes) == 1

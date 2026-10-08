@@ -1,9 +1,10 @@
 import pytest
+from tests.integration.test_studio_api import studio as studio
 import json
 from types import SimpleNamespace
 from fastapi.testclient import TestClient
 from sqlalchemy import text
-from tests.integration.test_studio_api import studio, draft, promoted, PREFIX, ORIGIN
+from tests.integration.test_studio_api import draft, promoted, PREFIX, ORIGIN
 from packages.model_adapters.gateway import GatewaySettings
 from services.api.studio import create_app
 from packages.contracts.runtime import GatewayDiscovery, RuntimeModelAvailability

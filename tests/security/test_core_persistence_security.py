@@ -10,19 +10,17 @@ Covers:
 Complies with ARYN-ARCH-001 Section 03 & 07 and ARYN-SEC-001.
 """
 
-import json
 import pytest
-from sqlalchemy.orm import sessionmaker
 
 from database.connection import DatabaseManager, create_db_engine
-from database.schema import Base, AuditEventModel, RunStateModel
+from database.schema import Base, AuditEventModel
 from database.repositories.organization_repo import OrganizationRepository
 from database.repositories.run_state_repo import RunStateRepository
 from database.repositories.budget_repo import BudgetRepository
 from database.repositories.audit_repo import AuditRepository
 from database.repositories.exceptions import TenantIsolationError
 
-from packages.contracts.core import Actor, ActorType, AuditStatus, SecurityContext
+from packages.contracts.core import Actor, SecurityContext
 from tests.conftest import bind_test_context
 from packages.contracts.runtime import (
     RunRequest,
@@ -35,10 +33,8 @@ from packages.contracts.runtime import (
     RuntimeTrace,
 )
 from modules.core.workflows.coordinator import RunCoordinator
-from modules.core.permissions.engine import PermissionDeniedError, PermissionEngine
-from modules.core.usage.engine import BudgetEngine, BudgetExceededError
-from modules.core.audit.logger import AuditLogger
-from packages.model_adapters import MockModelAdapter
+from modules.core.permissions.engine import PermissionDeniedError
+from modules.core.usage.engine import BudgetExceededError
 
 
 class DeterministicMockRuntimeAdapter(RuntimeAdapter):
@@ -160,7 +156,7 @@ async def test_cross_tenant_denial_on_run_execution(seeded_db):
         project_id="proj_beta_main",  # target project is in beta!
     ))
 
-    req = RunRequest(prompt="Hello", model="mock-deterministic")
+    _req = RunRequest(prompt="Hello", model="mock-deterministic")
 
     # Permission engine must reject due to tenant boundary validation
     with pytest.raises(PermissionDeniedError, match="Tenant boundary violation"):

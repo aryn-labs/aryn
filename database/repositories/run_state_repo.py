@@ -75,7 +75,13 @@ class RunStateRepository:
         return run
 
     def get_run(self, context: SecurityContext, run_id: str) -> RunStateModel:
-        run = self.session.query(RunStateModel).filter_by(id=run_id).first()
+        query = self.session.query(RunStateModel).filter_by(id=run_id)
+        if self.session.info.get("write"):
+            # SQLite serializes writers with BEGIN IMMEDIATE. PostgreSQL must
+            # refresh/lock the run before deciding terminal state or settlement;
+            # locking only the budget leaves a stale usage_settled snapshot.
+            query = query.with_for_update().populate_existing()
+        run = query.first()
         if not run:
             raise EntityNotFoundError(f"Run '{run_id}' not found.")
 

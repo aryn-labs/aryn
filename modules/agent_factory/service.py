@@ -308,7 +308,7 @@ class AgentFactoryService:
                 self.bench_runner.coordinator._fence()
                 current = AgentRepository(session).get_version(context, version_id, for_update=True)
                 if current.evaluation_owner_id != self.bench_runner.coordinator.authority.owner_id:
-                    raise InvalidStateTransitionError("Stale Bench owner cannot write outcome.")
+                    raise InvalidStateTransitionError("Stale Bench owner cannot write outcome.") from None
                 AgentRepository(session).update_version_status(context, version_id, "rejected")
             raise
 
@@ -364,9 +364,9 @@ class AgentFactoryService:
         if context.actor.actor_type == ActorType.AGENT:
             raise PermissionDeniedError("Agents cannot grant approvals or self-publish.")
         with self.db_manager.session(write=True) as session:
+            self.permission_engine.enforce("version:approve", context, context.organization_id, context.project_id, session=session)
             agent_repo = AgentRepository(session)
             version = agent_repo.get_version(context, version_id, for_update=True)
-            self.permission_engine.enforce("version:approve", context, context.organization_id, context.project_id, session=session)
             if expected_payload_hash is not None and version.payload_hash != expected_payload_hash:
                 from modules.core.approvals.engine import PayloadHashMismatchError
                 raise PayloadHashMismatchError("Browser review differs from current canonical payload.")
@@ -405,10 +405,12 @@ class AgentFactoryService:
         self.permission_engine.enforce("version:publish", context, context.organization_id, context.project_id)
 
         with self.db_manager.session(write=True) as session:
+            # Core membership/session locks precede blueprint/version locks, as
+            # in baseline acceptance and rollback. Opposite order deadlocks on PG.
+            self.permission_engine.enforce("version:publish", context, context.organization_id, context.project_id, session=session)
             agent_repo = AgentRepository(session)
             bench_repo = BenchRepository(session, self.db_manager.evidence_signer)
             m = agent_repo.get_version(context, version_id, for_update=True)
-            self.permission_engine.enforce("version:publish", context, context.organization_id, context.project_id, session=session)
             version_contract = AgentVersion.from_stored(m)
             if version_contract.canonical_format != 3:
                 raise InvalidStateTransitionError(
@@ -493,9 +495,9 @@ class AgentFactoryService:
         self.permission_engine.enforce("agent:assign", context, context.organization_id, context.project_id)
         assignment_id = f"asgn_{uuid.uuid4().hex[:16]}"
         with self.db_manager.session(write=True) as session:
+            self.permission_engine.enforce("agent:assign", context, context.organization_id, context.project_id, session=session)
             repo = AgentRepository(session)
             version = repo.get_version(context, version_id, for_update=True)
-            self.permission_engine.enforce("agent:assign", context, context.organization_id, context.project_id, session=session)
             if version.status == "published":
                 self.approval_engine.verify_approval(
                     context, "agent_version", version_id, version.payload_hash, session=session)

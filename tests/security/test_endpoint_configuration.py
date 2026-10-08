@@ -1,13 +1,11 @@
 """Regression tests for centralized endpoint configuration and security validation."""
 
-import os
 import json
 import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-import httpx
 import pytest
 from starlette.testclient import TestClient
 

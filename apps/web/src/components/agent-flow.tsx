@@ -132,7 +132,10 @@ export function AgentFlow({ data }: { data?: Snapshot }) {
                     <stage.icon size={17} />
                   </div>
                   {count !== undefined ? (
-                    <span className="flow-step-count mono" title={`${count} item`}>
+                    <span
+                      className="flow-step-count mono"
+                      title={`${count} item`}
+                    >
                       {count}
                     </span>
                   ) : (

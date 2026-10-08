@@ -25,7 +25,7 @@ ISSUER = "https://identity.example"
 
 
 @pytest.fixture
-def hosted(tmp_path, monkeypatch):
+def hosted(tmp_path, monkeypatch, request):
     for name, value in {"ARYN_ENV": "production", "ARYN_AUTH_MODE": "oidc", "ARYN_STUDIO_HOST": "127.0.0.1",
                         "ARYN_STUDIO_PORT": "8710", "ARYN_RUNTIME_BASE_URL": "http://127.0.0.1:8642",
                         "ARYN_9ROUTER_BASE_URL": "http://127.0.0.1:20128/v1"}.items():
@@ -60,8 +60,11 @@ def hosted(tmp_path, monkeypatch):
         token = jwt.encode(claims, control.get("signing_key", control["key"]), algorithm="RS256", headers={"kid": control["kid"]})
         return httpx.Response(200, json={"access_token": "synthetic-private-access-token", "token_type": "Bearer", "id_token": token})
 
-    db = DatabaseManager(create_db_engine(f"sqlite:///{(tmp_path / 'hosted.sqlite3').as_posix()}"))
-    init_db(db.engine)
+    if getattr(request, "param", None) == "postgresql":
+        db = request.getfixturevalue("postgres_db").db
+    else:
+        db = DatabaseManager(create_db_engine(f"sqlite:///{(tmp_path / 'hosted.sqlite3').as_posix()}"))
+        init_db(db.engine)
     with db.session(write=True) as session:
         repo = OrganizationRepository(session)
         repo.create_organization("org", "Hosted", "hosted")

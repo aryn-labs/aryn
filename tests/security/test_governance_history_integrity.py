@@ -150,7 +150,7 @@ async def test_commitment_failure_blocks_run_rollback_and_promotion(lifecycle, f
     if failure == "missing_store":
         reopened = DatabaseManager(create_db_engine(str(db.engine.url)))
         with pytest.raises(HistoryUnverifiedError):
-            reopened.history_commitments
+            _ = reopened.history_commitments
         reopened.engine.dispose()
 
 

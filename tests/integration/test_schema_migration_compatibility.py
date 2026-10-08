@@ -100,7 +100,7 @@ async def test_populated_baseline_history_downgrades_without_removing_evaluation
     from tests.integration.test_bench_baseline_regression import accepted, candidate
     db, ctx, runtime, factory, bp, version, prior, baseline = await accepted(lifecycle, monkeypatch)
     next_version = candidate(factory, ctx, bp)
-    current = await factory.evaluate_version_with_bench(ctx, next_version.id)
+    _current = await factory.evaluate_version_with_bench(ctx, next_version.id)
     factory.approve_version(ctx, next_version.id)
     factory.publish_version(ctx, next_version.id)
     config = Config(str(ROOT / "alembic.ini"))

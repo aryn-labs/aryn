@@ -1,7 +1,7 @@
 """Generic suites exercise the existing Factory lifecycle, storage and API."""
+from tests.integration.test_studio_api import studio as studio
 import json
 import pytest
-from packages.contracts.agent import AgentEvaluationReference, AgentOutputContract
 from packages.contracts.bench import (
     ApprovalGraderSpec,
     ApprovalRequirement,
@@ -12,8 +12,7 @@ from packages.contracts.bench import (
     evidence_hash,
 )
 from database.repositories.bench_repo import BenchRepository
-from database.schema import BenchEvaluationModel
-from modules.bench.quality_gate import BenchQualityGate, QualityGateFailedError
+from modules.bench.quality_gate import QualityGateFailedError
 from tests.bench_fixtures import generic_scenario, generic_suite, install_generic_suite, StructuredRuntime, create_generic_version
 
 
@@ -43,8 +42,10 @@ async def test_generic_schema_failure_blocks_publication(lifecycle, monkeypatch,
     db, ctx, runtime, factory, bp, version = create_generic_version(lifecycle, monkeypatch, runtime=StructuredRuntime(output))
     result = await factory.evaluate_version_with_bench(ctx, version.id)
     assert not result.passed and result.state.value == state
-    with pytest.raises(QualityGateFailedError): factory.approve_version(ctx, version.id)
-    with pytest.raises(QualityGateFailedError): factory.publish_version(ctx, version.id)
+    with pytest.raises(QualityGateFailedError):
+        factory.approve_version(ctx, version.id)
+    with pytest.raises(QualityGateFailedError):
+        factory.publish_version(ctx, version.id)
 
 
 @pytest.mark.asyncio
@@ -68,7 +69,8 @@ async def test_invalid_suite_definition_and_subset_rejected_before_dispatch(life
     from modules.bench.registry import BenchSuiteRegistry
     suite = generic_suite()
     suite.scenarios[0].graders.clear()
-    with pytest.raises(ValueError): BenchSuiteRegistry([suite])
+    with pytest.raises(ValueError):
+        BenchSuiteRegistry([suite])
 
 
 @pytest.mark.asyncio
@@ -85,7 +87,8 @@ async def test_cost_and_resource_evidence_is_required_by_policy(lifecycle, monke
     result = await factory.evaluate_version_with_bench(ctx, version.id)
     assert result.state.value == expected and result.passed is (expected == "passed")
     if not result.passed:
-        with pytest.raises(QualityGateFailedError): factory.publish_version(ctx, version.id)
+        with pytest.raises(QualityGateFailedError):
+            factory.publish_version(ctx, version.id)
 
 
 @pytest.mark.asyncio
@@ -138,8 +141,10 @@ async def test_core_approval_is_composable_in_generic_suite(lifecycle, monkeypat
     assert result.passed and result.scenario_results[0].grader_results[-1].reason == "core_approval_verified"
     # Revoking the existing Core record invalidates previously captured approval evidence.
     from database.schema import ApprovalModel
-    with db.session() as s: s.get(ApprovalModel, approval.approval_id).status = "rejected"
-    with pytest.raises(QualityGateFailedError): factory.approve_version(ctx, version.id)
+    with db.session() as s:
+        s.get(ApprovalModel, approval.approval_id).status = "rejected"
+    with pytest.raises(QualityGateFailedError):
+        factory.approve_version(ctx, version.id)
 
 
 @pytest.mark.asyncio
@@ -161,13 +166,15 @@ async def test_suite_aggregate_and_stricter_promotion_gate_are_distinct(lifecycl
     original = runtime.execute_direct_turn
     async def mixed(request, context):
         result = await original(request, context)
-        if request.metadata["scenario_id"] == "extraction": result.output = '{}'
+        if request.metadata["scenario_id"] == "extraction":
+            result.output = '{}'
         return result
     runtime.execute_direct_turn = mixed
     result = await factory.evaluate_version_with_bench(ctx, version.id)
     assert result.score == 0.5 and result.suite_aggregate.passed
     assert not result.quality_gate.passed and not result.passed
-    with pytest.raises(QualityGateFailedError): factory.publish_version(ctx, version.id)
+    with pytest.raises(QualityGateFailedError):
+        factory.publish_version(ctx, version.id)
 
 
 @pytest.mark.asyncio
@@ -196,4 +203,3 @@ async def test_generic_api_preflight_and_completion_use_referenced_suite(studio,
 
 
 # Import existing API fixture without introducing another application path.
-from tests.integration.test_studio_api import studio

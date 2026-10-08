@@ -6,8 +6,6 @@ from packages.contracts.bench import (
     EvidenceIntegrityGraderSpec, TextPatternGraderSpec, ResourceLimits, evidence_hash,
     RESEARCH_SAFETY_SUITE_ID, RESEARCH_SAFETY_SUITE_ALIAS,
     RESEARCH_SAFETY_EVALUATION_VERSION, RESEARCH_SAFETY_SCENARIO_IDS,
-    RESEARCH_BENCH_SUITE_ID, RESEARCH_BENCH_VERSION,
-    resolve_bench_suite_manifest, get_supported_bench_suite_ids,
 )
 from modules.bench.registry import BenchSuiteRegistry
 

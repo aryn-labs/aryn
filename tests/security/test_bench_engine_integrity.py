@@ -8,7 +8,7 @@ from packages.contracts.bench import BenchEvaluationResult, ScenarioResult, Eval
 from modules.bench.quality_gate import BenchQualityGate, QualityGateFailedError
 from modules.bench.registry import BenchSuiteRegistry
 from modules.bench import scenarios
-from tests.bench_fixtures import generic_suite, install_generic_suite
+from tests.bench_fixtures import generic_suite
 from tests.bench_fixtures import create_generic_version
 
 
@@ -22,14 +22,22 @@ async def test_even_resigned_outer_aggregates_require_deterministic_evidence(lif
         grader = forged.scenario_results[0].grader_results[0]
         object.__setattr__(grader, "passed", False)
         object.__setattr__(grader, "state", EvaluationState.FAILED)
-    if mutation == "grader_reason": forged.scenario_results[0].grader_results[0].reason = "runtime_claimed_pass"
-    if mutation == "scenario_pass": forged.scenario_results[0].passed = False
-    if mutation == "suite_score": forged.suite_aggregate.score = 0.5
-    if mutation == "gate_threshold": forged.quality_gate.min_score_threshold = 0
-    if mutation == "execution_output": forged.scenario_results[0].execution.output = '{"summary":"tampered"}'
-    if mutation == "execution_signature": forged.scenario_results[0].execution.attestation = ""
-    if mutation == "runtime_adapter": forged.runtime_adapter = "untrusted.adapter"
-    if mutation == "tenant": forged.scenario_results[0].execution.project_id = "other"
+    if mutation == "grader_reason":
+        forged.scenario_results[0].grader_results[0].reason = "runtime_claimed_pass"
+    if mutation == "scenario_pass":
+        forged.scenario_results[0].passed = False
+    if mutation == "suite_score":
+        forged.suite_aggregate.score = 0.5
+    if mutation == "gate_threshold":
+        forged.quality_gate.min_score_threshold = 0
+    if mutation == "execution_output":
+        forged.scenario_results[0].execution.output = '{"summary":"tampered"}'
+    if mutation == "execution_signature":
+        forged.scenario_results[0].execution.attestation = ""
+    if mutation == "runtime_adapter":
+        forged.runtime_adapter = "untrusted.adapter"
+    if mutation == "tenant":
+        forged.scenario_results[0].execution.project_id = "other"
     forged.attestation = db.evidence_signer.sign("bench", forged.evidence_payload(ctx.organization_id, ctx.project_id, ctx.actor.actor_id))
     with db.session() as session:
         with pytest.raises(QualityGateFailedError):
@@ -43,8 +51,10 @@ async def test_generic_evidence_is_tenant_bound(lifecycle, monkeypatch):
     foreign = ctx.model_copy(update={"project_id":"foreign"})
     with db.session() as session:
         repo = BenchRepository(session, db.evidence_signer)
-        with pytest.raises(TenantIsolationError): repo.get_evaluation(foreign, result.evaluation_id)
-        with pytest.raises(QualityGateFailedError): repo.verify_result(foreign, result, version, ctx.actor.actor_id)
+        with pytest.raises(TenantIsolationError):
+            repo.get_evaluation(foreign, result.evaluation_id)
+        with pytest.raises(QualityGateFailedError):
+            repo.verify_result(foreign, result, version, ctx.actor.actor_id)
 
 
 @pytest.mark.asyncio
@@ -58,8 +68,10 @@ async def test_suite_configuration_change_invalidates_saved_evidence(lifecycle, 
     values["scenarios"][0]["scenario_version"] = "1.1.0"
     changed = type(suite).model_validate(values)
     monkeypatch.setattr(scenarios, "BENCH_SUITE_REGISTRY", BenchSuiteRegistry([research, changed]))
-    with pytest.raises(QualityGateFailedError): factory.approve_version(ctx, version.id)
-    with pytest.raises(QualityGateFailedError): factory.publish_version(ctx, version.id)
+    with pytest.raises(QualityGateFailedError):
+        factory.approve_version(ctx, version.id)
+    with pytest.raises(QualityGateFailedError):
+        factory.publish_version(ctx, version.id)
 
 
 @pytest.mark.asyncio
@@ -82,7 +94,8 @@ async def test_runtime_pass_boolean_cannot_override_evidence(lifecycle, monkeypa
     runtime.execute_direct_turn = boolean_claim
     evaluation = await factory.evaluate_version_with_bench(ctx, version.id)
     assert not evaluation.passed and evaluation.state == EvaluationState.INVALID_EVIDENCE
-    with pytest.raises(QualityGateFailedError): factory.publish_version(ctx, version.id)
+    with pytest.raises(QualityGateFailedError):
+        factory.publish_version(ctx, version.id)
 
 
 @pytest.mark.asyncio
@@ -97,7 +110,8 @@ async def test_adapter_model_fallback_is_rejected(lifecycle, monkeypatch, field)
     runtime.execute_direct_turn = fallback
     result = await factory.evaluate_version_with_bench(ctx, version.id)
     assert not result.passed and result.state == EvaluationState.POLICY_VIOLATION
-    with pytest.raises(QualityGateFailedError): factory.approve_version(ctx, version.id)
+    with pytest.raises(QualityGateFailedError):
+        factory.approve_version(ctx, version.id)
 
 
 @pytest.mark.asyncio
@@ -138,7 +152,8 @@ async def test_research_historical_attestation_retains_original_serialization(li
         comparison = BenchRegressionRepository(session, db.evidence_signer).compare(ctx, candidate.id)
         assert comparison.state == "incompatible" and comparison.promotion_blocked
         assert comparison.scenarios == []
-    with pytest.raises(QualityGateFailedError): factory.approve_version(ctx, candidate.id)
+    with pytest.raises(QualityGateFailedError):
+        factory.approve_version(ctx, candidate.id)
     with db.session(write=True) as session:
         replacement = BenchRegressionRepository(session, db.evidence_signer).accept(ctx, current.evaluation_id,
             expected_baseline_id=baseline.baseline_id, transition=True, reason="Human reviewed migration from historical scenario-only evidence to generic graders.")
@@ -155,5 +170,6 @@ async def test_stored_tenant_columns_must_match_evaluation_context(lifecycle, mo
         repo = BenchRepository(session, db.evidence_signer)
         stored = repo.get_evaluation(ctx, result.evaluation_id)
         stored.project_id = "different-project"
-        with pytest.raises(QualityGateFailedError): repo.validate_stored(ctx, stored, version)
+        with pytest.raises(QualityGateFailedError):
+            repo.validate_stored(ctx, stored, version)
         session.rollback()

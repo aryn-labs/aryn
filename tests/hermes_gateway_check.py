@@ -90,7 +90,7 @@ async def check():
     # Concurrent native Hermes worker requests keep distinct model receipts.
     responses = await asyncio.gather(api._handle_chat_completions(request("test/model-b")),
                                      api._handle_chat_completions(request("test/model-c")))
-    for model, response in zip(("test/model-b", "test/model-c"), responses):
+    for model, response in zip(("test/model-b", "test/model-c"), responses, strict=True):
         assert response.status == 200
         assert json.loads(response.body)["aryn"]["actual_model"] == model
     response = await api._handle_runs(request("test/model-async", asynchronous=True))

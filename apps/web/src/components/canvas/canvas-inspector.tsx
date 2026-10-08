@@ -245,7 +245,9 @@ function RenderExecutionForm({
                     executionForm.onSelectVersion(val);
                   }
                 }}
-                disabled={executionForm.executing || executionForm.creatingAssignment}
+                disabled={
+                  executionForm.executing || executionForm.creatingAssignment
+                }
               >
                 <option value="">Pilih penugasan aktif atau agent</option>
                 {executionForm.publishedAgents.map((agent) => (
@@ -270,7 +272,8 @@ function RenderExecutionForm({
               if (!currentAgent) {
                 return (
                   <Notice tone="info">
-                    Pilih salah satu agent yang telah dipublikasikan di atas untuk memulai eksekusi.
+                    Pilih salah satu agent yang telah dipublikasikan di atas
+                    untuk memulai eksekusi.
                   </Notice>
                 );
               }
@@ -279,7 +282,10 @@ function RenderExecutionForm({
                 return (
                   <div className="inline-assignment-panel">
                     <Notice tone="warning">
-                      Agent ini telah dipublikasikan namun belum memiliki penugasan operasional di proyek ini. Tentukan peran penugasan untuk langsung mengaktifkannya tanpa kembali ke Factory.
+                      Agent ini telah dipublikasikan namun belum memiliki
+                      penugasan operasional di proyek ini. Tentukan peran
+                      penugasan untuk langsung mengaktifkannya tanpa kembali ke
+                      Factory.
                     </Notice>
                     <label>
                       Peran / nama penugasan
@@ -288,7 +294,9 @@ function RenderExecutionForm({
                         type="text"
                         placeholder="Contoh: Peneliti produk, Analis risiko…"
                         value={executionForm.roleInput}
-                        onChange={(e) => executionForm.onRoleInputChange(e.target.value)}
+                        onChange={(e) =>
+                          executionForm.onRoleInputChange(e.target.value)
+                        }
                         disabled={executionForm.creatingAssignment}
                         maxLength={64}
                       />
@@ -330,35 +338,43 @@ function RenderExecutionForm({
                       rows={6}
                       value={executionForm.prompt}
                       maxLength={12000}
-                      onChange={(e) => executionForm.onPromptChange(e.target.value)}
+                      onChange={(e) =>
+                        executionForm.onPromptChange(e.target.value)
+                      }
                       disabled={executionForm.executing}
                     />
                   </label>
 
                   <Notice>
-                    Instruksi dan konfigurasi agent dikirim melalui ARYN Runtime ke
-                    penyedia model jarak jauh yang dipilih.
+                    Instruksi dan konfigurasi agent dikirim melalui ARYN Runtime
+                    ke penyedia model jarak jauh yang dipilih.
                   </Notice>
 
                   <label className="checkbox-field">
                     <input
                       type="checkbox"
                       checked={executionForm.consent}
-                      onChange={(e) => executionForm.onConsentChange(e.target.checked)}
+                      onChange={(e) =>
+                        executionForm.onConsentChange(e.target.checked)
+                      }
                       disabled={executionForm.executing}
                     />
-                    Saya menyetujui pengiriman instruksi ini ke model yang dipilih.
+                    Saya menyetujui pengiriman instruksi ini ke model yang
+                    dipilih.
                   </label>
 
                   {executionForm.validationError && (
-                    <Notice tone="error">{executionForm.validationError}</Notice>
+                    <Notice tone="error">
+                      {executionForm.validationError}
+                    </Notice>
                   )}
                   {!executionForm.workspace.runtime.ready && (
                     <Notice tone="error">
                       {executionForm.workspace.runtime.message}
                     </Notice>
                   )}
-                  {gatewayStatus(executionForm.workspace).tone !== "success" && (
+                  {gatewayStatus(executionForm.workspace).tone !==
+                    "success" && (
                     <Notice tone={gatewayStatus(executionForm.workspace).tone}>
                       {gatewayStatus(executionForm.workspace).label}
                     </Notice>
@@ -499,7 +515,8 @@ export function CanvasInspector({
           s.scenario_id === selectedNode.details?.scenarioId,
       );
 
-  const isExecutionStandaloneForm = mode === "execution" && executionForm && !run;
+  const isExecutionStandaloneForm =
+    mode === "execution" && executionForm && !run;
 
   return (
     <section className="canvas-inspector" aria-label="Inspector Node">
@@ -627,15 +644,27 @@ export function CanvasInspector({
                       <div className="usage-row mb-4">
                         <div>
                           <small>Token input</small>
-                          <strong className="mono">{(run.usage_availability === "unavailable" ? "Tidak tersedia" : number(run.input_tokens))}</strong>
+                          <strong className="mono">
+                            {run.usage_availability === "unavailable"
+                              ? "Tidak tersedia"
+                              : number(run.input_tokens)}
+                          </strong>
                         </div>
                         <div>
                           <small>Token output</small>
-                          <strong className="mono">{(run.usage_availability === "unavailable" ? "Tidak tersedia" : number(run.output_tokens))}</strong>
+                          <strong className="mono">
+                            {run.usage_availability === "unavailable"
+                              ? "Tidak tersedia"
+                              : number(run.output_tokens)}
+                          </strong>
                         </div>
                         <div>
                           <small>Total token</small>
-                          <strong className="mono">{(run.usage_availability === "unavailable" ? "Tidak tersedia" : number(run.total_tokens))}</strong>
+                          <strong className="mono">
+                            {run.usage_availability === "unavailable"
+                              ? "Tidak tersedia"
+                              : number(run.total_tokens)}
+                          </strong>
                         </div>
                       </div>
                       <dl className="inspector-meta-list">
@@ -658,22 +687,37 @@ export function CanvasInspector({
                             : "Tidak tersedia"}
                         </dd>
                         <dt>Model diminta</dt>
-                        <dd className="mono">{run.model || "Tidak dilaporkan"}</dd>
+                        <dd className="mono">
+                          {run.model || "Tidak dilaporkan"}
+                        </dd>
                         <dt>Model aktual</dt>
-                        <dd className="mono">{run.actual_model || "Belum tercatat"}</dd>
+                        <dd className="mono">
+                          {run.actual_model || "Belum tercatat"}
+                        </dd>
                         <dt>Model Gateway</dt>
-                        <dd>{run.gateway ? "Tercatat pada run" : "Belum tercatat"}</dd>
+                        <dd>
+                          {run.gateway ? "Tercatat pada run" : "Belum tercatat"}
+                        </dd>
                         <dt>Backend runtime</dt>
                         <dd>{run.runtime_backend || "Belum tercatat"}</dd>
                         <dt>Provider aktual</dt>
                         <dd>{run.actual_provider || "Tidak dilaporkan"}</dd>
                         <dt>Token input / output</dt>
                         <dd className="mono">
-                          {(run.usage_availability === "unavailable" ? "Tidak tersedia" : number(run.input_tokens))} /{" "}
-                          {(run.usage_availability === "unavailable" ? "Tidak tersedia" : number(run.output_tokens))}
+                          {run.usage_availability === "unavailable"
+                            ? "Tidak tersedia"
+                            : number(run.input_tokens)}{" "}
+                          /{" "}
+                          {run.usage_availability === "unavailable"
+                            ? "Tidak tersedia"
+                            : number(run.output_tokens)}
                         </dd>
                         <dt>Total token</dt>
-                        <dd className="mono">{(run.usage_availability === "unavailable" ? "Tidak tersedia" : number(run.total_tokens))}</dd>
+                        <dd className="mono">
+                          {run.usage_availability === "unavailable"
+                            ? "Tidak tersedia"
+                            : number(run.total_tokens)}
+                        </dd>
                         <dt>Dibuat</dt>
                         <dd>{date(run.created_at)}</dd>
                         <dt>Selesai</dt>
@@ -717,15 +761,27 @@ export function CanvasInspector({
                         <div className="usage-row">
                           <div>
                             <small>Token input</small>
-                            <strong className="mono">{(run.usage_availability === "unavailable" ? "Tidak tersedia" : number(run.input_tokens))}</strong>
+                            <strong className="mono">
+                              {run.usage_availability === "unavailable"
+                                ? "Tidak tersedia"
+                                : number(run.input_tokens)}
+                            </strong>
                           </div>
                           <div>
                             <small>Token output</small>
-                            <strong className="mono">{(run.usage_availability === "unavailable" ? "Tidak tersedia" : number(run.output_tokens))}</strong>
+                            <strong className="mono">
+                              {run.usage_availability === "unavailable"
+                                ? "Tidak tersedia"
+                                : number(run.output_tokens)}
+                            </strong>
                           </div>
                           <div>
                             <small>Total token</small>
-                            <strong className="mono">{(run.usage_availability === "unavailable" ? "Tidak tersedia" : number(run.total_tokens))}</strong>
+                            <strong className="mono">
+                              {run.usage_availability === "unavailable"
+                                ? "Tidak tersedia"
+                                : number(run.total_tokens)}
+                            </strong>
                           </div>
                         </div>
                         <Button
@@ -748,8 +804,8 @@ export function CanvasInspector({
                   {activeTab === "trace" && (
                     <>
                       <Notice>
-                        Trace runtime tidak tersedia. Jejak audit Core
-                        tersimpan berikut adalah peristiwa aplikasi nyata.
+                        Trace runtime tidak tersedia. Jejak audit Core tersimpan
+                        berikut adalah peristiwa aplikasi nyata.
                       </Notice>
                       <AuditList events={auditEvents} />
                     </>
@@ -837,8 +893,8 @@ export function CanvasInspector({
                         />
                         {selectedNode.nodeType === "policy" && (
                           <Notice>
-                            Core memeriksa izin, budget, dan confinement ARYN Runtime
-                            sebelum dispatch. Status runtime saat ini:{" "}
+                            Core memeriksa izin, budget, dan confinement ARYN
+                            Runtime sebelum dispatch. Status runtime saat ini:{" "}
                             {workspace?.runtime.message || "Belum diperiksa"}
                           </Notice>
                         )}
@@ -852,7 +908,8 @@ export function CanvasInspector({
                             Rancang Versi Baru
                           </Button>
                         )}
-                        {(selectedNode.nodeType === "approval" || selectedNode.nodeType === "agent") && (
+                        {(selectedNode.nodeType === "approval" ||
+                          selectedNode.nodeType === "agent") && (
                           <div className="approval-quick-actions mt-3">
                             {onRunBench && (
                               <Button
@@ -888,34 +945,36 @@ export function CanvasInspector({
                             )}
                           </div>
                         )}
-                        {version.status === "published" && version.governance_valid && (
-                          <div className="published-next-actions mt-3">
-                            <Notice tone="success">
-                              Versi ini dipublikasikan dan tidak dapat diubah (immutable). Siap ditugaskan ke proyek.
-                            </Notice>
-                            <div className="flex gap-2 mt-2 flex-wrap">
-                              {onCreateAssignment && (
-                                <Button
-                                  size="sm"
-                                  onClick={onCreateAssignment}
-                                >
-                                  <Plus size={14} />
-                                  Buat Penugasan
-                                </Button>
-                              )}
-                              {onOpenExecution && (
-                                <Button
-                                  variant="secondary"
-                                  size="sm"
-                                  onClick={onOpenExecution}
-                                >
-                                  <Workflow size={14} />
-                                  Buka Eksekusi
-                                </Button>
-                              )}
+                        {version.status === "published" &&
+                          version.governance_valid && (
+                            <div className="published-next-actions mt-3">
+                              <Notice tone="success">
+                                Versi ini dipublikasikan dan tidak dapat diubah
+                                (immutable). Siap ditugaskan ke proyek.
+                              </Notice>
+                              <div className="flex gap-2 mt-2 flex-wrap">
+                                {onCreateAssignment && (
+                                  <Button
+                                    size="sm"
+                                    onClick={onCreateAssignment}
+                                  >
+                                    <Plus size={14} />
+                                    Buat Penugasan
+                                  </Button>
+                                )}
+                                {onOpenExecution && (
+                                  <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={onOpenExecution}
+                                  >
+                                    <Workflow size={14} />
+                                    Buka Eksekusi
+                                  </Button>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        )}
+                          )}
                       </>
                     )}
                   </>
@@ -1036,7 +1095,11 @@ export function CanvasInspector({
                         {selectedNode.nodeType === "scenario" && (
                           <InspectorTextBlock
                             label="RESPONS AKTUAL SKENARIO"
-                            content={s.actual_output || (selectedNode.details?.actual_output as string) || ""}
+                            content={
+                              s.actual_output ||
+                              (selectedNode.details?.actual_output as string) ||
+                              ""
+                            }
                             emptyText="Belum ada respons tersimpan."
                             subtitle={`Respons aktual skenario ${s.name || s.scenario_id}.`}
                           />
@@ -1076,7 +1139,8 @@ export function CanvasInspector({
                         </dd>
                         <dt>Hash konfigurasi</dt>
                         <dd className="mono">
-                          {evaluation.provenance.payload_hash || "Tidak tercatat"}
+                          {evaluation.provenance.payload_hash ||
+                            "Tidak tercatat"}
                         </dd>
                         <dt>Dievaluasi</dt>
                         <dd>{date(evaluation.evaluated_at)}</dd>

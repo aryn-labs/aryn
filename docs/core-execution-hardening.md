@@ -1,5 +1,12 @@
 # Core Execution Hardening
 
+Subsequent live PostgreSQL verification is recorded in [CI validation](ci-validation.md).
+Write transactions now lock/refresh RunState before terminal decisions and usage
+settlement; Core governance commit authorization precedes blueprint/version locks.
+Real restricted-role tests cover concurrent reservations/settlement, advisory owner
+rejection, stale owner fencing and unknown recovery. Earlier offline-only evidence
+below remains historical; production host/ACL/distributed-worker claims remain unproven.
+
 Tanggal audit/validasi: 8 Oktober 2026. Branch `development`, baseline dan HEAD awal
 `5e9392c5f976b4725813dd98ccd8c6811472d9ae`. Working tree awal bersih dan HEAD tidak lebih
 baru. `main` tetap `630cbc96d728a49a64247ad2b88978529a7cbbad`. Tidak ada push dalam delivery ini.

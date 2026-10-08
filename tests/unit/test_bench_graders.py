@@ -29,7 +29,6 @@ from modules.bench.graders import (
     IdempotencyGrader, ModelIdentityGrader, LatencyCostGrader, EvidenceIntegrityGrader, execute_graders,
 )
 from modules.bench.registry import BenchSuiteRegistry
-from modules.bench.evidence import normalize_observations
 from tests.bench_fixtures import generic_scenario, generic_suite, install_generic_suite
 
 
@@ -221,13 +220,20 @@ def observations():
     ("state","idempotency_state_mismatch"), ("execution","duplicate_execution_observed")])
 def test_idempotency(case, reason):
     evidence = observations()
-    if case == "missing": evidence = evidence[:1]
-    if case == "duplicate": evidence[1].side_effect_ids.append("duplicate_effect")
-    if case == "repeated_effect": evidence[1].emitted_side_effect_ids = ["effect"]
-    if case == "identity": evidence[1].idempotency_key = "other"
-    if case == "tenant": evidence[1].project_id = "foreign"
-    if case == "state": evidence[1].state_hash = evidence_hash({"changed": True})
-    if case == "execution": evidence[1].replayed = False
+    if case == "missing":
+        evidence = evidence[:1]
+    if case == "duplicate":
+        evidence[1].side_effect_ids.append("duplicate_effect")
+    if case == "repeated_effect":
+        evidence[1].emitted_side_effect_ids = ["effect"]
+    if case == "identity":
+        evidence[1].idempotency_key = "other"
+    if case == "tenant":
+        evidence[1].project_id = "foreign"
+    if case == "state":
+        evidence[1].state_hash = evidence_hash({"changed": True})
+    if case == "execution":
+        evidence[1].replayed = False
     spec = IdempotencyGraderSpec(grader_id="idempotency", idempotency_key="key", request_hash=evidence_hash({"request": 1}))
     result = IdempotencyGrader().grade(spec, grading_context(idempotency_observations=evidence))
     assert result.reason == reason and result.passed is (case == "valid")
@@ -264,15 +270,22 @@ def test_approval_uses_core_authority(lifecycle, case, reason):
     requirement = ApprovalRequirement(target_type="test_action", target_id="operation", payload_hash=payload_hash,
                                       allowed_actors=["owner"])
     records = [record.model_dump(mode="json")]
-    if case == "missing": records = []
+    if case == "missing":
+        records = []
 
-    if case == "hash": records[0]["payload_hash"] = evidence_hash({"changed": True})
-    if case == "target": records[0]["target_id"] = "other"
-    if case == "actor": requirement.allowed_actors = ["other"]
-    if case == "evaluation": requirement.evaluation_id = "other"
-    if case == "unsigned": records[0]["attestation"] = ""
+    if case == "hash":
+        records[0]["payload_hash"] = evidence_hash({"changed": True})
+    if case == "target":
+        records[0]["target_id"] = "other"
+    if case == "actor":
+        requirement.allowed_actors = ["other"]
+    if case == "evaluation":
+        requirement.evaluation_id = "other"
+    if case == "unsigned":
+        records[0]["attestation"] = ""
     observed_at = datetime.datetime.now(datetime.timezone.utc)
-    if case == "stale": observed_at += datetime.timedelta(days=1)
+    if case == "stale":
+        observed_at += datetime.timedelta(days=1)
     ctx = grading_context(approval_records=records, observed_at=observed_at.isoformat())
     ctx = replace(ctx, approval_authority=factory.approval_engine)
     result = ApprovalEnforcementGrader().grade(ApprovalGraderSpec(grader_id="approval", requirement=requirement), ctx)

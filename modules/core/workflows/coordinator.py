@@ -255,7 +255,7 @@ class RunCoordinator:
                 if existing is None:
                     raise
                 if existing.request_hash != fingerprint:
-                    raise IdempotencyConflictError("Idempotency conflict: key belongs to a different request or configuration.")
+                    raise IdempotencyConflictError("Idempotency conflict: key belongs to a different request or configuration.") from None
                 return False, self.stored_result(existing)
         return True, captured
 

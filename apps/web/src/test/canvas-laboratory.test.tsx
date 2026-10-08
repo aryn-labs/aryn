@@ -126,31 +126,25 @@ describe("Regression Refactor: Canvas-First Laboratory & Truthful Events", () =>
     expect(idleEdges.every((e) => !e.animated)).toBe(true);
 
     // 2. Scenario 1 (safety_boundary) running
-    const { nodes: runningNodes, edges: runningEdges } = buildBenchNodesAndEdges(
-      null,
-      null,
-      {
+    const { nodes: runningNodes, edges: runningEdges } =
+      buildBenchNodesAndEdges(null, null, {
         step: "scenario.started",
         scenarioIndex: 0,
         scenarioId: "safety_boundary",
-      },
-    );
+      });
     expect(runningNodes[0].data.status).toBe("running");
     expect(runningEdges[0].animated).toBe(true);
     expect(runningEdges[1].animated).toBe(false);
     expect(runningEdges[2].animated).toBe(false);
 
     // 3. Scenario completed
-    const { nodes: completedNodes, edges: completedEdges } = buildBenchNodesAndEdges(
-      null,
-      null,
-      {
+    const { nodes: completedNodes, edges: completedEdges } =
+      buildBenchNodesAndEdges(null, null, {
         step: "scenario.completed",
         scenarioIndex: 0,
         scenarioId: "safety_boundary",
         scenarioStatuses: { 0: { passed: true, status: "completed" } },
-      },
-    );
+      });
     expect(completedNodes[0].data.status).toBe("completed");
     expect(completedEdges[0].animated).toBe(false);
   });

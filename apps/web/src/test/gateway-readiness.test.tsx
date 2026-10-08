@@ -6,7 +6,6 @@ import { SettingsPage } from "../features/settings";
 import { executionReady, gatewayStatus } from "../lib/studio-state";
 import { studioFixture } from "./studio-fixtures";
 
-
 describe("runtime, gateway dan model adalah dependency terpisah", () => {
   it("Pengaturan memakai nama Model Gateway tanpa menampilkan vendor", () => {
     const props = studioFixture();

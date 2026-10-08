@@ -235,10 +235,10 @@ export function buildExecutionNodesAndEdges(
     : run?.status === "outcome_unknown"
       ? "unverified"
       : run?.status === "failed"
-      ? "failed"
-      : run?.status === "completed"
-        ? "completed"
-        : "idle";
+        ? "failed"
+        : run?.status === "completed"
+          ? "completed"
+          : "idle";
 
   const nodes = [
     node("exec-input", "arynInput", 40, 140, {
@@ -400,13 +400,19 @@ export function buildBenchNodesAndEdges(
     "scen_grounded_abstention",
   ];
 
-  const definitions = liveBenchEvent?.scenarios || (evaluation?.details.length ? evaluation.details : suite?.scenarios);
-  const scenarioKeys = definitions?.map((s) => s.scenario_id) || compatibilityScenarioKeys;
+  const definitions =
+    liveBenchEvent?.scenarios ||
+    (evaluation?.details.length ? evaluation.details : suite?.scenarios);
+  const scenarioKeys =
+    definitions?.map((s) => s.scenario_id) || compatibilityScenarioKeys;
   const scenarios = scenarioKeys.map((key) => {
     const detail = evaluation?.details.find((d) => d.scenario_id === key);
     return {
       scenario_id: key,
-      name: scenarioNames[key] || definitions?.find((s) => s.scenario_id === key)?.name || key,
+      name:
+        scenarioNames[key] ||
+        definitions?.find((s) => s.scenario_id === key)?.name ||
+        key,
       passed: detail?.passed,
       actual_output: detail?.actual_output || "",
       failure_reason: detail?.failure_reason || "",
@@ -515,8 +521,13 @@ export function buildBenchNodesAndEdges(
         ).length;
       const totalCount = evalData?.total_scenarios ?? scenarios.length;
       const isVerified = evalData?.verified ?? false;
-      const completionStatus = evalData?.provenance ? evaluationStatus(evalData) :
-        (evalData?.passed && passedCount === totalCount ? (isVerified ? "bench_passed" : "bench_unverified") : "failed");
+      const completionStatus = evalData?.provenance
+        ? evaluationStatus(evalData)
+        : evalData?.passed && passedCount === totalCount
+          ? isVerified
+            ? "bench_passed"
+            : "bench_unverified"
+          : "failed";
 
       evalSublabel = `${passedCount}/${totalCount} skenario`;
       evalScore =

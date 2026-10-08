@@ -13,9 +13,8 @@ Verifies:
 import json
 import pytest
 
-from packages.contracts.core import Actor, ActorType, SecurityContext
+from packages.contracts.core import Actor, SecurityContext
 from packages.contracts.agent import (
-    AgentBlueprint,
     AgentBudgetPolicy,
     AgentConstraints,
     AgentDefinition,
@@ -24,14 +23,12 @@ from packages.contracts.agent import (
     AgentOutputContract,
     AgentToolPolicy,
     AgentVersion,
-    AgentVersionStatus,
     ForbiddenToolError,
     VersionIntegrityError,
 )
 from database.connection import create_db_engine, DatabaseManager
 from database.schema import Base
 from database.repositories.organization_repo import OrganizationRepository
-from database.repositories.agent_repo import AgentRepository
 from modules.agent_factory.service import AgentFactoryService
 from modules.bench.runner import BenchRunner
 from tests.conftest import bind_test_context

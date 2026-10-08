@@ -1,5 +1,6 @@
 """Studio sends acceptance intent; the server resolves every governance decision."""
-from tests.integration.test_studio_api import studio, draft, PREFIX
+from tests.integration.test_studio_api import studio as studio
+from tests.integration.test_studio_api import draft, PREFIX
 from tests.bench_fixtures import generic_suite, install_generic_suite
 from packages.contracts.bench import RegressionPolicy
 

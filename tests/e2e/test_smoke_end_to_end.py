@@ -9,7 +9,6 @@ Complies with user task requirement 8, ARYN-TECH-001 ADR-004, and ARYN-SEC-001.
 """
 
 import os
-import importlib
 import pytest
 from packages.contracts.core import (
     Actor,

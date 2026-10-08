@@ -91,15 +91,14 @@ function CanvasInner({
 }: ArynCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(
-    () =>
-      mode === "execution"
-        ? (run
-            ? (initialNodes.find((n) => n.type === "agent")?.id || "exec-agent")
-            : (initialNodes.find((n) => n.id === "exec-input")?.id || "exec-input"))
-        : mode === "bench"
-          ? (initialNodes.find((n) => n.type === "evaluation")?.id || null)
-          : (initialNodes.find((n) => n.type === "agent")?.id || null),
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(() =>
+    mode === "execution"
+      ? run
+        ? initialNodes.find((n) => n.type === "agent")?.id || "exec-agent"
+        : initialNodes.find((n) => n.id === "exec-input")?.id || "exec-input"
+      : mode === "bench"
+        ? initialNodes.find((n) => n.type === "evaluation")?.id || null
+        : initialNodes.find((n) => n.type === "agent")?.id || null,
   );
   const [showInspector, setShowInspector] = useState(showInspectorByDefault);
   const [showMinimap, setShowMinimap] = useState(false);

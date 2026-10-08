@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools==84.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -21,7 +21,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "pytest-asyncio>=0.24"]
+postgresql = ["psycopg[binary]>=3.2"]
+dev = ["pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.14", "build>=1.2", "pip-audit>=2.9", "psycopg[binary]>=3.2", "PyYAML>=6", "setuptools==84.0.0", "wheel>=0.45"]
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -31,3 +32,16 @@ include = ["modules*", "packages*", "database*", "services*"]
 testpaths = ["tests"]
 pythonpath = ["."]
 asyncio_mode = "auto"
+markers = ["postgresql: live PostgreSQL verification; explicit connection is mandatory when selected"]
+
+[tool.ruff]
+target-version = "py311"
+
+[tool.ruff.lint]
+# Correctness first. Import ordering/modernization/style remain a documented backlog.
+select = ["E4", "E7", "E9", "F", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# These entry points must install the isolated runtime path before importing it.
+"scripts/hermes-9router.py" = ["E402"]
+"tests/hermes_gateway_check.py" = ["E402"]

@@ -7,6 +7,8 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
     "test": "vitest run",
+    "typecheck": "tsc -b",
+    "format:check": "prettier --check src e2e *.ts index.html package*.json",
     "test:e2e": "playwright test"
   },
   "dependencies": {

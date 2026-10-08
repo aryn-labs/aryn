@@ -239,8 +239,10 @@ menampilkan batas palsu. Konflik ditolak sebelum dispatch, bukan dipilih secara 
 `015_authentication_boundary` melanjutkan `014_execution_authority`, menambah hanya
 `external_identities`, `auth_sessions`, `login_transactions`. Tidak ada seeded identity,
 membership, backfill approval/receipt, atau perubahan history/run/budget schema.
-SQLite fresh metadata/migrations dan 015 ↔ 014 downgrade/upgrade diuji. PostgreSQL
-DDL upgrade/downgrade hanya compiled offline; live locking/privileges belum diuji.
+SQLite fresh metadata/migrations dan 015 ↔ 014 downgrade/upgrade diuji. Disposable
+live PostgreSQL migrations, restricted non-owner writer, locking, history triggers,
+signed-provider/API sessions dan governance concurrency kini diuji melalui
+[CI verification](ci-validation.md); VPS operational configuration tetap perlu UAT.
 Downgrade menghapus sessions/mappings/login transactions sehingga memerlukan login/
 provisioning ulang bila kembali upgrade; history/evidence existing tetap dipertahankan.
 Stop old binaries sebelum migration; mixed revisions atau multiple authority processes
@@ -261,7 +263,7 @@ TestClient HTTPS adalah ASGI scheme fixture; tidak melakukan TLS handshake produ
 Installed Hermes menggunakan isolated home/config dan network-denied model doubles.
 
 IdP nyata (registration, policies/MFA, account revocation/logout, unique kid rotation),
-PostgreSQL, TLS termination, Caddy/Traefik/Nginx config, firewall, container networking,
+PostgreSQL VPS operations, TLS termination, Caddy/Traefik/Nginx config, firewall, container networking,
 VPS ACLs, protected backups, log access/retention dan disaster recovery tetap perlu UAT.
 SSO backchannel logout, session inventory/admin UI, rate limiting di edge, and multiworker
 tidak ditambahkan. Pending login transactions dibatasi 256 dan expired entries dibersihkan;
