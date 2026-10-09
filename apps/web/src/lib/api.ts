@@ -15,6 +15,7 @@ export class ApiError extends Error {
     public correlationId?: string,
     public runId?: string,
     public loginUrl?: "/auth/login",
+    public issues?: { subject: string; code: string }[],
   ) {
     super(message);
   }
@@ -119,6 +120,14 @@ export async function api<T>(
       data.error_code,
       data.correlation_id,
       data.run_id,
+      undefined,
+      Array.isArray(data.issues)
+        ? data.issues.filter(
+            (issue: { subject?: unknown; code?: unknown }) =>
+              typeof issue.subject === "string" &&
+              typeof issue.code === "string",
+          )
+        : undefined,
     );
   return data;
 }

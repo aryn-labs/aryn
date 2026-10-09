@@ -1,6 +1,29 @@
 # Studio workspace interaction contract
 
-## Agent lifecycle interaction specification
+## Workflow and output interaction specification
+
+Audit baseline: `ba2140bc396a6dbebef76d510d8288309eafa847`. Current executable workflow evidence, observed checks and exact-source CI are in [delivery evidence](studio-redesign-progress.md); older source references below are historical.
+
+`/workflows` provides a scoped bounded registry. `/workflows/new` and `/:id/builder` expose the six-node palette, draggable/connectable typed React Flow canvas, selected-node inspector and complete structured keyboard editor. Node input/output schema, exact assignment/version pin, deterministic renderer, typed condition and edge port/target are explicit. Removing a node removes its edges. Server validation returns named node/edge issues and highlights affected nodes; an invalid draft remains repairable but cannot freeze or run.
+
+Save persists graph and positions with expected revision. Position movement does not change the frozen graph hash. Freeze is separate from save; version detail displays actual immutable canonical graph/digest. Concurrent refresh cannot replace dirty input. CAS conflicts preserve the local graph; deliberate reload offers restoration from editor memory. Navigation, project changes and document departure guard dirty/pending work. Permissions disable editor/freeze/run/review actions and are revalidated by Core.
+
+`/workflows/:id?run=:runId` displays persisted task status, actual Core run references and input/output artifact links. Run requires explicit model consent and a pinned immutable workflow version. Start identity stays in editor memory after a lost response; an explicit retry with unchanged input/version returns the same run. A received result clears it for a deliberate new run, with no automatic retry or browser storage. Stop reports unconfirmed effects as outcome_unknown. Two Core-backed agent tasks plus the local deterministic Website task are distinguishable in the timeline; no per-node token/cost/trace data is invented.
+
+`/outputs` shows bounded artifact registry, actual waiting review queue and immutable decision history. Artifact or deliverable detail resolves exact scope, manifest, lineage, consuming tasks, model/version/Core claim and digest. JSON uses a text view; staging HTML uses a titled opaque iframe with no script/same-origin permissions. Review requires the displayed exact hash and stores accepted/rejected reviewer/reason/time. Download remains authorized and integrity checked. 401/403/errors remove cached preview instead of presenting earlier scope content. Console and Operations link back using verified signed workflow/node/run provenance.
+
+At 1440 px, canvas/inspector share a two-column workspace. At 768/390 px they stack; the non-canvas editor remains fully available. Both existing themes and packaged fonts are retained. Buttons/checkboxes meet automated target-size checks, controls have labels, server errors use alerts, and scrolling stays inside appropriate regions without page horizontal overflow. Browser evidence covers three surfaces × three widths × two themes, plus actual drag, keyboard edit/save, CAS conflict and the three-task review/download path. The preview DOM audit uses an isolated copy with unchanged CSP because its production sandbox disables axe timers; the real frame's sandbox and visible heading are independently asserted.
+
+Reference adoption and ARYN-specific choices:
+
+- R02 [Carbon data table](https://www.carbondesignsystem.com/building-blocks/core/components/data-table/guidelines): named bounded inventories and clear read/action states; no unsupported bulk review or synthetic metrics.
+- R03 [React Flow custom nodes](https://reactflow.dev/learn/customization/custom-nodes): typed handles, editable graph and inspector; server validation is authoritative and a complete keyboard alternative accompanies the canvas.
+- R04 [Dify workflows](https://www.dify.ai/workflows): edit → validate → execute → inspect outcome interaction; execution stays in ARYN Core and includes governed publication, exact claims and human review.
+- R05 [Langfuse trace guidance](https://langfuse.com/docs/observability/best-practices): actual lineage and captured execution references; no Langfuse service, fabricated spans or inferred usage.
+- R09 [WCAG 2.2](https://www.w3.org/TR/WCAG22/): labels, keyboard, focus, reflow, contrast and recovery. Axe plus browser assertions provide observed checks, not a full conformance certification.
+
+## Historical Agent lifecycle interaction specification
+
 
 Current audit source: `40df9d1f894b257df3a277c4623466d6d03541dc`. At 1440 px the Agent Builder uses semantic React Flow sections and an adjacent typed inspector. At 768/390 px the inspector stacks or closes; a complete structured form alternative remains available. Identity/Objective, Instructions, Model Policy, Output Contract, Constraints, Tool Policy, Budget Policy and Evaluation Reference are definition sections, not executable tasks. Connections are fixed explanatory relationships with no execution gesture.
 

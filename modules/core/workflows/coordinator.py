@@ -393,6 +393,10 @@ class RunCoordinator:
         prompt: str,
         context: SecurityContext,
         idempotency_key: Optional[str] = None,
+        *,
+        expected_version_id: Optional[str] = None,
+        claim_callback=None,
+        workflow_reference: Optional[Dict[str, str]] = None,
     ) -> RunResult:
         """Executes a direct turn dispatched to an active AgentAssignment under Core governance."""
         self.permission_engine.enforce("run:create", context, context.organization_id, context.project_id)
@@ -406,6 +410,8 @@ class RunCoordinator:
             with self.db_manager.session() as session:
                 old = RunStateRepository(session).get_run_by_idempotency_key(context, idempotency_key)
                 if old is not None:
+                    if expected_version_id and old.agent_version_id != expected_version_id:
+                        raise IdempotencyConflictError("Cached task differs from the pinned version.")
                     if old.prompt != prompt or old.assignment_id != assignment_id or json.loads(old.effective_limits_json).get("actor_id") != context.actor.actor_id:
                         raise IdempotencyConflictError("Key belongs to another input, actor or assignment.")
                     if not old.execution_attestation:
@@ -418,6 +424,8 @@ class RunCoordinator:
             repo = AgentRepository(session)
             activation = AgentActivationRepository(session, self.db_manager.evidence_signer, self.permission_engine)
             assignment = activation.lock_assignment(context, assignment_id)
+            if expected_version_id and assignment.version_id != expected_version_id:
+                raise PermissionDeniedError("Workflow assignment no longer matches the pinned version.")
             if assignment.status != "active":
                 raise PermissionDeniedError("Agent assignment is not active.")
             version = repo.get_version(context, assignment.version_id)
@@ -438,6 +446,8 @@ class RunCoordinator:
                 "transition_hash": history[-1].attestation if history else None,
                 "publication_id": reference["publication"]["publication_id"],
                 "publication_hash": hashlib.sha256(json.dumps(reference, sort_keys=True).encode()).hexdigest()}
+            if workflow_reference is not None:
+                provenance["workflow"] = dict(workflow_reference)
             from packages.contracts.agent import AgentVersion
             configuration = AgentVersion.from_stored(version)
             req = RunRequest(prompt=prompt, system_instructions=version.system_prompt, model=version.model,
@@ -447,6 +457,8 @@ class RunCoordinator:
                 idempotency_key=idempotency_key, metadata={**provenance,
                     "role_name": assignment.role_name, "division_id": assignment.division_id})
             claimed = self._claim(req, context, "direct", session=session, assignment_provenance=provenance)
+            if claim_callback is not None:
+                claim_callback(session, claimed[1])
         # The committed Core claim freezes version identity before dispatch. Rollback
         # affects only subsequent claims; no lock is held during runtime inference.
         return await self.execute_managed_direct_turn(req, context, _claimed=claimed)

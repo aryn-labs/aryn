@@ -1,6 +1,11 @@
 import { executionReady } from "../lib/studio-state";
 import { useMemo, useState, type ReactNode } from "react";
-import { useSearchParams, useLocation, useNavigate } from "react-router-dom";
+import {
+  Link,
+  useSearchParams,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
 import { ChevronRight } from "lucide-react";
 import type { Shared } from "../lib/types";
 import { routeIdentifier } from "../lib/workspace-types";
@@ -317,6 +322,15 @@ export function Runs({
       )}
       {selectedRun && (
         <Panel title="Captured Core execution">
+          {selectedRun.execution_claim_verified &&
+            selectedRun.assignment_provenance_verified &&
+            selectedRun.execution_provenance?.workflow && (
+              <Link
+                to={`/workflows/${selectedRun.execution_provenance.workflow.workflow_id}?run=${selectedRun.execution_provenance.workflow.run_id}`}
+              >
+                Workflow · {selectedRun.execution_provenance.workflow.node_id}
+              </Link>
+            )}
           <p>
             Claim{" "}
             {selectedRun.execution_claim_verified

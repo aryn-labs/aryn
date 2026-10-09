@@ -53,5 +53,5 @@ def test_live_editor_populated_downgrade_guard(postgres_db, hosted_lifecycle):
     with pytest.raises(RuntimeError, match="stored drafts/layout"):
         migrate_to(postgres_db.owner, "016_workspace_structure", downgrade=True)
     with postgres_db.owner.connect() as connection:
-        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar() == "017_agent_editor"
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar() == "018_workflow_execution"
         assert connection.execute(text("SELECT COUNT(*) FROM agent_editor_layouts")).scalar() == 1

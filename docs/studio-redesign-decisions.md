@@ -1,6 +1,27 @@
 # Studio architecture decisions
 
-## Agent editing and manual operations
+## Executable workflows and artifact review
+
+Audit baseline: `ba2140bc396a6dbebef76d510d8288309eafa847`, development equal to remote and dependency CI 37883814142 completed-success. Supplied PRD v1.2 / Prompt 03 authorize this delivery; absent normative PDFs are not claimed reviewed. Current results and source/CI references are in [delivery evidence](studio-redesign-progress.md). Earlier decisions below retain their historical context.
+
+Use strict typed graph contracts and server admission, with a shared draft revision CAS and immutable graph version/hash independent of positions. Start, Agent, Condition, Handoff, Review and End have bounded typed ports. Conditions use an allowlisted deterministic predicate. One selected path executes sequentially, with every path reaching human review before End. No expression interpreter, general code node or independent scheduler is introduced.
+
+WorkflowExecutor reuses the existing RunCoordinator authority, owner fence, exact version claims, reservations, deadlines and measured settlement. Persist the typed TaskExecution vector inside the signed WorkflowRun checkpoint. The trusted claim callback captures the Core run ID in the same claim/reservation transaction before inference, without holding a transaction during inference. Trusted workflow/node references enter the signed Core assignment provenance, enabling actual Console/Operations reverse links. Indexed status mirrors are verified against signed payloads; startup recovery queries active runs rather than scanning completed history.
+
+Store artifacts as bounded database blobs through existing Local SQLite / Hosted PostgreSQL configuration. Manifest signatures, independent protected commitments, length/digest and MIME/schema checks bind scope and lineage. Immutable artifact/version/review SQL guards extend existing restricted-writer prerequisites. Migration 018 is additive after 017/016/015 and refuses a populated downgrade before dropping any table. See [ER/state diagrams, role provisioning and threat review](workflow-execution-contracts.md).
+
+Research and Content dispatch two distinct pinned governed agents. Website staging executes `static-document-v1`, an explicit renderer that escapes text into a fixed inert HTML skeleton. Its result is a real third bounded task. Each consumer verifies its actual predecessor artifact; a missing handoff fails without dispatch. Preview uses opaque `iframe sandbox=""` and restrictive CSP; no same-origin/script/resource privileges are granted. Downloads verify integrity and return generated attachment names, nosniff and no-store.
+
+Human review persists waiting state and an immutable unique exact-hash decision with reviewer/reason/timestamp and atomic audit. Accept completes End; reject preserves artifact/history. Idempotent Start/review cannot execute or commit twice. The editor retains Start request identity in memory after a lost response so an explicit retry returns the existing run; a received result clears it for a deliberate new run. No automatic browser retry or prompt persistence is added. Restart and unresolved cancellation/timeout preserve outcome_unknown and held consumption, with no automatic retry. Existing operator reconciliation remains required; this delivery does not claim an unknown-effect repair API or provider monetary hard caps.
+
+React Flow is an editable graph surface; the complete structured editor provides keyboard access to the same graph. Explicit save/freeze/validate are distinct. Dirty edits survive concurrent refetch/CAS conflict and have deliberate reload/restore plus route/project/document guards. Lists/detail are scoped and bounded. Record-reference continuation is resolved in the current scope on each request; it is not a bearer authorization token.
+
+Preview accessibility is audited from its exact serialized DOM in an isolated test page with original CSP and all network blocked, because Chromium's disabled-script sandbox also blocks axe timers. The actual product frame is separately asserted opaque/sandboxed and visible. All tagged axe rules remain enabled; no production sandbox or accessibility rule is relaxed. Full WCAG conformance and external penetration certification are not inferred from these automated checks.
+
+Residual product boundaries are deliberate: manual sequential execution, one terminal review, bounded text envelopes and one inert renderer. Brief/Relay, recurrence scheduler, general parallel DAG execution, public website publication and hosted production deployment remain outside this delivery.
+
+## Historical Agent editing and manual operations
+
 
 Audit source for the current delivery: `40df9d1f894b257df3a277c4623466d6d03541dc` (development equals remote; ARYN Quality 37837626257 success). Existing canonical format 3, signed Bench/regression/baseline, approval, activation history and captured execution remain authoritative.
 

@@ -284,6 +284,9 @@ export type StreamPayload = Partial<
 export type StreamEvent = { type: string; data: StreamPayload };
 
 export type Run = {
+  execution_provenance?: {
+    workflow?: { workflow_id: string; run_id: string; node_id: string };
+  };
   execution_claim_verified?: boolean;
   reserved_tokens?: number;
   usage_settled?: boolean;

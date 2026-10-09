@@ -421,9 +421,9 @@ def create_app(
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["X-Frame-Options"] = "DENY"
-        response.headers["Content-Security-Policy"] = (
+        response.headers.setdefault("Content-Security-Policy", (
             "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
-        )
+        ))
         if is_api:
             response.headers["Cache-Control"] = "no-store"
         if hosted:
@@ -1240,6 +1240,9 @@ def create_app(
             result = coordinator.stored_result(stored)
             permissions.enforce("run:read", ctx, ctx.organization_id, project_id, session=session)
         return sanitize(StopReceipt(cancellation_confirmed=result.status.value == "cancelled", result=result).model_dump(mode="json"), credentials=protected_credentials)
+
+    from services.api.workflows import register_workflows
+    register_workflows(app, coordinator, context, require_runtime)
 
     assets = ROOT / "apps/web/dist/assets"
     if assets.is_dir():

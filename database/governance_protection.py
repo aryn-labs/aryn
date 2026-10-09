@@ -64,8 +64,12 @@ def verify_hosted_writer(engine):
         unsafe = unsafe or connection.execute(text("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname IN "
             "('pg_read_server_files','pg_write_server_files','pg_execute_server_program') "
             "AND pg_has_role(current_user, oid, 'MEMBER'))")).scalar()
-        for table in HISTORY_TABLES:
-            unsafe = unsafe or connection.execute(text("SELECT has_table_privilege(current_user, :table, 'UPDATE,DELETE,TRUNCATE,TRIGGER') "
+        from sqlalchemy import inspect
+        from database.workflow_protection import TABLES, MUTABLE_TABLES
+        protected = HISTORY_TABLES + tuple(table for table in TABLES + MUTABLE_TABLES if table in inspect(connection).get_table_names())
+        for table in protected:
+            privileges = "DELETE,TRUNCATE,TRIGGER" if table in MUTABLE_TABLES else "UPDATE,DELETE,TRUNCATE,TRIGGER"
+            unsafe = unsafe or connection.execute(text(f"SELECT has_table_privilege(current_user, :table, '{privileges}') "
                 "OR pg_has_role(current_user, (SELECT relowner FROM pg_class WHERE oid=CAST(:table AS regclass)), 'MEMBER')"),
                 {"table": table}).scalar()
             enabled = connection.execute(text("SELECT COUNT(*) FROM pg_trigger WHERE tgrelid=CAST(:table AS regclass) "

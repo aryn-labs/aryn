@@ -63,6 +63,16 @@ const Operations = lazy(() =>
     default: module.Operations,
   })),
 );
+const Workflows = lazy(() =>
+  import("./features/workflows").then((module) => ({
+    default: module.Workflows,
+  })),
+);
+const Outputs = lazy(() =>
+  import("./features/workflows").then((module) => ({
+    default: module.Outputs,
+  })),
+);
 const RunHistory = lazy(() =>
   import("./features/run-history").then((module) => ({
     default: module.RunHistory,
@@ -108,7 +118,6 @@ const navigation = [
     label: "Workflow Builder",
     icon: Workflow,
     group: "BUILD",
-    future: true,
   },
   {
     path: "/capabilities",
@@ -136,7 +145,6 @@ const navigation = [
     label: "Outputs",
     icon: FileText,
     group: "OPERATE",
-    future: true,
   },
   {
     path: "/brief",
@@ -828,6 +836,16 @@ export function App() {
                   />
                 ) : location.pathname === "/factory" ? (
                   <Factory {...shared} />
+                ) : location.pathname.startsWith("/workflows") ? (
+                  <Workflows
+                    key={`${organization}:${project}:${location.pathname}`}
+                    {...shared}
+                  />
+                ) : location.pathname.startsWith("/outputs") ? (
+                  <Outputs
+                    key={`${organization}:${project}:${location.pathname}`}
+                    {...shared}
+                  />
                 ) : selectedBlueprint &&
                   location.pathname ===
                     `/factory/${selectedBlueprint.id}/builder` ? (

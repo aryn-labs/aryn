@@ -8,6 +8,15 @@ cap, Managed AI monetary reservation dan distributed workers belum terbukti. Dis
 live PostgreSQL contracts kini diuji; deployment PostgreSQL VPS tetap memerlukan UAT.
 Historical PASS rows di bawah tetap evidence revision sebelumnya.
 
+Studio executable workflow melanjutkan baseline `ba2140bc`: typed graph/CAS,
+immutable version, durable Core-owned three-task Research → Content → Website
+staging, scoped artifact integrity, exact-hash human review dan sandbox preview.
+Migration `018_workflow_execution` mengikuti 017/016/015 dan tidak mengubah
+historical evidence. Hasil aktual, source/current-SHA CI, UX, threat review dan
+batas operasional dicatat pada [Studio delivery](docs/studio-redesign-progress.md)
+dan [workflow contracts](docs/workflow-execution-contracts.md). Brief/Relay dan
+scheduler masih pekerjaan berikut; hosted production readiness tetap BLOCKED.
+
 Studio workspace melanjutkan `3a8ddb69`: grouped shell, scoped summary Overview,
 Projects/Divisions dengan Core authorization/CAS/audit, additive migration
 `016_workspace_structure`, bounded read APIs dan isolation cache. Source `80bac7d`

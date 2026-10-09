@@ -126,6 +126,8 @@ class WorkspaceReads:
                 "usage_availability": record.usage_availability, "total_tokens": record.total_tokens if item.verified and record.usage_availability == "measured" else None,
                 "effective_limits": json.loads(record.effective_limits_json) if item.verified else None,
                 "reserved_tokens": record.reserved_tokens, "usage_settled": bool(record.usage_settled)}
+            if item.verified and record.assignment_provenance_json:
+                item.references["workflow"] = json.loads(record.assignment_provenance_json).get("workflow")
         elif resource == "evaluations":
             item.status = "passed" if record.passed else "failed"
             item.verified = False

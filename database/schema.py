@@ -16,6 +16,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -532,3 +533,50 @@ def protect_bench_governance_history(mapper, connection, target):
 def install_governance_guards(metadata, connection, **kwargs):
     from database.governance_protection import install_history_protection
     install_history_protection(connection)
+    from database.workflow_protection import install_workflow_protection
+    install_workflow_protection(connection)
+
+
+class WorkflowScope:
+    id = Column(String(64), primary_key=True)
+    organization_id = Column(String(64), ForeignKey("organizations.id"), nullable=False)
+    project_id = Column(String(64), ForeignKey("projects.id"), nullable=False)
+    details_json = Column(Text, nullable=False)
+    attestation = Column(String(64), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class WorkflowDefinitionModel(WorkflowScope, Base):
+    __tablename__ = "workflow_definitions"
+    revision = Column(Integer, nullable=False)
+    __table_args__ = (Index("ix_workflow_definition_scope", "organization_id", "project_id", "id"),)
+
+
+class WorkflowVersionModel(WorkflowScope, Base):
+    __tablename__ = "workflow_versions"
+    workflow_id = Column(String(64), ForeignKey("workflow_definitions.id"), nullable=False)
+    revision = Column(Integer, nullable=False)
+    __table_args__ = (UniqueConstraint("workflow_id", "revision", name="uq_workflow_version_revision"),)
+
+
+class WorkflowRunModel(WorkflowScope, Base):
+    __tablename__ = "workflow_runs"
+    status = Column(String(32), nullable=False, index=True)
+    workflow_id = Column(String(64), ForeignKey("workflow_definitions.id"), nullable=False)
+    version_id = Column(String(64), ForeignKey("workflow_versions.id"), nullable=False)
+    idempotency_key = Column(String(128), nullable=False)
+    __table_args__ = (UniqueConstraint("organization_id", "project_id", "idempotency_key", name="uq_workflow_start"),
+        Index("ix_workflow_run_scope", "organization_id", "project_id", "workflow_id"))
+
+
+class WorkflowArtifactModel(WorkflowScope, Base):
+    __tablename__ = "workflow_artifacts"
+    workflow_run_id = Column(String(64), ForeignKey("workflow_runs.id"), nullable=False)
+    blob = Column(LargeBinary, nullable=False)
+    __table_args__ = (Index("ix_workflow_artifact_scope", "organization_id", "project_id", "workflow_run_id"),)
+
+
+class WorkflowDeliverableModel(WorkflowScope, Base):
+    __tablename__ = "workflow_deliverables"
+    workflow_run_id = Column(String(64), ForeignKey("workflow_runs.id"), nullable=False, unique=True)
+    artifact_id = Column(String(64), ForeignKey("workflow_artifacts.id"), nullable=False)

@@ -16,6 +16,7 @@ from sqlalchemy.engine import make_url
 
 from database.connection import DatabaseManager, create_db_engine
 from database.governance_protection import HISTORY_TABLES, verify_hosted_writer
+from database.workflow_protection import TABLES, MUTABLE_TABLES
 
 
 def migrate_to(engine, revision, *, downgrade=False):
@@ -37,8 +38,10 @@ class HostedDatabase:
         with self.owner.begin() as connection:
             connection.execute(text(f'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO "{self.writer_name}"'))
             connection.execute(text(f'REVOKE ALL ON alembic_version FROM "{self.writer_name}"'))
-            for table in HISTORY_TABLES:
+            for table in HISTORY_TABLES + TABLES:
                 connection.execute(text(f'REVOKE UPDATE, DELETE ON {table} FROM "{self.writer_name}"'))
+            for table in MUTABLE_TABLES:
+                connection.execute(text(f'REVOKE DELETE ON {table} FROM "{self.writer_name}"'))
             connection.execute(text(f'GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO "{self.writer_name}"'))
 
 

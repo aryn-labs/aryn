@@ -113,6 +113,13 @@ export function Operations({ workspace, project, data }: Shared) {
                     : "Evidence belum terverifikasi"}
                 </pre>
               </details>
+              {item.verified && item.references.workflow && (
+                <Link
+                  to={`/workflows/${String((item.references.workflow as { workflow_id: string }).workflow_id)}?run=${String((item.references.workflow as { run_id: string }).run_id)}`}
+                >
+                  Workflow timeline
+                </Link>
+              )}
             </>
           )}
         />

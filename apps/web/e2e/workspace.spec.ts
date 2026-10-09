@@ -230,8 +230,6 @@ test("future detail routes are truthful and have no enabled feature actions", as
   page,
 }) => {
   for (const path of [
-    "/workflows/demo/builder",
-    "/outputs/demo",
     "/brief/demo",
     "/relay/demo",
     "/automations",
@@ -242,6 +240,18 @@ test("future detail routes are truthful and have no enabled feature actions", as
       page.getByRole("heading", { name: "Belum tersedia", exact: true }),
     ).toBeVisible();
     await expect(page.locator("main button")).toHaveCount(0);
+  }
+  for (const path of ["/workflows/demo/builder", "/outputs/demo"]) {
+    await page.goto(path);
+    await expect(page.getByRole("alert")).toContainText(
+      "Sumber daya tidak ditemukan di proyek ini.",
+    );
+    await expect(page.locator(".react-flow, iframe")).toHaveCount(0);
+    await expect(
+      page.getByRole("button", {
+        name: /Simpan draft|Jalankan workflow|Terima deliverable/,
+      }),
+    ).toHaveCount(0);
   }
   await page.goto("/operations");
   await expect(

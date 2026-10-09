@@ -1,6 +1,54 @@
 # Studio redesign delivery evidence
 
-## Agent editing and manual operations delivery
+## Executable workflows and reviewed outputs
+
+Audit baseline: `ba2140bc396a6dbebef76d510d8288309eafa847`, development equal to origin with a clean tree. Dependency [ARYN Quality 37883814142](https://github.com/aryn-labs/aryn/actions/runs/37883814142) was terminal completed/success, 14/14 jobs. Reviewed AGENTS.md, README/STATUS, supplied PRD v1.2 and Prompt 03, previous delivery evidence, contracts/Core/permissions/runtime, migration history and existing CI before editing. Push permission was available. Normative PDFs remain absent in adjacent aryn-docs/DOCUMENT_INDEX.md; no absent PDF clause is claimed reviewed. Earlier evidence below is historical.
+
+Implementation and CI provenance are recorded after the actual source commit and terminal exact-SHA workflow verification. This dependency run does not certify the new workflow code.
+
+### Implemented behavior
+
+- Strict WorkflowDefinition/Version/Run/TaskExecution/Artifact/Deliverable contracts, revision CAS, graph/layout persistence and immutable canonical graph digest. The server admits six typed node kinds and rejects invalid ports/schema/duplicates/cycles/orphans/fan-out/task bounds/review bypass and unverified or unauthorized agent pins. Invalid drafts can be repaired; no executable version bypasses validation.
+- WorkflowExecutor runs under the existing Core single owner/fence. Durable task checkpoints precede dispatch; a trusted callback binds the exact Core claim/reservation atomically before inference. No transaction spans inference. Captured signed workflow/run/node provenance provides actual Console and Operations links. Budgets, actual model/version, membership/session revalidation and settlement remain Core-owned.
+- Three real bounded tasks: distinct pinned published Research and Content agents produce verified brief/content artifacts; `static-document-v1` executes the third Website task, rendering escaped text into a fixed inert document. Downstream input uses the actual predecessor artifact; missing/corrupt handoff fails the consumer without inventing content.
+- Durable exact-hash human waiting/review, unique accepted/rejected Deliverable, reviewer/reason/time and atomic audit. Idempotent Start/review and contention cannot dispatch or commit twice. Restart preserves waiting artifacts and marks previous-owner running work outcome_unknown without retry. Actual Core timeout and in-flight Stop retain uncertainty/reservation; late results cannot create artifacts or advance.
+- Local SQLite / Hosted PostgreSQL database-blob adapters with immutable scoped manifest/digest/length/MIME, 64 KiB cap, protected commitments, safe preview/download and every-read authorization. Renderer reconstruction rejects unsafe staging bytes. Preview keeps opaque `sandbox=""` and restrictive CSP; downloads are generated attachments with nosniff/no-store. No uploads, filesystem paths, arbitrary runtime code or publishing capability is exposed.
+- Real React Flow palette/connect/drag, typed inspector, complete structured keyboard editor, server issue IDs, explicit save/freeze/run, conflict/refetch preservation and deliberate reload/restore. Workflow detail displays persisted timeline and handoffs. Outputs has registry/detail/review queue/decision history/download, with 401/403 hiding cached content. Existing themes/responsive design and actual permission guards remain.
+
+### API, migrations and safeguards
+
+Scoped routes: `/workflows` create/list; `/:id` read/save; `/:id/validate`; `/:id/versions` freeze/list; `/workflow-versions/:id`; `/:id/runs` Start/history; `/workflow-runs/:id` timeline/stop/review; `/outputs` manifest/preview/download; `/deliverables` decision detail/history; `/review-queue` actual waiting runs. Query keys/bounds are allowlisted; lists default to 25 and cap at 100. Scoped record-reference continuation is resolved and verified per request, without bearer authority. Existing workspace cursor semantics remain unchanged.
+
+Migration `018_workflow_execution` follows 017/016/015 and creates five empty tables with scoped/status indexes and mutation guards. It neither rewrites historical evidence nor changes runtime routes, memberships or grants. All new table counts are checked before downgrade; populated workflow history refuses destructive rollback. Runtime PostgreSQL remains a separate non-owner restricted writer and now verifies workflow guards/grants. [Workflow contracts](workflow-execution-contracts.md) contain ER/state diagrams, exact role policy, threat review, limits and migration caveats.
+
+### Observed validation
+
+| Scope | Observed result |
+|---|---|
+| Ruff correctness, repository/pinned-actions hygiene, actionlint, offline Python lock validation | PASS; existing governance/security/CI gates retained |
+| Entire Git history secret scan, redacted | PASS; 56 baseline commits scanned before new source commit; staged source/delivery scans follow |
+| Full offline backend | 790 passed, 5 existing skips, 54 PostgreSQL deselected; 927.63 seconds. Collection preceded the additional signed-revision tamper case; all 32 final workflow cases passed separately in 162.21 seconds |
+| Full live PostgreSQL | 54 passed, 0 skipped, 312.51 seconds; pinned disposable PostgreSQL 16.13, separate owner/restricted writer, no SQLite fallback |
+| Final workflow PostgreSQL regression | 17/17 passed in 164.57 seconds after signed source-revision binding, including live restricted-writer golden paths, contention, recovery, corruption and rollback |
+| Python / Node dependency audit | PASS; Python 73 distributions and Node audit report have no known vulnerabilities |
+| Frontend format / unit / typecheck / production build | PASS; 92 tests in 16 files, main 495.88 KB / 155.61 KB gzip, workflow feature lazy chunk 23.80 KB / 7.05 KB gzip; final editor preservation, transport-retry identity and spacing/contrast changes included |
+| Final workflow browser regression | 6/6 passed in 2.1 minutes, including an actually committed Start with lost response and explicit idempotent retry, Console/Operations reverse links, all responsive/theme/axe/keyboard cases and actual conflict/refetch preservation |
+| Full isolated browser suite | 33/33 passed in 7.4 minutes, 0 failed/flaky/skipped; existing 27 cases plus six workflow cases, actual three-task/review/download, lost-response retry, responsive/axe/keyboard, missing scoped resources and large-workspace regression |
+
+The existing offline skips require authorized live model opt-in or local provider API key and are reported separately from passed tests. No live paid inference occurred. Existing Authlib/Starlette dependency deprecation warnings are retained rather than hidden. Correctness Ruff passed across the repository; pre-existing repository-wide Python formatting differences are outside the CI format gate and were not mass-reformatted.
+
+Preview axe runs all requested WCAG 2/2.1/2.2 A/AA tagged rules on the exact serialized preview DOM in an isolated test page with original CSP and network blocked: Chromium's disabled-script sandbox also blocks axe timers. The actual product frame remains sandboxed, opaque and visible throughout; no rule or product sandbox is disabled. UI document audit and actual keyboard/overflow/drag/review assertions complement that DOM check; this is not full WCAG certification or independent security certification.
+
+Screenshots and [observed local checks](evidence/studio/workflow-local-validation.json) are preserved under evidence/studio. Fixtures contain synthetic test data only. Builder/timeline/Outputs cover all three widths and both themes. Separate actual iframe viewport captures document the visible inert staging artifact: Chromium full-page capture can omit off-screen opaque child-frame paint even when its DOM is visible. No screenshot is edited or composited. The actual frame is visibly rendered, sandbox asserted and its exact DOM audited.
+
+[Workflow performance](evidence/studio/workflow-browser-performance.json) measures one governed seven-node workflow with two pinned agents, 20 API reads and 10 usable builder navigations; thresholds are 2,000/3,000 ms P95. This is bounded development evidence, not production capacity/SLA or thousands of executable workflows. Existing large-workspace regression retains 200 blueprints/1,000 histories/5,000 audits/200 divisions. A clean implementation-source repetition is recorded with CI closure; initial modified-source metadata is explicitly labeled.
+
+### Residual boundaries
+
+Manual sequential execution, one terminal human review, bounded text envelopes and one inert renderer are intentional. No Brief/Relay service, recurrence scheduler, parallel/distributed execution or public website deployment is added. Unknown effects require existing operator reconciliation. Paid/live provider behavior, provider monetary hard caps, production load, external penetration review and hosted VPS/IdP/TLS/ACL UAT remain unverified. Normative PDFs are still absent. These limits do not prevent the requested governed three-task staging/review path; hosted production readiness remains BLOCKED independently.
+
+## Historical Agent editing and manual operations delivery
+
 
 Current audit source: `40df9d1f894b257df3a277c4623466d6d03541dc`, equal to origin/development with a clean tree. Dependency workflow [37837626257](https://github.com/aryn-labs/aryn/actions/runs/37837626257) completed-success, 14/14 jobs. Push permission was verified. AGENTS.md, STATUS.md, PRD v1.2, Prompt 02, these four redesign documents, API/contracts, existing positive/negative evidence and CI were reviewed before editing. Earlier workspace evidence below is historical, not CI evidence for this delivery. Normative PDFs remain absent according to aryn-docs/DOCUMENT_INDEX.md; supplied PRD/source references do not substitute for reading missing PDFs.
 
