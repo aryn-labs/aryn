@@ -248,6 +248,38 @@ test("conflict preserves local input, reload restores generation, undo and disca
   await expect(
     page.getByRole("status").filter({ hasText: "generation 3" }),
   ).toBeVisible();
+  const incomplete = '{"unfinished":';
+  await page.getByLabel("Metadata", { exact: true }).fill(incomplete);
+  await expect(
+    page.getByRole("status").filter({ hasText: "Perubahan belum disimpan" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Instructions", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Simpan working copy", exact: true })
+    .click();
+  await expect(page.getByRole("alert").first()).toContainText("metadata");
+  await page.getByRole("link", { name: "Agent Detail", exact: true }).click();
+  await expect(
+    page.getByRole("dialog", { name: "Perubahan belum disimpan" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Tetap di editor" }).click();
+  await page.evaluate(() => window.history.back());
+  await expect(
+    page.getByRole("dialog", { name: "Perubahan belum disimpan" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Tetap di editor" }).click();
+  await page.getByRole("button", { name: "Form lengkap", exact: true }).click();
+  await expect(page.getByLabel("Metadata", { exact: true })).toHaveValue(
+    incomplete,
+  );
+  await page.getByRole("button", { name: "Muat ulang working copy" }).click();
+  await expect(page.getByLabel("Metadata", { exact: true })).toHaveValue("{}");
+  await page.getByRole("button", { name: "Pulihkan input lokal" }).click();
+  await expect(page.getByLabel("Metadata", { exact: true })).toHaveValue(
+    incomplete,
+  );
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await expect(page.getByLabel("Metadata", { exact: true })).toHaveValue("{}");
   await page.getByRole("button", { name: "Buang working copy" }).click();
   await expect
     .poll(

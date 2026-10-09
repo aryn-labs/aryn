@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import {
+  Link,
+  useBlocker,
+  useNavigate,
+  useSearchParams,
+} from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   Background,
@@ -66,15 +71,19 @@ function JsonField({
   value,
   onChange,
   disabled,
+  draft,
+  setDraft,
 }: {
   label: string;
   value: unknown;
   onChange: (value: Record<string, unknown> | null) => void;
   disabled: boolean;
+  draft?: string;
+  setDraft: (text?: string) => void;
 }) {
-  const [text, setText] = useState(JSON.stringify(value, null, 2));
-  const [error, setError] = useState("");
-  useEffect(() => setText(JSON.stringify(value, null, 2)), [value]);
+  const text = draft ?? JSON.stringify(value, null, 2);
+  const error =
+    draft === undefined ? "" : "JSON belum valid; input lokal belum disimpan.";
   return (
     <label>
       {label}
@@ -84,7 +93,6 @@ function JsonField({
         rows={8}
         value={text}
         onChange={(e) => {
-          setText(e.target.value);
           try {
             const parsed: unknown = JSON.parse(e.target.value);
             if (
@@ -92,10 +100,10 @@ function JsonField({
               (typeof parsed !== "object" || Array.isArray(parsed))
             )
               throw Error("Gunakan object JSON atau null.");
-            setError("");
+            setDraft(undefined);
             onChange(parsed as Record<string, unknown> | null);
           } catch {
-            setError("JSON belum valid; nilai tersimpan belum berubah.");
+            setDraft(e.target.value);
           }
         }}
         aria-invalid={!!error}
@@ -111,12 +119,16 @@ function SectionFields({
   update,
   disabled,
   models,
+  jsonDrafts,
+  setJsonDraft,
 }: {
   section: Section;
   value: AgentDraft;
   update: (value: AgentDraft) => void;
   disabled: boolean;
   models: Shared["workspace"]["models"];
+  jsonDrafts: Record<string, string>;
+  setJsonDraft: (field: string, text?: string) => void;
 }) {
   const scalar = (
     key: "version_number" | "role" | "objective" | "owner" | "system_prompt",
@@ -157,6 +169,8 @@ function SectionFields({
         {scalar("owner", "Owner")}
         <JsonField
           label="Metadata"
+          draft={jsonDrafts.metadata}
+          setDraft={(text) => setJsonDraft("metadata", text)}
           value={value.metadata}
           onChange={(metadata) =>
             update({ ...value, metadata: metadata || {} })
@@ -244,6 +258,8 @@ function SectionFields({
               value={fieldValue}
               onChange={change}
               disabled={locked}
+              draft={jsonDrafts[`${key}.${field}`]}
+              setDraft={(text) => setJsonDraft(`${key}.${field}`, text)}
             />
           );
         if (Array.isArray(fieldValue))
@@ -371,8 +387,18 @@ export function AgentBuilder({
   const [inspector, setInspector] = useState(true);
   const [history, setHistory] = useState<AgentDraft[]>([]);
   const [error, setError] = useState("");
-  const [nextRoute, setNextRoute] = useState("");
-  const [recovery, setRecovery] = useState<AgentDraft | null>(null);
+  const [jsonDrafts, setJsonDrafts] = useState<Record<string, string>>({});
+  const [recovery, setRecovery] = useState<{
+    definition: AgentDraft;
+    jsonDrafts: Record<string, string>;
+  } | null>(null);
+  const setJsonDraft = (field: string, text?: string) =>
+    setJsonDrafts((current) => {
+      const next = { ...current };
+      if (text === undefined) delete next[field];
+      else next[field] = text;
+      return next;
+    });
   const [layoutDirty, setLayoutDirty] = useState(false);
   const viewport = useRef<Viewport>({ x: 0, y: 0, zoom: 1 });
   const initialized = useRef(false);
@@ -391,8 +417,17 @@ export function AgentBuilder({
       },
     })),
   );
-  const dirty = serializeDefinition(value) !== saved;
-  const writable = !!data.permissions["version:create"] && !pending;
+  const dirty =
+    serializeDefinition(value) !== saved || Object.keys(jsonDrafts).length > 0;
+  const editable = !!data.permissions["version:create"];
+  const writable = editable && !pending;
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      dirty &&
+      editable &&
+      (currentLocation.pathname !== nextLocation.pathname ||
+        currentLocation.search !== nextLocation.search),
+  );
   useEffect(() => {
     if (!working.data || initialized.current) return;
     const definition = working.data.definition || value;
@@ -443,44 +478,24 @@ export function AgentBuilder({
   }, [section, value, setNodes]);
   useEffect(() => {
     const unload = (event: BeforeUnloadEvent) => {
-      if (dirty && writable) {
+      if (dirty && editable) {
         event.preventDefault();
         event.returnValue = "";
       }
     };
-    const click = (event: MouseEvent) => {
-      const anchor = (event.target as Element)?.closest(
-        "a[href]",
-      ) as HTMLAnchorElement | null;
-      if (
-        dirty &&
-        writable &&
-        anchor &&
-        anchor.origin === window.location.origin &&
-        anchor.pathname !== window.location.pathname &&
-        !event.ctrlKey &&
-        !event.metaKey
-      ) {
-        event.preventDefault();
-        event.stopPropagation();
-        setNextRoute(anchor.pathname + anchor.search);
-      }
-    };
     const scopeChange = (event: Event) => {
-      if (dirty && writable) {
+      if (dirty && editable) {
         event.preventDefault();
         setError("Simpan atau buang perubahan sebelum mengganti proyek.");
       }
     };
     window.addEventListener("beforeunload", unload);
-    document.addEventListener("click", click, true);
     window.addEventListener("aryn:scope-change", scopeChange);
     return () => {
       window.removeEventListener("beforeunload", unload);
-      document.removeEventListener("click", click, true);
       window.removeEventListener("aryn:scope-change", scopeChange);
     };
-  }, [dirty, writable]);
+  }, [dirty, editable]);
   const update = (next: AgentDraft) => {
     setHistory((current) => [...current.slice(-49), value]);
     setValue(next);
@@ -488,12 +503,10 @@ export function AgentBuilder({
   };
   const save = async () => {
     const errors = validateDraft(value);
-    if (
-      document.querySelector(
-        '.agent-editor textarea[aria-invalid="true"], .editor-full-form textarea[aria-invalid="true"]',
-      )
-    )
-      errors.push("Perbaiki JSON schema sebelum menyimpan.");
+    if (Object.keys(jsonDrafts).length)
+      errors.push(
+        `Perbaiki JSON sebelum menyimpan: ${Object.keys(jsonDrafts).join(", ")}.`,
+      );
     if (
       data.versions.some(
         (version) => version.version_number === value.version_number,
@@ -520,13 +533,13 @@ export function AgentBuilder({
       setError("");
       return true;
     } catch (failure) {
-      setRecovery(value);
+      setRecovery({ definition: value, jsonDrafts });
       setError((failure as Error).message);
       return false;
     }
   };
   const reload = async () => {
-    setRecovery(value);
+    setRecovery({ definition: value, jsonDrafts });
     const response = await working.refetch();
     if (response.data) {
       setGeneration(response.data.generation);
@@ -538,6 +551,7 @@ export function AgentBuilder({
         setSaved("");
       }
       setHistory([]);
+      setJsonDrafts({});
     }
   };
   if (working.error || layout.error)
@@ -568,8 +582,14 @@ export function AgentBuilder({
         </Button>
         <Button
           variant="secondary"
-          disabled={!writable || !history.length}
+          disabled={
+            !writable || (!history.length && !Object.keys(jsonDrafts).length)
+          }
           onClick={() => {
+            if (Object.keys(jsonDrafts).length) {
+              setJsonDrafts({});
+              return;
+            }
             setValue(history.at(-1)!);
             setHistory(history.slice(0, -1));
           }}
@@ -619,7 +639,8 @@ export function AgentBuilder({
             variant="secondary"
             disabled={!writable}
             onClick={() => {
-              setValue(recovery);
+              setValue(recovery.definition);
+              setJsonDrafts(recovery.jsonDrafts);
               setRecovery(null);
             }}
           >
@@ -640,6 +661,7 @@ export function AgentBuilder({
               setValue(draftDefinition(blueprint, source));
               setSaved("");
               setHistory([]);
+              setJsonDrafts({});
             } catch (failure) {
               setError((failure as Error).message);
             }
@@ -659,6 +681,8 @@ export function AgentBuilder({
                 update={update}
                 disabled={!writable}
                 models={workspace.models}
+                jsonDrafts={jsonDrafts}
+                setJsonDraft={setJsonDraft}
               />
             </fieldset>
           ))}
@@ -728,6 +752,8 @@ export function AgentBuilder({
                   update={update}
                   disabled={!writable}
                   models={workspace.models}
+                  jsonDrafts={jsonDrafts}
+                  setJsonDraft={setJsonDraft}
                 />
               </aside>
             )}
@@ -764,9 +790,9 @@ export function AgentBuilder({
         </>
       )}
       <Modal
-        open={!!nextRoute}
+        open={blocker.state === "blocked"}
         onOpenChange={(open) => {
-          if (!open) setNextRoute("");
+          if (!open) blocker.reset?.();
         }}
         title="Perubahan belum disimpan"
         description="Pilih tindakan sebelum meninggalkan editor."
@@ -774,15 +800,15 @@ export function AgentBuilder({
         <div className="editor-toolbar">
           <Button
             onClick={async () => {
-              if (await save()) navigate(nextRoute);
+              if (await save()) blocker.proceed?.();
             }}
           >
             Simpan dan lanjutkan
           </Button>
-          <Button variant="secondary" onClick={() => navigate(nextRoute)}>
+          <Button variant="secondary" onClick={() => blocker.proceed?.()}>
             Tinggalkan input lokal
           </Button>
-          <Button variant="ghost" onClick={() => setNextRoute("")}>
+          <Button variant="ghost" onClick={() => blocker.reset?.()}>
             Tetap di editor
           </Button>
         </div>

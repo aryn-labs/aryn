@@ -1,7 +1,7 @@
 {
-  "source_sha": "40df9d1f894b257df3a277c4623466d6d03541dc",
+  "source_sha": "7bfab885dd65b23c0146e08acbae989764b33e2c",
   "source_modified": true,
-  "source_context": "uncommitted Agent editing implementation; before the final activation-history read strengthening, which was separately rerun",
+  "source_context": "uncommitted editor JSON preservation and navigation corrections on the verified implementation",
   "environment": "Windows 11, Chromium, isolated HTTP API/Core/runtime/database per test",
   "suite": {
     "total": 27,
@@ -19,35 +19,35 @@
       "divisions": 200
     },
     "navigation": {
-      "p50_ms": 203.55449999996927,
-      "p95_ms": 357.16070000000764
+      "p50_ms": 214.15690000000177,
+      "p95_ms": 363.3175999999512
     },
     "summary": {
-      "p50_ms": 56.18959999998333,
-      "p95_ms": 74.87729999999283
+      "p50_ms": 54.74690000002738,
+      "p95_ms": 68.42469999997411
     },
     "environment": "win32"
   },
   "resource_navigation": [
     {
       "path": "/factory",
-      "milliseconds": 982.0598000000464
+      "milliseconds": 984.7420000000275
     },
     {
       "path": "/governance",
-      "milliseconds": 930.0262999999686
+      "milliseconds": 999.9341000000131
     },
     {
       "path": "/runs",
-      "milliseconds": 934.1220000000321
+      "milliseconds": 953.7766999999876
     },
     {
       "path": "/approvals",
-      "milliseconds": 929.9618000000482
+      "milliseconds": 951.525100000028
     },
     {
       "path": "/operations",
-      "milliseconds": 929.579299999983
+      "milliseconds": 953.045999999973
     }
   ],
   "resource_samples_per_route": 1

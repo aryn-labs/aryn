@@ -558,7 +558,7 @@ export function App() {
             </>
           )}
         </div>
-        <nav aria-label="Navigasi utama">
+        <nav aria-label="Navigasi utama" tabIndex={0}>
           {[...new Set(navigation.map((item) => item.group))].map((group) => (
             <div className="nav-group" key={group}>
               <div className="nav-caption">{group}</div>

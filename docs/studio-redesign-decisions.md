@@ -11,6 +11,8 @@ Reuse bounded resource reads for registries/history/audit, and add a scoped life
 Implementation source: `80bac7dfa59bd27a6ac1e7e5493f11285b625b2d`. Current source workflow: [ARYN Quality 37835952417](https://github.com/aryn-labs/aryn/actions/runs/37835952417); terminal completed/success, 14/14 jobs; evidence-only closure is verified separately before the final report. Subsequent evidence-only commits do not change this source.
 Source baseline: `3a8ddb69b855ea37d1a33721c6c57a02f14ad881`. 9 October 2026.
 
+Unparsed JSON is retained only in editor memory, participates in dirty state, blocks candidate/save even when its section is hidden, and survives section/form changes plus explicit reload/restore. RouterProvider/useBlocker guards in-app links and browser Back/Forward; beforeunload covers document departure, and project changes retain the explicit scope guard. Validation does not silently replace incomplete input with the previous valid canonical value. The complete definition remains the only persisted working-copy payload.
+
 ## Historical workspace decisions
 
 The preceding workspace source/CI reference is historical. Current implementation source, exact-SHA CI and residuals are recorded in [delivery evidence](studio-redesign-progress.md).
