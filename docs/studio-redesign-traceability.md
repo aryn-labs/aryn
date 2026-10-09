@@ -2,7 +2,7 @@
 
 ## Current comprehensive acceptance
 
-The complete 38-row current ST/official-reference → source/API/storage → positive/negative proof matrix is maintained in [Studio validation](studio-redesign-validation.md). It supersedes historical PLANNED and future-prompt statuses below. Current aggregate result remains UNVERIFIED until full exact-SHA CI is terminal.
+The complete 38-row current ST/official-reference → source/API/storage → positive/negative proof matrix is maintained in [Studio validation](studio-redesign-validation.md). It supersedes historical PLANNED and future-prompt statuses below. All 38 current rows are PASS at implementation `0e15e8d8689d4b6c2d0af9ea835c9d3063b9e2f1`, terminal ARYN Quality 37965101645 (14/14). Downloaded artifacts prove complete cross-platform backend coverage and all domain/negative/browser/native gates. The final checkpoint is separately verified on its own exact HEAD before reporting. Hosted deployment and missing PDF-specific compliance remain independently NOT VERIFIED.
 
 ## Evidence and recovery acceptance
 

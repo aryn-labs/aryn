@@ -1,0 +1,1571 @@
+{
+  "sha": "0e15e8d8689d4b6c2d0af9ea835c9d3063b9e2f1",
+  "remote_development_matches": true,
+  "main_unchanged": true,
+  "working_tree_clean_at_verification": true,
+  "ci": {
+    "conclusion": "success",
+    "createdAt": "2026-10-09T17:16:31Z",
+    "databaseId": 37965101645,
+    "event": "push",
+    "headBranch": "development",
+    "headSha": "0e15e8d8689d4b6c2d0af9ea835c9d3063b9e2f1",
+    "jobs": [
+      {
+        "completedAt": "2026-10-09T17:20:07Z",
+        "conclusion": "success",
+        "databaseId": 113937356920,
+        "name": "Browser E2E (1/3)",
+        "startedAt": "2026-10-09T17:16:33Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-10-09T17:16:36Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-10-09T17:16:34Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:38Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+            "number": 2,
+            "startedAt": "2026-10-09T17:16:36Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:41Z",
+            "conclusion": "success",
+            "name": "Run astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4",
+            "number": 3,
+            "startedAt": "2026-10-09T17:16:38Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:42Z",
+            "conclusion": "success",
+            "name": "Run actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38",
+            "number": 4,
+            "startedAt": "2026-10-09T17:16:41Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:47Z",
+            "conclusion": "success",
+            "name": "Run uv sync --frozen --extra dev",
+            "number": 5,
+            "startedAt": "2026-10-09T17:16:42Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:17:17Z",
+            "conclusion": "success",
+            "name": "Run npm ci --ignore-scripts",
+            "number": 6,
+            "startedAt": "2026-10-09T17:16:47Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:20:04Z",
+            "conclusion": "success",
+            "name": "Fresh API/Core/database per browser case",
+            "number": 7,
+            "startedAt": "2026-10-09T17:17:17Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:20:04Z",
+            "conclusion": "skipped",
+            "name": "Run actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+            "number": 8,
+            "startedAt": "2026-10-09T17:20:04Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:20:04Z",
+            "conclusion": "success",
+            "name": "Post Run actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38",
+            "number": 14,
+            "startedAt": "2026-10-09T17:20:04Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:20:04Z",
+            "conclusion": "success",
+            "name": "Post Run astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4",
+            "number": 15,
+            "startedAt": "2026-10-09T17:20:04Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:20:05Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+            "number": 16,
+            "startedAt": "2026-10-09T17:20:04Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:20:05Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 17,
+            "startedAt": "2026-10-09T17:20:05Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/aryn-labs/aryn/actions/runs/37965101645/job/113937356920"
+      },
+      {
+        "completedAt": "2026-10-09T17:17:03Z",
+        "conclusion": "success",
+        "databaseId": 113937357238,
+        "name": "Security and Configuration",
+        "startedAt": "2026-10-09T17:16:34Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-10-09T17:16:37Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-10-09T17:16:34Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:41Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+            "number": 2,
+            "startedAt": "2026-10-09T17:16:37Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:43Z",
+            "conclusion": "success",
+            "name": "Run astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4",
+            "number": 3,
+            "startedAt": "2026-10-09T17:16:41Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:43Z",
+            "conclusion": "success",
+            "name": "Run actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38",
+            "number": 4,
+            "startedAt": "2026-10-09T17:16:43Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:46Z",
+            "conclusion": "success",
+            "name": "Run uv sync --frozen --extra dev",
+            "number": 5,
+            "startedAt": "2026-10-09T17:16:43Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:47Z",
+            "conclusion": "success",
+            "name": "Run uv run --frozen --extra dev python scripts/install_quality_tools.py",
+            "number": 6,
+            "startedAt": "2026-10-09T17:16:46Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:47Z",
+            "conclusion": "success",
+            "name": "Run .local/quality-tools/actionlint",
+            "number": 7,
+            "startedAt": "2026-10-09T17:16:47Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:48Z",
+            "conclusion": "success",
+            "name": "Run uv run --frozen --extra dev python scripts/check_repository.py",
+            "number": 8,
+            "startedAt": "2026-10-09T17:16:47Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:48Z",
+            "conclusion": "success",
+            "name": "Entire Git history secret scan (redacted)",
+            "number": 9,
+            "startedAt": "2026-10-09T17:16:48Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:48Z",
+            "conclusion": "success",
+            "name": "Lockfile must match current Python manifest",
+            "number": 10,
+            "startedAt": "2026-10-09T17:16:48Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:50Z",
+            "conclusion": "success",
+            "name": "Python dependencies (any known advisory blocks)",
+            "number": 11,
+            "startedAt": "2026-10-09T17:16:48Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:50Z",
+            "conclusion": "success",
+            "name": "Run uv run --frozen --extra dev python scripts/check_dependency_audit.py .local/python-audit.json",
+            "number": 12,
+            "startedAt": "2026-10-09T17:16:50Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:57Z",
+            "conclusion": "success",
+            "name": "Node dependencies (high/critical block; all severities reported)",
+            "number": 13,
+            "startedAt": "2026-10-09T17:16:50Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:58Z",
+            "conclusion": "success",
+            "name": "Run actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+            "number": 14,
+            "startedAt": "2026-10-09T17:16:57Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:58Z",
+            "conclusion": "success",
+            "name": "Post Run actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38",
+            "number": 26,
+            "startedAt": "2026-10-09T17:16:58Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:17:00Z",
+            "conclusion": "success",
+            "name": "Post Run astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4",
+            "number": 27,
+            "startedAt": "2026-10-09T17:16:58Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:17:00Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+            "number": 28,
+            "startedAt": "2026-10-09T17:17:00Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:17:00Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 29,
+            "startedAt": "2026-10-09T17:17:00Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/aryn-labs/aryn/actions/runs/37965101645/job/113937357238"
+      },
+      {
+        "completedAt": "2026-10-09T17:17:16Z",
+        "conclusion": "success",
+        "databaseId": 113937357262,
+        "name": "Frontend Quality",
+        "startedAt": "2026-10-09T17:16:33Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-10-09T17:16:35Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-10-09T17:16:34Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:38Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+            "number": 2,
+            "startedAt": "2026-10-09T17:16:35Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:38Z",
+            "conclusion": "success",
+            "name": "Run actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38",
+            "number": 3,
+            "startedAt": "2026-10-09T17:16:38Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:45Z",
+            "conclusion": "success",
+            "name": "Run npm ci --ignore-scripts",
+            "number": 4,
+            "startedAt": "2026-10-09T17:16:38Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:49Z",
+            "conclusion": "success",
+            "name": "Run npm run format:check",
+            "number": 5,
+            "startedAt": "2026-10-09T17:16:45Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:17:06Z",
+            "conclusion": "success",
+            "name": "Run npm test",
+            "number": 6,
+            "startedAt": "2026-10-09T17:16:49Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:17:06Z",
+            "conclusion": "success",
+            "name": "Run npm run typecheck",
+            "number": 7,
+            "startedAt": "2026-10-09T17:17:06Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:17:13Z",
+            "conclusion": "success",
+            "name": "Run npm run build",
+            "number": 8,
+            "startedAt": "2026-10-09T17:17:06Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:17:13Z",
+            "conclusion": "success",
+            "name": "Post Run actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38",
+            "number": 15,
+            "startedAt": "2026-10-09T17:17:13Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:17:13Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+            "number": 16,
+            "startedAt": "2026-10-09T17:17:13Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:17:13Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 17,
+            "startedAt": "2026-10-09T17:17:13Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/aryn-labs/aryn/actions/runs/37965101645/job/113937357262"
+      },
+      {
+        "completedAt": "2026-10-09T17:20:21Z",
+        "conclusion": "success",
+        "databaseId": 113937357314,
+        "name": "PostgreSQL Integration",
+        "startedAt": "2026-10-09T17:16:34Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-10-09T17:16:37Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-10-09T17:16:34Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:48Z",
+            "conclusion": "success",
+            "name": "Initialize containers",
+            "number": 2,
+            "startedAt": "2026-10-09T17:16:37Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:49Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+            "number": 3,
+            "startedAt": "2026-10-09T17:16:48Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:51Z",
+            "conclusion": "success",
+            "name": "Run astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4",
+            "number": 4,
+            "startedAt": "2026-10-09T17:16:49Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:54Z",
+            "conclusion": "success",
+            "name": "Run uv sync --frozen --extra dev",
+            "number": 5,
+            "startedAt": "2026-10-09T17:16:51Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:20:16Z",
+            "conclusion": "success",
+            "name": "Run uv run --frozen --extra dev pytest tests/postgresql -q --junitxml=.local/postgresql.xml",
+            "number": 6,
+            "startedAt": "2026-10-09T17:16:54Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:20:17Z",
+            "conclusion": "success",
+            "name": "Run actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+            "number": 7,
+            "startedAt": "2026-10-09T17:20:16Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:20:18Z",
+            "conclusion": "success",
+            "name": "Post Run astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4",
+            "number": 12,
+            "startedAt": "2026-10-09T17:20:17Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:20:18Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+            "number": 13,
+            "startedAt": "2026-10-09T17:20:18Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:20:19Z",
+            "conclusion": "success",
+            "name": "Stop containers",
+            "number": 14,
+            "startedAt": "2026-10-09T17:20:18Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:20:19Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 15,
+            "startedAt": "2026-10-09T17:20:19Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/aryn-labs/aryn/actions/runs/37965101645/job/113937357314"
+      },
+      {
+        "completedAt": "2026-10-09T17:21:27Z",
+        "conclusion": "success",
+        "databaseId": 113937357404,
+        "name": "Browser E2E (2/3)",
+        "startedAt": "2026-10-09T17:16:33Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-10-09T17:16:37Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-10-09T17:16:34Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:40Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+            "number": 2,
+            "startedAt": "2026-10-09T17:16:37Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:44Z",
+            "conclusion": "success",
+            "name": "Run astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4",
+            "number": 3,
+            "startedAt": "2026-10-09T17:16:40Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:45Z",
+            "conclusion": "success",
+            "name": "Run actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38",
+            "number": 4,
+            "startedAt": "2026-10-09T17:16:44Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:52Z",
+            "conclusion": "success",
+            "name": "Run uv sync --frozen --extra dev",
+            "number": 5,
+            "startedAt": "2026-10-09T17:16:45Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:17:27Z",
+            "conclusion": "success",
+            "name": "Run npm ci --ignore-scripts",
+            "number": 6,
+            "startedAt": "2026-10-09T17:16:52Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:21:23Z",
+            "conclusion": "success",
+            "name": "Fresh API/Core/database per browser case",
+            "number": 7,
+            "startedAt": "2026-10-09T17:17:27Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:21:23Z",
+            "conclusion": "skipped",
+            "name": "Run actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+            "number": 8,
+            "startedAt": "2026-10-09T17:21:23Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:21:23Z",
+            "conclusion": "success",
+            "name": "Post Run actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38",
+            "number": 14,
+            "startedAt": "2026-10-09T17:21:23Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:21:24Z",
+            "conclusion": "success",
+            "name": "Post Run astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4",
+            "number": 15,
+            "startedAt": "2026-10-09T17:21:24Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:21:25Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+            "number": 16,
+            "startedAt": "2026-10-09T17:21:24Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:21:25Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 17,
+            "startedAt": "2026-10-09T17:21:25Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/aryn-labs/aryn/actions/runs/37965101645/job/113937357404"
+      },
+      {
+        "completedAt": "2026-10-09T17:20:33Z",
+        "conclusion": "success",
+        "databaseId": 113937357465,
+        "name": "Browser E2E (3/3)",
+        "startedAt": "2026-10-09T17:16:33Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-10-09T17:16:36Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-10-09T17:16:34Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:39Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+            "number": 2,
+            "startedAt": "2026-10-09T17:16:36Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:43Z",
+            "conclusion": "success",
+            "name": "Run astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4",
+            "number": 3,
+            "startedAt": "2026-10-09T17:16:39Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:43Z",
+            "conclusion": "success",
+            "name": "Run actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38",
+            "number": 4,
+            "startedAt": "2026-10-09T17:16:43Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:49Z",
+            "conclusion": "success",
+            "name": "Run uv sync --frozen --extra dev",
+            "number": 5,
+            "startedAt": "2026-10-09T17:16:43Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:17:29Z",
+            "conclusion": "success",
+            "name": "Run npm ci --ignore-scripts",
+            "number": 6,
+            "startedAt": "2026-10-09T17:16:49Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:20:30Z",
+            "conclusion": "success",
+            "name": "Fresh API/Core/database per browser case",
+            "number": 7,
+            "startedAt": "2026-10-09T17:17:29Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:20:30Z",
+            "conclusion": "skipped",
+            "name": "Run actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+            "number": 8,
+            "startedAt": "2026-10-09T17:20:30Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:20:30Z",
+            "conclusion": "success",
+            "name": "Post Run actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38",
+            "number": 14,
+            "startedAt": "2026-10-09T17:20:30Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:20:31Z",
+            "conclusion": "success",
+            "name": "Post Run astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4",
+            "number": 15,
+            "startedAt": "2026-10-09T17:20:30Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:20:31Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+            "number": 16,
+            "startedAt": "2026-10-09T17:20:31Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:20:31Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 17,
+            "startedAt": "2026-10-09T17:20:31Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/aryn-labs/aryn/actions/runs/37965101645/job/113937357465"
+      },
+      {
+        "completedAt": "2026-10-09T17:17:07Z",
+        "conclusion": "success",
+        "databaseId": 113937358057,
+        "name": "Native Hermes Boundary",
+        "startedAt": "2026-10-09T17:16:34Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-10-09T17:16:37Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-10-09T17:16:34Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:40Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+            "number": 2,
+            "startedAt": "2026-10-09T17:16:37Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:42Z",
+            "conclusion": "success",
+            "name": "Run astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4",
+            "number": 3,
+            "startedAt": "2026-10-09T17:16:40Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:44Z",
+            "conclusion": "success",
+            "name": "Run uv sync --frozen --extra dev",
+            "number": 4,
+            "startedAt": "2026-10-09T17:16:42Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:49Z",
+            "conclusion": "success",
+            "name": "Exact native runtime checkout",
+            "number": 5,
+            "startedAt": "2026-10-09T17:16:44Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:51Z",
+            "conclusion": "success",
+            "name": "Native dependency lock (no tool/provider extras)",
+            "number": 6,
+            "startedAt": "2026-10-09T17:16:49Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:17:01Z",
+            "conclusion": "success",
+            "name": "Actual route table and network-denied gateway execution",
+            "number": 7,
+            "startedAt": "2026-10-09T17:16:51Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:17:02Z",
+            "conclusion": "success",
+            "name": "Native runtime dependency vulnerabilities",
+            "number": 8,
+            "startedAt": "2026-10-09T17:17:01Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:17:02Z",
+            "conclusion": "success",
+            "name": "Run uv run --frozen --extra dev python scripts/check_dependency_audit.py .local/native-python-audit.json --native --site-packages .local/hermes-source/.venv/lib/python3.14/site-packages",
+            "number": 9,
+            "startedAt": "2026-10-09T17:17:02Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:17:03Z",
+            "conclusion": "success",
+            "name": "Run actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+            "number": 10,
+            "startedAt": "2026-10-09T17:17:02Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:17:03Z",
+            "conclusion": "success",
+            "name": "Post Exact native runtime checkout",
+            "number": 18,
+            "startedAt": "2026-10-09T17:17:03Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:17:04Z",
+            "conclusion": "success",
+            "name": "Post Run astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4",
+            "number": 19,
+            "startedAt": "2026-10-09T17:17:03Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:17:05Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+            "number": 20,
+            "startedAt": "2026-10-09T17:17:04Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:17:05Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 21,
+            "startedAt": "2026-10-09T17:17:05Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/aryn-labs/aryn/actions/runs/37965101645/job/113937358057"
+      },
+      {
+        "completedAt": "2026-10-09T17:23:55Z",
+        "conclusion": "success",
+        "databaseId": 113937358121,
+        "name": "Backend Quality (ubuntu-24.04)",
+        "startedAt": "2026-10-09T17:16:33Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-10-09T17:16:35Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-10-09T17:16:34Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:37Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+            "number": 2,
+            "startedAt": "2026-10-09T17:16:35Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:39Z",
+            "conclusion": "success",
+            "name": "Run astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4",
+            "number": 3,
+            "startedAt": "2026-10-09T17:16:37Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:42Z",
+            "conclusion": "success",
+            "name": "Run uv sync --frozen --extra dev",
+            "number": 4,
+            "startedAt": "2026-10-09T17:16:39Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:42Z",
+            "conclusion": "success",
+            "name": "Run uv run --frozen --extra dev ruff check .",
+            "number": 5,
+            "startedAt": "2026-10-09T17:16:42Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:23:52Z",
+            "conclusion": "success",
+            "name": "All offline backend and security regressions",
+            "number": 6,
+            "startedAt": "2026-10-09T17:16:42Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:23:52Z",
+            "conclusion": "success",
+            "name": "Run actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+            "number": 7,
+            "startedAt": "2026-10-09T17:23:52Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:23:53Z",
+            "conclusion": "success",
+            "name": "Post Run astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4",
+            "number": 13,
+            "startedAt": "2026-10-09T17:23:52Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:23:53Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+            "number": 14,
+            "startedAt": "2026-10-09T17:23:53Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:23:53Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 15,
+            "startedAt": "2026-10-09T17:23:53Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/aryn-labs/aryn/actions/runs/37965101645/job/113937358121"
+      },
+      {
+        "completedAt": "2026-10-09T17:25:31Z",
+        "conclusion": "success",
+        "databaseId": 113937358124,
+        "name": "Backend Quality (windows-2025, 2/4)",
+        "startedAt": "2026-10-09T17:16:33Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-10-09T17:16:35Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-10-09T17:16:34Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:41Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+            "number": 2,
+            "startedAt": "2026-10-09T17:16:35Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:45Z",
+            "conclusion": "success",
+            "name": "Run astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4",
+            "number": 3,
+            "startedAt": "2026-10-09T17:16:41Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:48Z",
+            "conclusion": "success",
+            "name": "Run uv sync --frozen --extra dev",
+            "number": 4,
+            "startedAt": "2026-10-09T17:16:45Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:49Z",
+            "conclusion": "success",
+            "name": "Run uv run --frozen --extra dev ruff check .",
+            "number": 5,
+            "startedAt": "2026-10-09T17:16:48Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:25:25Z",
+            "conclusion": "success",
+            "name": "All offline backend and security regressions",
+            "number": 6,
+            "startedAt": "2026-10-09T17:16:49Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:25:26Z",
+            "conclusion": "success",
+            "name": "Run actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+            "number": 7,
+            "startedAt": "2026-10-09T17:25:25Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:25:28Z",
+            "conclusion": "success",
+            "name": "Post Run astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4",
+            "number": 13,
+            "startedAt": "2026-10-09T17:25:26Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:25:29Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+            "number": 14,
+            "startedAt": "2026-10-09T17:25:28Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:25:29Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 15,
+            "startedAt": "2026-10-09T17:25:29Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/aryn-labs/aryn/actions/runs/37965101645/job/113937358124"
+      },
+      {
+        "completedAt": "2026-10-09T17:26:07Z",
+        "conclusion": "success",
+        "databaseId": 113937358151,
+        "name": "Backend Quality (windows-2025, 3/4)",
+        "startedAt": "2026-10-09T17:16:33Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-10-09T17:16:36Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-10-09T17:16:34Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:45Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+            "number": 2,
+            "startedAt": "2026-10-09T17:16:36Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:49Z",
+            "conclusion": "success",
+            "name": "Run astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4",
+            "number": 3,
+            "startedAt": "2026-10-09T17:16:45Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:56Z",
+            "conclusion": "success",
+            "name": "Run uv sync --frozen --extra dev",
+            "number": 4,
+            "startedAt": "2026-10-09T17:16:49Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:57Z",
+            "conclusion": "success",
+            "name": "Run uv run --frozen --extra dev ruff check .",
+            "number": 5,
+            "startedAt": "2026-10-09T17:16:56Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:26:01Z",
+            "conclusion": "success",
+            "name": "All offline backend and security regressions",
+            "number": 6,
+            "startedAt": "2026-10-09T17:16:57Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:26:02Z",
+            "conclusion": "success",
+            "name": "Run actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+            "number": 7,
+            "startedAt": "2026-10-09T17:26:01Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:26:03Z",
+            "conclusion": "success",
+            "name": "Post Run astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4",
+            "number": 13,
+            "startedAt": "2026-10-09T17:26:02Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:26:05Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+            "number": 14,
+            "startedAt": "2026-10-09T17:26:03Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:26:05Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 15,
+            "startedAt": "2026-10-09T17:26:05Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/aryn-labs/aryn/actions/runs/37965101645/job/113937358151"
+      },
+      {
+        "completedAt": "2026-10-09T17:24:44Z",
+        "conclusion": "success",
+        "databaseId": 113937358201,
+        "name": "Backend Quality (windows-2025, 4/4)",
+        "startedAt": "2026-10-09T17:16:33Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-10-09T17:16:36Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-10-09T17:16:35Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:44Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+            "number": 2,
+            "startedAt": "2026-10-09T17:16:36Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:47Z",
+            "conclusion": "success",
+            "name": "Run astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4",
+            "number": 3,
+            "startedAt": "2026-10-09T17:16:44Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:53Z",
+            "conclusion": "success",
+            "name": "Run uv sync --frozen --extra dev",
+            "number": 4,
+            "startedAt": "2026-10-09T17:16:47Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:54Z",
+            "conclusion": "success",
+            "name": "Run uv run --frozen --extra dev ruff check .",
+            "number": 5,
+            "startedAt": "2026-10-09T17:16:53Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:24:37Z",
+            "conclusion": "success",
+            "name": "All offline backend and security regressions",
+            "number": 6,
+            "startedAt": "2026-10-09T17:16:54Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:24:38Z",
+            "conclusion": "success",
+            "name": "Run actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+            "number": 7,
+            "startedAt": "2026-10-09T17:24:37Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:24:40Z",
+            "conclusion": "success",
+            "name": "Post Run astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4",
+            "number": 13,
+            "startedAt": "2026-10-09T17:24:38Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:24:42Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+            "number": 14,
+            "startedAt": "2026-10-09T17:24:40Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:24:42Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 15,
+            "startedAt": "2026-10-09T17:24:42Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/aryn-labs/aryn/actions/runs/37965101645/job/113937358201"
+      },
+      {
+        "completedAt": "2026-10-09T17:29:31Z",
+        "conclusion": "success",
+        "databaseId": 113937358316,
+        "name": "Backend Quality (windows-2025, 1/4)",
+        "startedAt": "2026-10-09T17:16:33Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-10-09T17:16:35Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-10-09T17:16:34Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:42Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+            "number": 2,
+            "startedAt": "2026-10-09T17:16:35Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:47Z",
+            "conclusion": "success",
+            "name": "Run astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4",
+            "number": 3,
+            "startedAt": "2026-10-09T17:16:42Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:54Z",
+            "conclusion": "success",
+            "name": "Run uv sync --frozen --extra dev",
+            "number": 4,
+            "startedAt": "2026-10-09T17:16:47Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:16:54Z",
+            "conclusion": "success",
+            "name": "Run uv run --frozen --extra dev ruff check .",
+            "number": 5,
+            "startedAt": "2026-10-09T17:16:54Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:29:24Z",
+            "conclusion": "success",
+            "name": "All offline backend and security regressions",
+            "number": 6,
+            "startedAt": "2026-10-09T17:16:54Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:29:25Z",
+            "conclusion": "success",
+            "name": "Run actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+            "number": 7,
+            "startedAt": "2026-10-09T17:29:24Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:29:27Z",
+            "conclusion": "success",
+            "name": "Post Run astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4",
+            "number": 13,
+            "startedAt": "2026-10-09T17:29:25Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:29:29Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+            "number": 14,
+            "startedAt": "2026-10-09T17:29:27Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:29:29Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 15,
+            "startedAt": "2026-10-09T17:29:29Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/aryn-labs/aryn/actions/runs/37965101645/job/113937358316"
+      },
+      {
+        "completedAt": "2026-10-09T17:29:40Z",
+        "conclusion": "success",
+        "databaseId": 113942533823,
+        "name": "Required Quality Gates",
+        "startedAt": "2026-10-09T17:29:33Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-10-09T17:29:34Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-10-09T17:29:33Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:29:34Z",
+            "conclusion": "success",
+            "name": "Every required gate must succeed",
+            "number": 2,
+            "startedAt": "2026-10-09T17:29:34Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:29:37Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+            "number": 3,
+            "startedAt": "2026-10-09T17:29:34Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:29:38Z",
+            "conclusion": "success",
+            "name": "Run actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
+            "number": 4,
+            "startedAt": "2026-10-09T17:29:37Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:29:38Z",
+            "conclusion": "success",
+            "name": "Run python scripts/check_backend_coverage.py .local/backend-results",
+            "number": 5,
+            "startedAt": "2026-10-09T17:29:38Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:29:38Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+            "number": 10,
+            "startedAt": "2026-10-09T17:29:38Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:29:38Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 11,
+            "startedAt": "2026-10-09T17:29:38Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/aryn-labs/aryn/actions/runs/37965101645/job/113942533823"
+      },
+      {
+        "completedAt": "2026-10-09T17:30:23Z",
+        "conclusion": "success",
+        "databaseId": 113942598221,
+        "name": "Validated Delivery Artifact",
+        "startedAt": "2026-10-09T17:29:43Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-10-09T17:29:46Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-10-09T17:29:44Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:29:50Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+            "number": 2,
+            "startedAt": "2026-10-09T17:29:46Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:29:56Z",
+            "conclusion": "success",
+            "name": "Run astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4",
+            "number": 3,
+            "startedAt": "2026-10-09T17:29:50Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:29:57Z",
+            "conclusion": "success",
+            "name": "Run actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38",
+            "number": 4,
+            "startedAt": "2026-10-09T17:29:56Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:29:59Z",
+            "conclusion": "success",
+            "name": "Run uv sync --frozen --extra dev",
+            "number": 5,
+            "startedAt": "2026-10-09T17:29:57Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:30:13Z",
+            "conclusion": "success",
+            "name": "Run npm ci --ignore-scripts",
+            "number": 6,
+            "startedAt": "2026-10-09T17:29:59Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:30:16Z",
+            "conclusion": "success",
+            "name": "Run uv run --frozen --extra dev python scripts/build_delivery.py",
+            "number": 7,
+            "startedAt": "2026-10-09T17:30:13Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:30:17Z",
+            "conclusion": "success",
+            "name": "Run uv run --frozen --extra dev python scripts/install_quality_tools.py",
+            "number": 8,
+            "startedAt": "2026-10-09T17:30:16Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:30:18Z",
+            "conclusion": "success",
+            "name": "Scan delivery text and unpacked wheel for secrets",
+            "number": 9,
+            "startedAt": "2026-10-09T17:30:17Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:30:19Z",
+            "conclusion": "success",
+            "name": "Run actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+            "number": 10,
+            "startedAt": "2026-10-09T17:30:18Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:30:19Z",
+            "conclusion": "success",
+            "name": "Post Run actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38",
+            "number": 18,
+            "startedAt": "2026-10-09T17:30:19Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:30:20Z",
+            "conclusion": "success",
+            "name": "Post Run astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4",
+            "number": 19,
+            "startedAt": "2026-10-09T17:30:19Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:30:20Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+            "number": 20,
+            "startedAt": "2026-10-09T17:30:20Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-09T17:30:20Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 21,
+            "startedAt": "2026-10-09T17:30:20Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/aryn-labs/aryn/actions/runs/37965101645/job/113942598221"
+      }
+    ],
+    "status": "completed",
+    "updatedAt": "2026-10-09T17:30:24Z",
+    "url": "https://github.com/aryn-labs/aryn/actions/runs/37965101645"
+  },
+  "backend": [
+    {
+      "platform": "posix",
+      "shard": "1/1",
+      "tests": 871,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 23,
+      "passed": 848
+    },
+    {
+      "platform": "nt",
+      "shard": "1/4",
+      "tests": 218,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 3,
+      "passed": 215
+    },
+    {
+      "platform": "nt",
+      "shard": "2/4",
+      "tests": 218,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 1,
+      "passed": 217
+    },
+    {
+      "platform": "nt",
+      "shard": "3/4",
+      "tests": 218,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 1,
+      "passed": 217
+    },
+    {
+      "platform": "nt",
+      "shard": "4/4",
+      "tests": 217,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 1,
+      "passed": 216
+    }
+  ],
+  "postgresql": {
+    "tests": 87,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "passed": 87
+  },
+  "native": {
+    "tests": 1,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "passed": 1
+  },
+  "frontend": {
+    "unit_passed": 101,
+    "format_typecheck_build": "passed"
+  },
+  "browser": [
+    {
+      "job": "Browser E2E (1/3)",
+      "passed": 18
+    },
+    {
+      "job": "Browser E2E (2/3)",
+      "passed": 18
+    },
+    {
+      "job": "Browser E2E (3/3)",
+      "passed": 18
+    }
+  ],
+  "security": {
+    "python_audit": "passed required CI inventory check",
+    "python_audit_distributions": 71,
+    "python_known_vulnerabilities": 0,
+    "node_known_vulnerabilities": 0,
+    "history_and_delivery_secret_scans": "passed required CI jobs",
+    "native_dependency_audit": "passed existing boundary policy"
+  },
+  "delivery": {
+    "sha": "0e15e8d8689d4b6c2d0af9ea835c9d3063b9e2f1",
+    "files_sha256_verified": 38,
+    "required_runtime_files_present": [
+      "packages/contracts/intelligence.py",
+      "modules/core/records.py",
+      "modules/brief/service.py",
+      "modules/relay/service.py",
+      "modules/relay/recovery.py",
+      "modules/bench/replay.py",
+      "services/api/intelligence.py",
+      "database/intelligence_protection.py",
+      "database/migrations/versions/019_intelligence_recovery.py",
+      "packages/contracts/automation.py",
+      "modules/core/automations/service.py",
+      "modules/core/automations/recurrence.py",
+      "modules/core/capabilities.py",
+      "services/api/automations.py",
+      "database/automation_protection.py",
+      "database/migrations/versions/020_core_automations.py"
+    ],
+    "production_deployed": false
+  }
+}

@@ -1,0 +1,179 @@
+{
+  "source_sha": "0e15e8d8689d4b6c2d0af9ea835c9d3063b9e2f1",
+  "source_modified": false,
+  "environment": {
+    "platform": "Windows-11-10.0.26300-SP0",
+    "python": "3.12.12",
+    "processor": "Intel64 Family 6 Model 165 Stepping 2, GenuineIntel",
+    "database": "SQLite disposable",
+    "transport": "FastAPI TestClient; no live provider"
+  },
+  "thresholds_ms": {
+    "summary_p95": 2000,
+    "interactive_navigation_p95": 3000
+  },
+  "datasets": {
+    "small": {
+      "fixture": {
+        "blueprints": 20,
+        "runs": 50,
+        "audits": 200,
+        "divisions": 10
+      },
+      "real_lifecycle": "1 blueprint/version, 4 Bench scenarios, approval, publication, assignment, captured manual run",
+      "summary": {
+        "samples": 20,
+        "p50_ms": 59.96,
+        "p95_ms": 154.84,
+        "max_ms": 154.84
+      },
+      "snapshot": {
+        "samples": 20,
+        "p50_ms": 1004.64,
+        "p95_ms": 1374.18,
+        "max_ms": 1374.18
+      },
+      "project_list": {
+        "samples": 20,
+        "p50_ms": 10.52,
+        "p95_ms": 13.7,
+        "max_ms": 13.7
+      },
+      "blueprints_page": {
+        "samples": 20,
+        "p50_ms": 11.8,
+        "p95_ms": 14.21,
+        "max_ms": 14.21
+      },
+      "versions_page": {
+        "samples": 20,
+        "p50_ms": 129.59,
+        "p95_ms": 166.04,
+        "max_ms": 166.04
+      },
+      "assignments_page": {
+        "samples": 20,
+        "p50_ms": 152.78,
+        "p95_ms": 238.47,
+        "max_ms": 238.47
+      },
+      "evaluations_page": {
+        "samples": 20,
+        "p50_ms": 29.56,
+        "p95_ms": 84.45,
+        "max_ms": 84.45
+      },
+      "approvals_page": {
+        "samples": 20,
+        "p50_ms": 16.04,
+        "p95_ms": 26.56,
+        "max_ms": 26.56
+      },
+      "audits_page": {
+        "samples": 20,
+        "p50_ms": 13.9,
+        "p95_ms": 19.96,
+        "max_ms": 19.96
+      },
+      "runs_page": {
+        "samples": 20,
+        "p50_ms": 15.38,
+        "p95_ms": 119.45,
+        "max_ms": 119.45
+      },
+      "agent_detail": {
+        "samples": 20,
+        "p50_ms": 436.8,
+        "p95_ms": 582.24,
+        "max_ms": 582.24
+      },
+      "execution_console": {
+        "samples": 20,
+        "p50_ms": 529.33,
+        "p95_ms": 815.31,
+        "max_ms": 815.31
+      }
+    },
+    "large": {
+      "fixture": {
+        "blueprints": 200,
+        "runs": 1000,
+        "audits": 5000,
+        "divisions": 200
+      },
+      "real_lifecycle": "1 blueprint/version, 4 Bench scenarios, approval, publication, assignment, captured manual run",
+      "summary": {
+        "samples": 20,
+        "p50_ms": 51.3,
+        "p95_ms": 215.94,
+        "max_ms": 215.94
+      },
+      "snapshot": {
+        "samples": 20,
+        "p50_ms": 6485.06,
+        "p95_ms": 12668.24,
+        "max_ms": 12668.24
+      },
+      "project_list": {
+        "samples": 20,
+        "p50_ms": 14.44,
+        "p95_ms": 15.86,
+        "max_ms": 15.86
+      },
+      "blueprints_page": {
+        "samples": 20,
+        "p50_ms": 14.52,
+        "p95_ms": 17.2,
+        "max_ms": 17.2
+      },
+      "versions_page": {
+        "samples": 20,
+        "p50_ms": 183.07,
+        "p95_ms": 272.1,
+        "max_ms": 272.1
+      },
+      "assignments_page": {
+        "samples": 20,
+        "p50_ms": 218.51,
+        "p95_ms": 381.37,
+        "max_ms": 381.37
+      },
+      "evaluations_page": {
+        "samples": 20,
+        "p50_ms": 31.17,
+        "p95_ms": 34.08,
+        "max_ms": 34.08
+      },
+      "approvals_page": {
+        "samples": 20,
+        "p50_ms": 17.43,
+        "p95_ms": 22.65,
+        "max_ms": 22.65
+      },
+      "audits_page": {
+        "samples": 20,
+        "p50_ms": 15.21,
+        "p95_ms": 18.9,
+        "max_ms": 18.9
+      },
+      "runs_page": {
+        "samples": 20,
+        "p50_ms": 15.25,
+        "p95_ms": 18.37,
+        "max_ms": 18.37
+      },
+      "agent_detail": {
+        "samples": 20,
+        "p50_ms": 642.2,
+        "p95_ms": 819.63,
+        "max_ms": 819.63
+      },
+      "execution_console": {
+        "samples": 20,
+        "p50_ms": 614.04,
+        "p95_ms": 835.2,
+        "max_ms": 835.2
+      }
+    }
+  }
+}

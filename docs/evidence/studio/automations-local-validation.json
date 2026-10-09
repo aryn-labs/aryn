@@ -1,0 +1,104 @@
+{
+  "implementation_sha": "0e15e8d8689d4b6c2d0af9ea835c9d3063b9e2f1",
+  "binding": "Clean-source CI, metrics and captures are independently bound to the implementation SHA. Local full backend ran against the same product source; final CI verifies the committed tree.",
+  "backend": {
+    "command": "uv run --frozen --extra dev pytest -m 'not postgresql' -q --junitxml=.local/automations-backend-final.xml",
+    "passed": 866,
+    "skipped": 5,
+    "postgresql_deselected": 87,
+    "seconds": 1059.94,
+    "skip_details": [
+      {
+        "test": "tests.e2e.test_smoke_end_to_end.test_live_end_to_end_smoke",
+        "reason": "Live model tests require explicit opt-in after owner authorization."
+      },
+      {
+        "test": "tests.integration.test_agent_lifecycle_workflow.test_live_hermes_assigned_research_agent_run",
+        "reason": "Live model tests require explicit opt-in after owner authorization."
+      },
+      {
+        "test": "tests.integration.test_hermes_adapter_integration.test_live_hermes_health",
+        "reason": "Hermes API_SERVER_KEY not found in local environment."
+      },
+      {
+        "test": "tests.integration.test_hermes_adapter_integration.test_live_hermes_capabilities_and_confinement",
+        "reason": "Hermes API_SERVER_KEY not found in local environment."
+      },
+      {
+        "test": "tests.integration.test_hermes_adapter_integration.test_live_hermes_run_lifecycle_and_cancellation",
+        "reason": "Live model tests require explicit opt-in after owner authorization."
+      }
+    ]
+  },
+  "postgresql": {
+    "complete_initial": {
+      "passed": 84,
+      "seconds": 695.96
+    },
+    "final_automation_regressions": 12,
+    "final_division_scope": 1,
+    "exact_source_ci": {
+      "passed": 87,
+      "skipped": 0
+    }
+  },
+  "focused_recurrence_automation": {
+    "passed": 41,
+    "seconds": 125.31
+  },
+  "frontend": {
+    "passed": 101,
+    "files": 18,
+    "seconds": 30.6,
+    "format_typecheck_build": "passed"
+  },
+  "browser": {
+    "first_full": {
+      "passed": 53,
+      "failed": 1,
+      "cause": "Existing navigation axe assertion audited loading view; corrected to await actual Overview heading, with all rules retained."
+    },
+    "clean_final_regression": {
+      "passed": 8,
+      "minutes": 2.4
+    },
+    "exact_source_ci": {
+      "passed": 54,
+      "failed": 0
+    }
+  },
+  "warnings": [
+    "Starlette httpx TestClient deprecation",
+    "Authlib httpx integration deprecation",
+    "Cross-disk uv hardlink fallback",
+    "Terminal color environment warning"
+  ],
+  "security": {
+    "local_python_distributions": 73,
+    "python_known_vulnerabilities": 0,
+    "node_known_vulnerabilities": 0,
+    "history_staged_delivery_secret_scans": "passed"
+  },
+  "ci_platform_skip_reasons": {
+    "backend-results-ubuntu-24.04-0-0e15e8d8689d4b6c2d0af9ea835c9d3063b9e2f1": [
+      "Hermes API_SERVER_KEY not found in local environment.",
+      "Installed Hermes interpreter not available; dedicated native CI verification is mandatory.",
+      "Live model tests require explicit opt-in after owner authorization.",
+      "Windows PowerShell is not installed"
+    ],
+    "backend-results-windows-2025-1-0e15e8d8689d4b6c2d0af9ea835c9d3063b9e2f1": [
+      "Hermes API_SERVER_KEY not found in local environment.",
+      "Live model tests require explicit opt-in after owner authorization."
+    ],
+    "backend-results-windows-2025-2-0e15e8d8689d4b6c2d0af9ea835c9d3063b9e2f1": [
+      "Hermes API_SERVER_KEY not found in local environment."
+    ],
+    "backend-results-windows-2025-3-0e15e8d8689d4b6c2d0af9ea835c9d3063b9e2f1": [
+      "Live model tests require explicit opt-in after owner authorization."
+    ],
+    "backend-results-windows-2025-4-0e15e8d8689d4b6c2d0af9ea835c9d3063b9e2f1": [
+      "Installed Hermes interpreter not available; dedicated native CI verification is mandatory."
+    ]
+  },
+  "production_deployed": false
+}

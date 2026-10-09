@@ -505,7 +505,7 @@ test("single-project cross-domain golden reaches scheduled Core run and read-onl
   });
   const abstaining = await data.post("/brief", {
     title: "Explicit evidence gap",
-    source_ids: [],
+    source_ids: [source.id],
     hypothesis: {
       question: "Is this claim supported?",
       predicate: "contains_text",
@@ -600,17 +600,19 @@ test("single-project cross-domain golden reaches scheduled Core run and read-onl
       )
     ).status(),
   ).toBe(404);
-  for (const path of [
-    `/outputs/${artifact.id}`,
-    `/brief/${incident.bundle_id}`,
-    `/relay/${incident.id}`,
-    `/bench/replays/${replay.id}`,
-    `/automations/${automation.id}`,
-    "/capabilities",
-    "/governance",
+  for (const [path, heading] of [
+    [`/outputs/${artifact.id}`, "Artifact provenance"],
+    [`/brief/${incident.bundle_id}`, "Hipotesis & coverage"],
+    [`/relay/${incident.id}`, "Incident & original signal"],
+    [`/bench/replays/${replay.id}`, "Hasil replay"],
+    [`/automations/${automation.id}`, "Authority & schedule"],
+    ["/capabilities", "Effective capability registry"],
+    ["/governance", "Jejak audit"],
   ]) {
     await page.goto(path);
-    await expect(page.locator("main")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: heading, exact: true }),
+    ).toBeVisible();
     await expect(
       page.getByText("Halaman tidak ditemukan", { exact: true }),
     ).toHaveCount(0);

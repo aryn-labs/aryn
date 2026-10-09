@@ -1,0 +1,80 @@
+{
+  "source_sha": "0e15e8d8689d4b6c2d0af9ea835c9d3063b9e2f1",
+  "source_modified": false,
+  "result": "8 passed in 2.4 minutes; 18 actual screenshots",
+  "captures": [
+    {
+      "path": "automation-detail-390-dark.png",
+      "sha256": "110a789e3645d1bf02ad819b771fb6ae0ea573b85aac0c3f543eec6314eb7d08"
+    },
+    {
+      "path": "automations-390-dark.png",
+      "sha256": "b1f8a7eb7711185a9946e92b2c7e362c75e7e1680bc89f4f4ac6c703b7c09adf"
+    },
+    {
+      "path": "capabilities-390-dark.png",
+      "sha256": "7c98be885e1d0a425e7a6f257dfa7612336c6342d451f1ce6e40fb63cd86bbe6"
+    },
+    {
+      "path": "automation-detail-1440-light.png",
+      "sha256": "0980da56834741b48836decffb6b2ed5749bb2b45bbc23123f4082d03df7a961"
+    },
+    {
+      "path": "automations-1440-light.png",
+      "sha256": "a164028f06add7fd8cf10aa783f4feb06a1cf9f57c07d8b103ff386d66055f5e"
+    },
+    {
+      "path": "capabilities-1440-light.png",
+      "sha256": "b06b89480b1f45ab175d2567a266f4191c934ddf7bbce9ccd5a1af386693208e"
+    },
+    {
+      "path": "automation-detail-390-light.png",
+      "sha256": "adfa7abd015b18244b779eb965f06097300806a90678bc7e573560799c689dd8"
+    },
+    {
+      "path": "automations-390-light.png",
+      "sha256": "bd7cdb6aa2f51317b39e2330f259ea8ae06b081d8437462a5f8c508a4f6a96c1"
+    },
+    {
+      "path": "capabilities-390-light.png",
+      "sha256": "b843e7dde6815bd1e8f44eff3d247e1bae3f2f1b76cc9e76beac0cc26fcea077"
+    },
+    {
+      "path": "automation-detail-768-dark.png",
+      "sha256": "d62edc13e10dd5ad57445f05f7121224003eed7df172b3ba8f4a9dd039c0c836"
+    },
+    {
+      "path": "automations-768-dark.png",
+      "sha256": "9cb4637d132a6406b4365590733519bc0b7ccdf9fa65cf7959cf5b96ebb803f8"
+    },
+    {
+      "path": "capabilities-768-dark.png",
+      "sha256": "5b56137ec163255598da792c6824b06debc1491144539b141f56392d06d9e680"
+    },
+    {
+      "path": "automation-detail-768-light.png",
+      "sha256": "185dfd2b7bddaacb3747b3ffcbe40fce0a9b862f9c0d1bbd7ae3ae4151731a6e"
+    },
+    {
+      "path": "automations-768-light.png",
+      "sha256": "323781a87d7d8ab357a04b77d34b00376d2fcbeba4538d4e9ac2ef12b0523e91"
+    },
+    {
+      "path": "capabilities-768-light.png",
+      "sha256": "f862d67cd1d0373dcea761f26c1bc69079de563e51060ceee57f5476dc65060e"
+    },
+    {
+      "path": "automation-detail-1440-dark.png",
+      "sha256": "139dcd386e642ff6276a606ece6e11edbffa57100571ad8b623f6088c89d6e0b"
+    },
+    {
+      "path": "automations-1440-dark.png",
+      "sha256": "32d7cbc7d27612d25a8df2fed0576a8cbc864b2357be6634649dd3880b24bac3"
+    },
+    {
+      "path": "capabilities-1440-dark.png",
+      "sha256": "36f860973f6b336e39d030406c06d413d883d76e3cdf8159c988afaf413db02b"
+    }
+  ],
+  "reproduction_command": "npx playwright test --grep 'Core control surfaces|persisted automation inventory|navigasi, tema'"
+}
