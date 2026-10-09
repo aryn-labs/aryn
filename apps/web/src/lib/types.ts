@@ -286,6 +286,11 @@ export type StreamEvent = { type: string; data: StreamPayload };
 export type Run = {
   execution_provenance?: {
     workflow?: { workflow_id: string; run_id: string; node_id: string };
+    automation?: {
+      automation_id: string;
+      occurrence_id: string;
+      payload_hash: string;
+    };
   };
   execution_claim_verified?: boolean;
   reserved_tokens?: number;

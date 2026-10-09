@@ -317,6 +317,14 @@ class AgentRepository:
                 "Only 'published' versions can be assigned to projects or divisions."
             )
 
+        if division_id is not None:
+            from database.schema import DivisionModel
+            division = self.session.query(DivisionModel).filter_by(
+                id=division_id, organization_id=context.organization_id,
+                project_id=context.project_id).first()
+            if division is None:
+                raise EntityNotFoundError("Assignment division is unavailable in this project.")
+
         from database.repositories.agent_activation_repo import AgentActivationRepository
         manager = self.session.info.get("db_manager")
         if manager is None:

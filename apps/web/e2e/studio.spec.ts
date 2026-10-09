@@ -192,6 +192,9 @@ test("navigasi, tema, empty state, aksesibilitas dan responsivitas", async ({
     page.getByRole("heading", { name: "Agent Factory", exact: true, level: 1 }),
   ).toBeVisible();
   await page.goto("/");
+  await expect(
+    page.getByRole("heading", { name: "Ruang kerja agent Anda." }),
+  ).toBeVisible();
   expect(mutations).toEqual([]); // Opening a stage must never create or promote an agent.
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await page.screenshot({

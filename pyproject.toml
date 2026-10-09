@@ -17,7 +17,8 @@ dependencies = [
     "alembic>=1.10",
     "uvicorn>=0.30",
     "authlib>=1.6,<2",
-    "PyJWT[crypto]>=2.10,<3"
+    "PyJWT[crypto]>=2.10,<3",
+    "tzdata>=2026.5; sys_platform == 'win32'"
 ]
 
 [project.optional-dependencies]

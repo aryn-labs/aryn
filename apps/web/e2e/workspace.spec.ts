@@ -226,15 +226,20 @@ test("stale, offline, session-expired and permission-changed states", async ({
   ).toHaveAttribute("href", "/auth/login");
 });
 
-test("future detail routes are truthful and have no enabled feature actions", async ({
+test("implemented control surfaces and missing detail routes remain truthful", async ({
   page,
 }) => {
-  for (const path of ["/automations", "/capabilities"]) {
+  for (const [path, title] of [
+    ["/automations", "Automations"],
+    ["/capabilities", "Capabilities"],
+  ]) {
     await page.goto(path);
     await expect(
-      page.getByRole("heading", { name: "Belum tersedia", exact: true }),
+      page.getByRole("heading", { name: title, exact: true }),
     ).toBeVisible();
-    await expect(page.locator("main button")).toHaveCount(0);
+    await expect(
+      page.getByText("Belum diimplementasikan", { exact: true }),
+    ).toHaveCount(0);
   }
   for (const path of ["/brief/demo", "/relay/demo", "/bench/replays/demo"]) {
     await page.goto(path);

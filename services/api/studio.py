@@ -137,6 +137,7 @@ class AssignmentInput(BaseModel):
     blueprint_id: str = Field(min_length=1, max_length=64)
     version_id: str = Field(min_length=1, max_length=64)
     role_name: str = Field(min_length=2, max_length=64)
+    division_id: Optional[str] = Field(default=None, min_length=1, max_length=64)
 
 
 class RunInput(BaseModel):
@@ -1245,6 +1246,8 @@ def create_app(
     register_workflows(app, coordinator, context, require_runtime)
     from services.api.intelligence import register_intelligence
     register_intelligence(app, coordinator, context)
+    from services.api.automations import register_automations
+    register_automations(app, coordinator, context, require_runtime, testing=testing, local=local_development)
 
     assets = ROOT / "apps/web/dist/assets"
     if assets.is_dir():

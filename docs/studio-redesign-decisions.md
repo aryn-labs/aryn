@@ -1,5 +1,11 @@
 # Studio architecture decisions
 
+## Core scheduling authority and capability mediation
+
+Reuse the current Core OS/PostgreSQL owner fence, human ApprovalEngine, signer/protected heads, budgets and captured execution claims. Store exact approved target/input/timezone/policy, durable unique occurrence intent and admission linkage before effects. Target preflight follows existing resource locks; human membership precedes scheduling locks. Gap skips/fold-first, bounded latest catch-up, three-item scheduled overlap queue, actual UTC admission-day quota and pre-claim-only readiness backoff are explicit. Unknown never retries; operator acknowledgement leaves Core unknown/reservations intact. A lifespan wakeup is not scheduling authority. [Contracts/threat/migration/state details](core-automations-contracts.md) and [actual validation](studio-redesign-validation.md) are authoritative.
+
+Capability registry is a scoped read model, never a grant/control plane. Existing safe text/artifact/disposable Relay classes retain current Core admission. Empty tool grants and nine-route Hermes confinement stay unchanged. Host/native/admin/commercial paths remain unavailable; entitlement is unknown, BYOK/local use is not Managed AI money. Extract navigation and lazy features without broad shell/canvas rewrite; Settings consumes bounded summary. Earlier future-scope decisions below are historical.
+
 ## Verified evidence and disposable recovery
 
 Prompt 04 reuses existing Core identity/permissions, ApprovalEngine, signer/protected heads, execution owner/fence and audit. `SignedRecords` supplies scoped storage verification and bounded pages without a new control plane. Additive migration 019 refuses populated downgrade before dropping anything. [ER/state diagrams and threat boundaries](intelligence-recovery-contracts.md) define fifteen tables, writer provisioning and rollback.

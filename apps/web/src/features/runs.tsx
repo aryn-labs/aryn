@@ -334,6 +334,14 @@ export function Runs({
                 Workflow · {selectedRun.execution_provenance.workflow.node_id}
               </Link>
             )}
+          {selectedRun?.execution_claim_verified &&
+            selectedRun.execution_provenance?.automation && (
+              <Link
+                to={`/automations/${selectedRun.execution_provenance.automation.automation_id}#${selectedRun.execution_provenance.automation.occurrence_id}`}
+              >
+                Core Automation occurrence
+              </Link>
+            )}
           <p>
             Claim{" "}
             {selectedRun.execution_claim_verified

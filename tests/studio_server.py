@@ -27,7 +27,10 @@ if __name__ == "__main__":
         repo.create_project(context, "proj_studio_browser_secondary", "Proyek Uji Kedua", "browser-secondary")
         repo.add_project_member("proj_studio_browser_secondary", DEV_ACTOR)
     dataset = os.getenv("ARYN_TEST_WORKSPACE_DATASET")
-    if dataset:
+    if dataset == "automations":
+        from tests.automation_dataset import seed_automation_dataset
+        seed_automation_dataset(app, context)
+    elif dataset:
         from tests.workspace_dataset import seed_workspace_dataset
         seed_workspace_dataset(db, context, dataset)
     uvicorn.run(app, host="127.0.0.1", port=8711, access_log=False)

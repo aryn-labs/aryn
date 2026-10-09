@@ -1,5 +1,11 @@
 # Studio workspace interaction contract
 
+## Core schedule and capability interactions
+
+`/automations` has bounded search/status inventory, actual next UTC/last occurrence/owner and explicit Local-off limitations. Create/edit selects a verified pinned agent or frozen workflow, IANA timezone, recurrence and typed budget/overlap/missed/retry policy. Server preview returns five UTC/local-offset instants with gap-skip/fold-first semantics. Save is paused; exact hash/revision review plus explicit model consent precede approval/resume/manual delivery. Intent keys survive lost responses in component memory; repeats return the same occurrence. Config change clears confirmation and invalidates approval. History links to actual captured Core Run or original Workflow target; unknown exposes explicit no-retry acknowledgement. Errors/403 remove cached authority, project changes reset queries and pending mutations guard switching.
+
+`/capabilities` displays namespace/version/adapter/mode/risk/current permissions, zero grants, missing prerequisites and disabled reasons. Read-only server mode/unknown entitlement/external_or_local billing distinguishes absent commercial features. R07 [Apify schedules](https://docs.apify.com/actors/running/schedules) informs disabled creation, timezone preview/pause/history; ARYN uses its own Core approval and UTC recurrence semantics. R01–R09 mapping, eighteen new captures, keyboard/axe/reduced-motion and 200-definition P50/P95 evidence are consolidated in [Studio validation](studio-redesign-validation.md). Existing domain patterns below remain applicable; old source/next-prompt statements are historical.
+
 ## Brief, Relay and safe replay interactions
 
 Brief lists bounded scoped bundles with literal search and explicitly labeled collection-status filter. Detail separates immutable collection from current re-evaluation, displays hypothesis/coverage/abstention, support and counterevidence, missing/stale/unverified sources, observed/collected/evaluated times and safe JSON download. On-demand source inspection shows real origin/snapshot hashes, quality/sanitization and exact Run/artifact links. Documents are explicit demo input; missing connectors are unavailable, not simulated. Workflow run association uses the exact existing ID.

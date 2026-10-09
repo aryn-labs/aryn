@@ -537,6 +537,8 @@ def install_governance_guards(metadata, connection, **kwargs):
     install_workflow_protection(connection)
     from database.intelligence_protection import install_intelligence_protection
     install_intelligence_protection(connection)
+    from database.automation_protection import install_automation_protection
+    install_automation_protection(connection)
 
 
 class WorkflowScope:
@@ -707,3 +709,34 @@ Index("ix_relay_active_execution", RelayExecutionModel.status)
 Index("ix_relay_incident_status", RelayIncidentModel.organization_id, RelayIncidentModel.project_id, RelayIncidentModel.status)
 Index("ix_demo_observation_target", DemoObservationModel.target_id, DemoObservationModel.created_at)
 Index("ix_relay_event_incident", RelayEventModel.incident_id, RelayEventModel.sequence)
+
+
+class AutomationDefinitionModel(IntelligenceScope, Base):
+    __tablename__ = "automation_definitions"
+    title = Column(String(160), nullable=False)
+    revision = Column(Integer, nullable=False)
+    status = Column(String(32), nullable=False)
+    next_run_at = Column(String(40), nullable=False)
+
+
+class AutomationOccurrenceModel(IntelligenceScope, Base):
+    __tablename__ = "automation_occurrences"
+    automation_id = Column(String(64), ForeignKey("automation_definitions.id"), nullable=False)
+    occurrence_key = Column(String(160), nullable=False)
+    status = Column(String(32), nullable=False)
+    admitted_at = Column(String(40), nullable=True)
+    __table_args__ = (UniqueConstraint("automation_id", "occurrence_key", name="uq_automation_occurrence"),)
+
+
+class AutomationEventModel(IntelligenceScope, Base):
+    __tablename__ = "automation_events"
+    automation_id = Column(String(64), ForeignKey("automation_definitions.id"), nullable=False)
+
+
+for _automation_model in (AutomationDefinitionModel, AutomationOccurrenceModel, AutomationEventModel):
+    Index("ix_" + _automation_model.__tablename__ + "_scope", _automation_model.organization_id,
+        _automation_model.project_id, _automation_model.created_at, _automation_model.id)
+Index("ix_automation_due", AutomationDefinitionModel.status, AutomationDefinitionModel.next_run_at)
+Index("ix_automation_occurrence_status", AutomationOccurrenceModel.automation_id, AutomationOccurrenceModel.status)
+Index("ix_automation_occurrence_admitted", AutomationOccurrenceModel.automation_id, AutomationOccurrenceModel.admitted_at)
+Index("ix_automation_event_definition", AutomationEventModel.automation_id, AutomationEventModel.created_at)

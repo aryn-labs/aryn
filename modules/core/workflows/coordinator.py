@@ -397,6 +397,9 @@ class RunCoordinator:
         expected_version_id: Optional[str] = None,
         claim_callback=None,
         workflow_reference: Optional[Dict[str, str]] = None,
+        automation_reference: Optional[Dict[str, str]] = None,
+        max_total_tokens: Optional[int] = None,
+        expected_transition_id: Optional[str] = None,
     ) -> RunResult:
         """Executes a direct turn dispatched to an active AgentAssignment under Core governance."""
         self.permission_engine.enforce("run:create", context, context.organization_id, context.project_id)
@@ -426,6 +429,8 @@ class RunCoordinator:
             assignment = activation.lock_assignment(context, assignment_id)
             if expected_version_id and assignment.version_id != expected_version_id:
                 raise PermissionDeniedError("Workflow assignment no longer matches the pinned version.")
+            if expected_transition_id is not None and assignment.current_transition_id != expected_transition_id:
+                raise PermissionDeniedError("Scheduled assignment activation no longer matches the approved target.")
             if assignment.status != "active":
                 raise PermissionDeniedError("Agent assignment is not active.")
             version = repo.get_version(context, assignment.version_id)
@@ -448,11 +453,13 @@ class RunCoordinator:
                 "publication_hash": hashlib.sha256(json.dumps(reference, sort_keys=True).encode()).hexdigest()}
             if workflow_reference is not None:
                 provenance["workflow"] = dict(workflow_reference)
+            if automation_reference is not None:
+                provenance["automation"] = dict(automation_reference)
             from packages.contracts.agent import AgentVersion
             configuration = AgentVersion.from_stored(version)
             req = RunRequest(prompt=prompt, system_instructions=version.system_prompt, model=version.model,
                 session_id=assignment_id, temperature=version.temperature, max_tokens=version.max_tokens,
-                max_total_tokens=configuration.budget_policy.max_tokens_per_run, max_cost_usd=configuration.budget_policy.max_cost_usd,
+                max_total_tokens=min(configuration.budget_policy.max_tokens_per_run, max_total_tokens) if max_total_tokens is not None else configuration.budget_policy.max_tokens_per_run, max_cost_usd=configuration.budget_policy.max_cost_usd,
                 timeout_seconds=min(configuration.budget_policy.timeout_seconds, configuration.constraints.max_execution_time_seconds),
                 idempotency_key=idempotency_key, metadata={**provenance,
                     "role_name": assignment.role_name, "division_id": assignment.division_id})

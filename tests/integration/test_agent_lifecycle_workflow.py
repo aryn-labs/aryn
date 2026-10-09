@@ -248,12 +248,16 @@ async def test_complete_agent_lifecycle_workflow(workflow_db, admin_security_con
     # -------------------------------------------------------------
     # 6. Assign ke Project & Division
     # -------------------------------------------------------------
+    from modules.core.workspace import WorkspaceService
+    from packages.contracts.workspace import DivisionInput
+    division = WorkspaceService(workflow_db, factory_service.permission_engine).save_division(
+        ctx, DivisionInput(name="Fundamental equities", slug="fundamental-equities"))
     assignment = factory_service.assign_agent(
         context=ctx,
         blueprint_id=blueprint.id,
         version_id=published_version.id,
         role_name="lead_equity_researcher",
-        division_id="div_fundamental_equities",
+        division_id=division["id"],
     )
     assert assignment.id.startswith("asgn_")
     assert assignment.role_name == "lead_equity_researcher"

@@ -1,5 +1,7 @@
 # Delivery status
 
+Studio Core Automations/capability completion is under final aggregate validation. Persisted schedules, current human approval, pinned Core execution, idempotent occurrences, bounded missed/retry/overlap policy, actual admission-day quota and default-deny read registry are implemented. [Comprehensive Studio validation](docs/studio-redesign-validation.md) supersedes historical next-prompt rows below and records all 38 ST requirements, commands, demo, screenshots, source/CI and residuals. **STUDIO REDESIGN ACCEPTANCE: UNVERIFIED pending exact-SHA CI. HOSTED DEPLOYMENT READINESS: NOT VERIFIED.**
+
 **Governance foundation freeze: BLOCKED untuk hosted deployment.** Core execution hardening
 melanjutkan baseline `5e9392c5f976b4725813dd98ccd8c6811472d9ae`; authoritative claim,
 reservation/settlement, single process ownership dan unified result contract didokumentasikan

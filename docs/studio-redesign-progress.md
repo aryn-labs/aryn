@@ -1,5 +1,9 @@
 # Studio redesign delivery evidence
 
+## Core scheduling and completion audit
+
+Baseline `12d7ab320178b5689b41109018554bd562bad561` was clean and matched remote; dependency CI 37954080034 passed 14/14. Implemented Core-owned persisted recurrence/occurrences, exact human approval and target pins, bounded recovery/idempotency/quotas, read-only capability constraints and final UI integration. Migration 020 is additive; no main/deployment/paid inference/native job/security broadening. [Current validation](studio-redesign-validation.md) contains the full source chain, 38 requirements, actual commands/results, screenshots, failure corrections, demo and operational residuals. Final aggregate/source SHA/CI is pending and is not inherited from prior checkpoints.
+
 ## Brief evidence, incident recovery and diagnostic replay
 
 Audit baseline: `b19c6e8db21fc00bdeeb912efd953a4a9621b487`, clean development equal to origin. Dependency [ARYN Quality 37931176859](https://github.com/aryn-labs/aryn/actions/runs/37931176859) was completed/success, 14/14 jobs. Reviewed AGENTS.md, README/STATUS, supplied PRD v1.2 / Prompt 04, prior checkpoints, Core authorization/approvals/ownership, workflow lineage, migrations and CI before editing. Adjacent aryn-docs/DOCUMENT_INDEX.md still marks normative PDFs absent and no PDF files were found; no missing PDF clause is claimed reviewed. Historical results below do not certify this delivery.

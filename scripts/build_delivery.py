@@ -32,7 +32,11 @@ def build():
         assert all(name in names for name in (
             "packages/contracts/intelligence.py", "modules/brief/service.py",
             "modules/relay/service.py", "modules/relay/recovery.py", "modules/bench/replay.py",
-            "services/api/intelligence.py", "database/migrations/versions/019_intelligence_recovery.py"))
+            "services/api/intelligence.py", "database/migrations/versions/019_intelligence_recovery.py",
+            "packages/contracts/automation.py", "modules/core/automations/service.py",
+            "modules/core/automations/recurrence.py", "modules/core/capabilities.py",
+            "services/api/automations.py", "database/automation_protection.py",
+            "database/migrations/versions/020_core_automations.py"))
         assert all(name.endswith((".py", "METADATA", "WHEEL", "top_level.txt", "RECORD")) for name in names), "Unexpected wheel data."
         # Namespace packages require real extracted directories (zipimport cannot
         # resolve every implicit namespace). Verify the delivered wheel's files,
@@ -41,7 +45,7 @@ def build():
         verified.mkdir(parents=True, exist_ok=False)
         assert all(not Path(name).is_absolute() and ".." not in Path(name).parts for name in names)
         bundle.extractall(verified)
-        script = "import sys; sys.path.insert(0, sys.argv[1]); import modules.core.workflows.coordinator as c; assert c.__file__.startswith(sys.argv[1]); import services.api.authentication; import services.api.intelligence; import modules.brief.service; import modules.relay.recovery; import modules.bench.replay; print('BUILT_WHEEL_IMPORT_PASS')"
+        script = "import sys; sys.path.insert(0, sys.argv[1]); import modules.core.workflows.coordinator as c; assert c.__file__.startswith(sys.argv[1]); import services.api.authentication; import services.api.intelligence; import modules.brief.service; import modules.relay.recovery; import modules.bench.replay; import modules.core.automations.service; import modules.core.capabilities; import services.api.automations; print('BUILT_WHEEL_IMPORT_PASS')"
         subprocess.run([sys.executable, "-I", "-c", script, str(verified.resolve())], check=True)
     shutil.copytree("apps/web/dist", output / "web")
     for filename in ("pyproject.toml", "uv.lock", "alembic.ini", "README.md", "apps/web/package-lock.json"):

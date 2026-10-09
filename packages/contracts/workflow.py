@@ -163,6 +163,9 @@ class WorkflowRun(Strict):
     artifact_id: str | None = None
     error_code: str | None = None
 
+    automation_reference: dict[str, str] | None = None
+    max_task_tokens: int | None = Field(default=None, ge=128, le=32768)
+
 
 class Artifact(Strict):
     id: str

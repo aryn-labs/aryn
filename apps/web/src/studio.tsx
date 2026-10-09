@@ -1,26 +1,19 @@
+import { navigation } from "./lib/navigation";
 import { Fragment, Suspense, lazy, useEffect, useRef, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Beaker,
-  Bot,
   Check,
   ChevronDown,
   ChevronRight,
-  FileText,
-  FolderKanban,
-  Fingerprint,
-  LayoutDashboard,
   Menu,
   Moon,
   PanelLeftClose,
-  Radio,
   RefreshCw,
-  Settings,
+  Radio,
+  Terminal,
   ShieldCheck,
   Sun,
-  Terminal,
-  Workflow,
   X,
 } from "lucide-react";
 import { api, apiStream, ApiError, logout } from "./lib/api";
@@ -119,85 +112,16 @@ const SettingsPage = lazy(() =>
     default: module.SettingsPage,
   })),
 );
-const Unavailable = lazy(() =>
-  import("./features/settings").then((module) => ({
-    default: module.Unavailable,
+const Automations = lazy(() =>
+  import("./features/automations").then((module) => ({
+    default: module.Automations,
   })),
 );
-const navigation = [
-  { path: "/", label: "Ringkasan", icon: LayoutDashboard, group: "WORKSPACE" },
-  {
-    path: "/projects",
-    label: "Projects & Divisions",
-    icon: FolderKanban,
-    group: "WORKSPACE",
-  },
-  { path: "/factory", label: "Agent Factory", icon: Bot, group: "BUILD" },
-  {
-    path: "/workflows",
-    label: "Workflow Builder",
-    icon: Workflow,
-    group: "BUILD",
-  },
-  {
-    path: "/capabilities",
-    label: "Capabilities",
-    icon: ShieldCheck,
-    group: "BUILD",
-    future: true,
-  },
-  {
-    path: "/operations",
-    label: "Agent Operations",
-    icon: Bot,
-    group: "OPERATE",
-  },
-  {
-    path: "/automations",
-    label: "Automations",
-    icon: Workflow,
-    group: "OPERATE",
-    future: true,
-  },
-  { path: "/runs", label: "Eksekusi", icon: Terminal, group: "OPERATE" },
-  {
-    path: "/outputs",
-    label: "Outputs",
-    icon: FileText,
-    group: "OPERATE",
-  },
-  {
-    path: "/brief",
-    label: "Brief",
-    icon: FileText,
-    group: "INTELLIGENCE & RELIABILITY",
-  },
-  {
-    path: "/bench",
-    label: "Bench",
-    icon: Beaker,
-    group: "INTELLIGENCE & RELIABILITY",
-  },
-  {
-    path: "/relay",
-    label: "Relay",
-    icon: Radio,
-    group: "INTELLIGENCE & RELIABILITY",
-  },
-  {
-    path: "/approvals",
-    label: "Persetujuan",
-    icon: ShieldCheck,
-    group: "CONTROL",
-  },
-  {
-    path: "/governance",
-    label: "Tata Kelola",
-    icon: Fingerprint,
-    group: "CONTROL",
-  },
-  { path: "/settings", label: "Pengaturan", icon: Settings, group: "CONTROL" },
-];
+const Capabilities = lazy(() =>
+  import("./features/automations").then((module) => ({
+    default: module.Capabilities,
+  })),
+);
 
 function useTheme() {
   const [theme, setTheme] = useState(() =>
@@ -251,13 +175,7 @@ export function App() {
     refetchInterval: 20000,
     retry: false,
   });
-  const requiresSnapshot = [
-    "/factory",
-    "/runs",
-    "/bench",
-    "/operations",
-    "/settings",
-  ].some(
+  const requiresSnapshot = ["/factory", "/runs", "/bench", "/operations"].some(
     (route) =>
       (location.pathname === route ||
         location.pathname.startsWith(`${route}/`)) &&
@@ -307,7 +225,7 @@ export function App() {
           : params.get("evaluasi");
       if (evaluation) selection.set("evaluation_id", evaluation);
       return api<Snapshot>(
-        `/projects/${project}/${location.pathname === "/settings" ? "snapshot" : `lifecycle?${selection}`}`,
+        `/projects/${project}/lifecycle?${selection}`,
         undefined,
         signal,
       );
@@ -603,9 +521,6 @@ export function App() {
                   >
                     <n.icon size={18} />
                     <span>{n.label}</span>
-                    {n.future && (
-                      <span className="future-dot" title="Belum tersedia" />
-                    )}
                     {n.path === "/approvals" &&
                       summary.data &&
                       !denied &&
@@ -1010,10 +925,14 @@ export function App() {
                     setTheme={theme.setTheme}
                     refresh={refresh}
                   />
-                ) : currentNav &&
-                  (currentNav.future ||
-                    location.pathname.startsWith(`${currentNav.path}/`)) ? (
-                  <Unavailable module={currentNav.label} />
+                ) : location.pathname === "/automations" ||
+                  location.pathname.startsWith("/automations/") ? (
+                  <Automations
+                    key={`${organization}:${project}:${location.pathname}`}
+                    shared={shared}
+                  />
+                ) : location.pathname === "/capabilities" ? (
+                  <Capabilities shared={shared} />
                 ) : (
                   <Empty
                     title="Halaman tidak ditemukan"

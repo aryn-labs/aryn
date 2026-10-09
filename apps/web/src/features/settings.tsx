@@ -1,12 +1,5 @@
 import { gatewayStatus } from "../lib/studio-state";
-import {
-  Check,
-  FileText,
-  Moon,
-  RefreshCw,
-  ShieldCheck,
-  Sun,
-} from "lucide-react";
+import { Check, Moon, RefreshCw, Sun } from "lucide-react";
 import type { Snapshot, Workspace } from "../lib/types";
 import { number } from "../lib/utils";
 import { Button } from "../components/ui/button";
@@ -65,7 +58,11 @@ export function SettingsPage({
           </div>
         </Panel>
         <Panel
-          title="Lingkungan development"
+          title={
+            workspace.mode === "hosted"
+              ? "Lingkungan Hosted"
+              : "Lingkungan Local"
+          }
           action={
             <Button variant="ghost" size="sm" onClick={refresh}>
               <RefreshCw size={14} />
@@ -75,8 +72,9 @@ export function SettingsPage({
         >
           <div className="settings-content">
             <Notice>
-              Ini adalah akses development lokal, tanpa autentikasi produksi.
-              Layanan hanya berjalan di loopback.
+              {workspace.mode === "hosted"
+                ? "Identity berasal dari sesi Hosted server. Kesiapan IdP/TLS/VPS production memerlukan UAT terpisah."
+                : "Local development eksplisit melalui loopback. Saat perangkat atau Core mati, pekerjaan terjadwal tidak berjalan."}
             </Notice>
             <dl className="definition-grid">
               <dt>API Studio</dt>
@@ -84,9 +82,18 @@ export function SettingsPage({
               <dt>ARYN Runtime</dt>
               <dd>{workspace.runtime.message}</dd>
               <dt>Batas output per eksekusi</dt>
-              <dd>{number(data.budget?.max_tokens_per_run || 4096)} token</dd>
+              <dd>
+                {data.budget
+                  ? number(data.budget.max_tokens_per_run)
+                  : "Belum tersedia"}{" "}
+                token
+              </dd>
               <dt>Token tercatat</dt>
-              <dd>{number(data.budget?.cumulative_tokens || 0)}</dd>
+              <dd>
+                {data.budget
+                  ? number(data.budget.cumulative_tokens)
+                  : "Belum tersedia"}
+              </dd>
               <dt>Toolset aktif</dt>
               <dd>
                 {workspace.runtime.enabled_toolsets?.length
@@ -113,52 +120,6 @@ export function SettingsPage({
           </div>
         </Panel>
       </div>
-    </>
-  );
-}
-
-export function Unavailable({ module }: { module: string }) {
-  const descriptions: Record<string, string> = {
-    Brief:
-      "Layanan evidence bundle, provenance, dan pemeriksaan kontradiksi belum tersedia.",
-    Relay:
-      "Layanan investigasi, proposal remediasi, dan verifikasi pemulihan belum tersedia.",
-    "Workflow Builder":
-      "Graph workflow executable dan TaskExecution belum tersedia.",
-    Automations:
-      "Scheduler Core dengan recurrence dan occurrence durable belum tersedia.",
-    Capabilities:
-      "Registry capability belum tersedia. Native tool grants tetap dibatasi Core.",
-    Outputs:
-      "Registry artifact dan deliverable umum belum tersedia. Hasil run existing dapat dibaca melalui Eksekusi.",
-    "Agent Operations":
-      "Permukaan Operations belum tersedia. Penugasan dan eksekusi existing tersedia melalui Eksekusi.",
-  };
-  return (
-    <>
-      <PageHeading
-        title={module}
-        description="Permukaan kerja ARYN dengan otoritas Core."
-      />
-      <Panel title="Belum tersedia di Studio">
-        <div className="unavailable">
-          <div className="empty-icon">
-            <FileText size={28} />
-          </div>
-          <span className="subtle-label">BELUM DIIMPLEMENTASIKAN</span>
-          <h2>Belum tersedia</h2>
-          <p>
-            {descriptions[module] ||
-              "Detail atau editor baru untuk resource ini belum tersedia. Tampilan existing tetap dapat diakses melalui navigasi utama."}
-          </p>
-          <div className="unavailable-footer">
-            <ShieldCheck size={16} />
-            <span>
-              Tidak ada aksi fitur yang dapat dijalankan pada halaman ini.
-            </span>
-          </div>
-        </div>
-      </Panel>
     </>
   );
 }

@@ -1,5 +1,9 @@
 # Studio requirement traceability
 
+## Current comprehensive acceptance
+
+The complete 38-row current ST/official-reference → source/API/storage → positive/negative proof matrix is maintained in [Studio validation](studio-redesign-validation.md). It supersedes historical PLANNED and future-prompt statuses below. Current aggregate result remains UNVERIFIED until full exact-SHA CI is terminal.
+
 ## Evidence and recovery acceptance
 
 Audit baseline `b19c6e8db21fc00bdeeb912efd953a4a9621b487`; dependency CI [37931176859](https://github.com/aryn-labs/aryn/actions/runs/37931176859) completed/success 14/14. Supplied PRD v1.2 groups BR-01–07, RL-01–08 and BN-05–07 into the ST requirements below. This maps supplied groups without inventing individual clauses from missing normative PDFs. Current source/results/CI are in [delivery evidence](studio-redesign-progress.md); matrices below retain historical context.

@@ -2,9 +2,12 @@
 import asyncio
 import datetime
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
+import threading
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -448,9 +451,22 @@ time.sleep(60)
         assert run_id.startswith("run_"), child.stderr.read() if child.poll() is not None else "claim not ready"
         with pytest.raises(ExecutionOwnershipError):
             RunCoordinator(runtime, db_manager=new)
+        deadline = time.monotonic() + 10
         child.terminate()
         child.wait(timeout=10)
-        recovered = RunCoordinator(runtime, db_manager=new).recover_in_flight_runs(ctx)
+        # Windows may still reject the file lock immediately after process exit.
+        # Observe actual acquisition within the original shutdown deadline; never
+        # bypass a lock or add timeout-based takeover to production authority.
+        while True:
+            try:
+                restarted = RunCoordinator(runtime, db_manager=new)
+                break
+            except ExecutionOwnershipError:
+                remaining = deadline - time.monotonic()
+                if os.name != "nt" or remaining <= 0:
+                    raise
+                threading.Event().wait(min(0.01, remaining))
+        recovered = restarted.recover_in_flight_runs(ctx)
         assert len(recovered) == 1 and recovered[0]["run_id"] == run_id
         assert recovered[0]["status"] == "outcome_unknown" and recovered[0]["cancellation_confirmed"] is False
     finally:

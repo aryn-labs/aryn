@@ -298,7 +298,7 @@ class WorkflowExecutor:
         if run.owner_id != self.core.authority.owner_id:
             raise ExecutionOwnershipError("Stale workflow owner is fenced.")
 
-    async def start(self, ctx, workflow_id, body):
+    async def start(self, ctx, workflow_id, body, *, claim_callback=None, automation_reference=None, max_task_tokens=None):
         self.core._fence()
         with self.db.session(write=True) as s:
             self.authorize(s, ctx, "run:create")
@@ -344,6 +344,8 @@ class WorkflowExecutor:
                 cursor=start,
                 input=body.input,
                 request_hash=fingerprint,
+                automation_reference=automation_reference,
+                max_task_tokens=max_task_tokens,
                 tasks=[
                     TaskExecution(node_id=n.id, status="pending")
                     for n in version.graph.nodes
@@ -364,6 +366,8 @@ class WorkflowExecutor:
                 True,
             )
             self.audit(s, ctx, "run.started", run.id, version_id=version.id)
+            if claim_callback is not None:
+                claim_callback(s, run)
         return await self.execute(ctx, run.id)
 
     def artifact(self, s, ctx, id):
@@ -534,6 +538,8 @@ class WorkflowExecutor:
                         "workflow:" + id + ":" + node.id,
                         expected_version_id=node.agent_version_id,
                         claim_callback=capture,
+                        automation_reference=run.automation_reference,
+                        max_total_tokens=run.max_task_tokens,
                         workflow_reference={
                             "workflow_id": run.workflow_id,
                             "run_id": id,

@@ -50,9 +50,11 @@ class SignedRecords:
             raise HistoryUnverifiedError("Record payload is unreadable.") from exc
         from packages.contracts.timestamps import canonical_timestamp
 
-        if canonical_timestamp(row.created_at, stored=True) != canonical_timestamp(
-            payload["created_at"]
-        ):
+        try:
+            timestamp_matches = isinstance(payload, dict) and canonical_timestamp(row.created_at, stored=True) == canonical_timestamp(payload["created_at"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise HistoryUnverifiedError("Record timestamp is unreadable.") from exc
+        if not timestamp_matches:
             raise HistoryUnverifiedError(
                 "Record timestamp differs from signed evidence."
             )

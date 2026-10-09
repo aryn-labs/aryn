@@ -98,7 +98,7 @@ def test_writer_cannot_change_or_erase_evidence(postgres_db, studio):
     with postgres_db.owner.connect() as connection:
         assert (
             connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
-            == "019_intelligence_recovery"
+            == "020_core_automations"
         )
         assert (
             connection.execute(text("SELECT COUNT(*) FROM relay_incidents")).scalar()
