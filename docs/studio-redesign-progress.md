@@ -4,7 +4,7 @@
 
 Current audit source: `40df9d1f894b257df3a277c4623466d6d03541dc`, equal to origin/development with a clean tree. Dependency workflow [37837626257](https://github.com/aryn-labs/aryn/actions/runs/37837626257) completed-success, 14/14 jobs. Push permission was verified. AGENTS.md, STATUS.md, PRD v1.2, Prompt 02, these four redesign documents, API/contracts, existing positive/negative evidence and CI were reviewed before editing. Earlier workspace evidence below is historical, not CI evidence for this delivery. Normative PDFs remain absent according to aryn-docs/DOCUMENT_INDEX.md; supplied PRD/source references do not substitute for reading missing PDFs.
 
-Current implementation CI: **UNVERIFIED until the exact implementation SHA has been pushed and its workflow reaches terminal status**. The closure evidence will record that SHA and terminal jobs. No change to main, production deployment, paid inference, runtime tool grants or scheduler is authorized by this delivery.
+Current implementation source: `2ca9dca575a2cfcc95505547e4426fe95e7e97b4`, pushed normally to origin/development. [ARYN Quality 37882643080](https://github.com/aryn-labs/aryn/actions/runs/37882643080) is terminal **completed / success, 14/14 jobs PASS**; [exact workflow metadata](evidence/studio/agent-ci.json) includes every job and validated artifact. The evidence-only closure workflow is independently checked before the final report. No change to main, production deployment, paid inference, runtime tool grants or scheduler occurred.
 
 ### Implemented behavior and source
 
@@ -56,6 +56,21 @@ R02 filtered semantic tables, R03 typed React Flow sections and non-canvas alter
 
 The reproducible API benchmark now measures every relevant paged resource plus selected Agent Detail and captured Console. Dataset large retains 200 blueprints, 1,000 historical runs, 5,000 signed audits and 200 divisions, plus one actual golden lifecycle (four Bench scenarios, approval/publication/assignment/manual run); it does not fabricate signed captured claims for seeded histories. Initial modified-source, 10-sample Windows SQLite/TestClient P95: summary 55.56 ms, run page 12.46 ms, audit page 13.23 ms, version page 115.89 ms, Agent Detail 369.81 ms, captured Console 446.08 ms; concurrent backend checks affected these samples. Clean-source repetition and browser timings will be recorded separately. Development thresholds remain summary ≤2,000 ms and usable navigation ≤3,000 ms; these are not production SLA claims.
 
+### Clean-source performance repetition
+
+[API benchmark](evidence/studio/agent-api-performance.json) was repeated from clean source `2ca9dca575a2cfcc95505547e4426fe95e7e97b4` with source_modified=false and 20 samples for each endpoint/dataset, after local test suites finished. Environment and dataset definitions above are unchanged. This fixture stresses historical run/audit volume; it contains one actual published AgentVersion and is not a claim about thousands of published versions or production load.
+
+| API P95 ms | Small | Large |
+|---|---|---|
+| Summary | 26.42 | 39.20 |
+| Blueprint / version page | 9.66 / 119.06 | 7.62 / 131.22 |
+| Assignment / evaluation page | 110.44 / 19.04 | 117.62 / 16.56 |
+| Approval / audit / run page | 9.84 / 11.35 / 9.01 | 9.10 / 8.65 / 8.92 |
+| Agent Detail / captured Console | 316.91 / 322.53 | 327.13 / 413.74 |
+| Legacy full snapshot (Settings) | 582.78 | 4,114.04 |
+
+[Latest browser attachments](evidence/studio/agent-browser-performance.json), captured after JSON/navigation correction before commit, show large workspace navigation P50/P95 214.16/363.32 ms and summary 54.75/68.42 ms. Factory/Governance/Runs/Approvals/Operations each had one additional navigation sample, 951.53–999.93 ms. All configured development thresholds passed. Sample variability is expected; these measurements do not imply provider performance, production SLA or a fixed speedup.
+
 ### Editor input preservation verification
 
 Initial implementation `7bfab885dd65b23c0146e08acbae989764b33e2c` was pushed normally and [ARYN Quality 37881263892](https://github.com/aryn-labs/aryn/actions/runs/37881263892) completed-success, 14/14 jobs, including collection/coverage gates and validated delivery artifact build. Windows partitions collectively executed 764 cases: 758 passed and 6 explicit skips. Linux executed the same 764-case collection: 741 passed and 23 explicit skips. Linux additional skips require Windows PowerShell; the main backend jobs also lack the configured native Hermes interpreter, whose separate mandatory Native Hermes Boundary job passed. PostgreSQL, frontend and all three browser shards passed. This is exact implementation evidence, not the workspace dependency workflow.
@@ -69,7 +84,15 @@ Final review additionally corrected incomplete JSON input retention and navigati
 3. Direct-turn per-node trace, provider cost/entitlement and real provider hard caps remain unavailable unless supplied by actual evidence. Stop acknowledgement does not settle unknown consumption or prove cancellation.
 4. IdP/TLS/VPS production UAT, paid provider integration, installer/commercial program remain external. Executable workflows/outputs, Brief, Relay and schedules remain subsequent scope; no enabled implementation is claimed here. Hosted production readiness remains BLOCKED.
 
-Delivery status stays pending until normal development push, remote equality and exact-SHA GitHub Actions are verified. The final closure section records READY FOR PROMPT 03 only after those checks.
+### Verified delivery
+
+Both implementation commits (`7bfab885dd65b23c0146e08acbae989764b33e2c` and corrective source `2ca9dca575a2cfcc95505547e4426fe95e7e97b4`) were normally pushed to development and independently received terminal 14/14 successful workflows. Source and origin/development equality were checked after each push; main remains `630cbc96d728a49a64247ad2b88978529a7cbbad`. Final source workflow checks full Linux/Windows collection and disjoint coverage, actual restricted PostgreSQL, all browser shards, frontend, security/configuration, mandatory Native Hermes and validated delivery artifact. No assertions or required checks were removed or ignored.
+
+Final source CI test artifacts: Linux 741 passed / 23 skipped; Windows four partitions collectively 758 passed / 6 skipped, zero errors/failures across the same 764-case collection. Skip reasons retain live opt-in, absent local API key/native interpreter and Linux's missing Windows PowerShell; the dedicated native check passed. PostgreSQL 37, frontend 92 and browser 27 all passed. Local commands, earlier failure corrections and benchmark provenance above remain distinct from CI evidence.
+
+Validated review artifact `aryn-delivery-2ca9dca575a2cfcc95505547e4426fe95e7e97b4`, ID `11595009726`, digest `sha256:74fcdcffc424742a3e90bec0acb876341282aefe560dd3ef3224b7c685489323`, was built/scanned by that successful workflow; it is not a production deployment. Metadata and all four redesign documents accompany synthetic visual/API/browser evidence. Test PostgreSQL container was stopped and removed after persistence checks. New file/code naming remains professional, without phase/MVP/stage labels.
+
+**READY FOR PROMPT 03** for the tested Agent Factory/Bench/manual Operations scope. The evidence-only closure commit is also pushed and its exact workflow checked to terminal before the final user report; that report identifies the final remote HEAD and closure CI. Residuals above remain, and hosted production readiness stays BLOCKED.
 
 ## Historical workspace delivery evidence
 
