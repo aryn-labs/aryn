@@ -96,7 +96,13 @@ def lifecycle(tmp_path, request):
         from services.api.studio import migrate
         migrate(engine)
     else:
-        Base.metadata.create_all(engine)
+        # SQLite's legacy driver otherwise autocommits each CREATE TABLE/INDEX.
+        # Build the complete disposable schema and all protection triggers in
+        # one real transaction, avoiding hundreds of separate durable writes.
+        with engine.begin() as connection:
+            if engine.dialect.name == "sqlite":
+                connection.exec_driver_sql("BEGIN")
+            Base.metadata.create_all(connection)
     db = DatabaseManager(engine)
     ctx = bind_test_context(SecurityContext(
         actor=Actor(actor_id="owner", organization_id="org", roles=["admin"]),
