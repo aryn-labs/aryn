@@ -1,0 +1,139 @@
+.intelligence-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.intelligence-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px;
+  min-width: 0;
+}
+.intelligence-body form,
+.intelligence-body label {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.intelligence-body form {
+  gap: 18px;
+}
+.intelligence-body input:not([type="checkbox"]),
+.intelligence-body select,
+.intelligence-body textarea {
+  width: 100%;
+  min-width: 0;
+}
+.intelligence-body textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+.intelligence-columns,
+.intelligence-filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.intelligence-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+}
+.intelligence-body .intelligence-check {
+  flex-direction: row;
+  align-items: start;
+}
+.intelligence-check input {
+  flex: 0 0 auto;
+  margin-top: 4px;
+}
+.intelligence-check small {
+  display: block;
+  overflow-wrap: anywhere;
+  color: var(--secondary);
+  margin-top: 6px;
+}
+.intelligence-body fieldset {
+  border: 1px solid var(--border);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.intelligence-wrap,
+.intelligence-body dd,
+.intelligence-body li,
+.intelligence-body p,
+.intelligence-body h3,
+.intelligence-body a {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.intelligence-json {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 16px;
+  background: var(--surface-solid);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  max-height: 360px;
+  overflow: auto;
+  font-size: 12px;
+}
+.evidence-card {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--secondary);
+  border-radius: 8px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.evidence-conflict {
+  border-left-color: var(--warning);
+}
+.evidence-support {
+  border-left-color: var(--success);
+}
+.intelligence-table-wrap {
+  overflow: auto;
+  max-width: 100%;
+}
+.intelligence-table-wrap table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+.intelligence-table-wrap caption {
+  text-align: left;
+  padding-bottom: 14px;
+  color: var(--secondary);
+}
+.intelligence-table-wrap th,
+.intelligence-table-wrap td {
+  padding: 14px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.incident-timeline {
+  padding-left: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.intelligence-body summary {
+  cursor: pointer;
+  padding: 10px 0;
+}
+@media (max-width: 850px) {
+  .intelligence-columns,
+  .intelligence-filters {
+    grid-template-columns: 1fr;
+  }
+  .intelligence-body {
+    padding: 16px;
+  }
+}

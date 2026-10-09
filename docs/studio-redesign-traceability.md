@@ -1,5 +1,24 @@
 # Studio requirement traceability
 
+## Evidence and recovery acceptance
+
+Audit baseline `b19c6e8db21fc00bdeeb912efd953a4a9621b487`; dependency CI [37931176859](https://github.com/aryn-labs/aryn/actions/runs/37931176859) completed/success 14/14. Supplied PRD v1.2 groups BR-01–07, RL-01–08 and BN-05–07 into the ST requirements below. This maps supplied groups without inventing individual clauses from missing normative PDFs. Current source/results/CI are in [delivery evidence](studio-redesign-progress.md); matrices below retain historical context.
+
+| ST requirement / supplied official relation | Actual contracts/API/source | Positive and relevant negative proof |
+|---|---|---|
+| ST-BR-01 / BR-01–07 | intelligence.py EvidenceBundle/Source/Item/Hypothesis; BriefService.evaluate; `/brief` | Real relationships/status/coverage/timestamp/digest, literal absent NOT_FOUND, empty/low coverage abstention, exact fixture health target; unrelated target remains neutral and cannot authorize proposal; no invented confidence |
+| ST-BR-02 / BR-01–07 | BriefService.origin/ingest/source; `/brief/sources`, `/brief/documents` | Actual Core Run/Artifact and disposable demo/document proof; URL/path/client digest rejected; removed/document/blob/MIME tampering UNVERIFIED; duplicate origin/stale evidence cannot support |
+| ST-BR-03 / BR-01–07 | EvidenceLink + `/brief-links`; exact workflow_run_id | Completed Research Core run + Website artifact linked to one existing WorkflowRun; current scope/signature/head rechecked; wrong project/403; immutable history/restart; Capsule/Bench links |
+| ST-BR-04 / BR-01–07 | intelligence.tsx Brief/detail/source inspection | Search/collection-status filter, coverage/current integrity/freshness/counterevidence/timestamps, safe literal rendering/download; empty/offline/not-found/403; three widths/two themes/axe/keyboard |
+| ST-RL-01 / RL-01–04 | Incident/Signal/Timeline/Investigation; RelayService | Actual unhealthy fixture, scoped dedup/contention, server state/revision/actor/time; read-only investigation/abstention; viewer/project isolation |
+| ST-RL-02 / RL-05–06 | ActionProposal/ApprovalReference/RecoveryExecution; Core ApprovalEngine; fixed executor | Exact target/action/parameters/hash/health/intent; unapproved, stale target/hash/new proposal/corrupt receipt denied; commit-time revocation; command/path/URL/action escape rejected; durable exactly-once claims |
+| ST-RL-03 / RL-07 | DemoHealthVerifier/RecoveryVerification; execute/reconcile/close | Action success with fault remains DEGRADED and cannot close; changed health rejects old receipt; before/after-effect crash fenced UNKNOWN, no retry; explicit reconciliation/denial/lost verification |
+| ST-RL-04 / RL-08 / BN-05–07 | Capsule/Replay; memory adapter + four existing pure graders | Actual captured before-state + recovered verification + hashes, safe scoped download; no runtime/model/live effect capability; live executor raising monkeypatch never called; escaped action trace fails; no promotion and Factory gates preserved |
+
+Proof sources: tests/integration/test_intelligence_recovery.py, tests/postgresql/test_intelligence_persistence.py, src/test/intelligence-contract.test.tsx and e2e/intelligence.spec.ts, plus full retained regressions/current-SHA CI. Shared Core session/membership, CSRF/origin, signer/protected heads and owner fence remain authoritative. [Threat matrix and rollback](intelligence-recovery-contracts.md) identify exact boundaries. Pending verification is not PASS.
+
+## Historical workflow and workspace acceptance
+
 Current audit source: `ba2140bc396a6dbebef76d510d8288309eafa847`; dependency workflow [37883814142](https://github.com/aryn-labs/aryn/actions/runs/37883814142) completed/success, 14/14 jobs. This matrix covers executable workflows/artifacts plus preserved Agent/workspace behavior. Exact implementation source and terminal CI are recorded in [delivery evidence](studio-redesign-progress.md); dependency CI is not evidence for new code. Official references below derive from the supplied PRD/repository; normative PDFs are absent, so no missing PDF section is claimed verified. AF-09 maps directly to supplied ST-WF-06; AF-10 is the Prompt 03 artifact/deliverable acceptance relation, without an invented clause from an absent Factory PDF.
 
 Historical Agent implementation source: `2ca9dca575a2cfcc95505547e4426fe95e7e97b4`; [Agent source CI](https://github.com/aryn-labs/aryn/actions/runs/37882643080) completed/success, 14/14 jobs. Workflow acceptance below requires the new observed results and exact-source CI recorded in progress; it does not inherit PASS from historical CI.

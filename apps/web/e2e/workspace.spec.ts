@@ -229,17 +229,26 @@ test("stale, offline, session-expired and permission-changed states", async ({
 test("future detail routes are truthful and have no enabled feature actions", async ({
   page,
 }) => {
-  for (const path of [
-    "/brief/demo",
-    "/relay/demo",
-    "/automations",
-    "/capabilities",
-  ]) {
+  for (const path of ["/automations", "/capabilities"]) {
     await page.goto(path);
     await expect(
       page.getByRole("heading", { name: "Belum tersedia", exact: true }),
     ).toBeVisible();
     await expect(page.locator("main button")).toHaveCount(0);
+  }
+  for (const path of ["/brief/demo", "/relay/demo", "/bench/replays/demo"]) {
+    await page.goto(path);
+    await expect(
+      page.getByRole("heading", {
+        name: "Sumber daya tidak tersedia",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", {
+        name: /Jalankan recovery|Setujui hash|Jalankan replay/,
+      }),
+    ).toHaveCount(0);
   }
   for (const path of ["/workflows/demo/builder", "/outputs/demo"]) {
     await page.goto(path);

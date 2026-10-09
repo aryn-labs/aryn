@@ -8,7 +8,17 @@ cap, Managed AI monetary reservation dan distributed workers belum terbukti. Dis
 live PostgreSQL contracts kini diuji; deployment PostgreSQL VPS tetap memerlukan UAT.
 Historical PASS rows di bawah tetap evidence revision sebelumnya.
 
-Studio executable workflow melanjutkan baseline `ba2140bc`: typed graph/CAS,
+Studio Brief/Relay melanjutkan baseline `b19c6e8`: sumber Run/artifact dan
+demo/document terverifikasi, counterevidence/abstention, incident dedup,
+Core approval exact hash, fixed disposable recovery, health independen dan
+capsule Bench replay tanpa live remediation/model/promotion. Migration 019
+additive mempertahankan history/governance. [Delivery evidence](docs/studio-redesign-progress.md)
+dan [contracts/threat/rollback](docs/intelligence-recovery-contracts.md) mencatat
+hasil lokal dan CI SHA aktual. Regresi lengkap dan CI masih harus selesai;
+READY FOR PROMPT 05 belum dinyatakan. Automations/scheduler tetap pekerjaan
+berikut, dan hosted production readiness tetap BLOCKED secara terpisah.
+
+Historical Studio executable workflow melanjutkan baseline `ba2140bc`: typed graph/CAS,
 immutable version, durable Core-owned three-task Research → Content → Website
 staging, scoped artifact integrity, exact-hash human review dan sandbox preview.
 Migration `018_workflow_execution` mengikuti 017/016/015 dan tidak mengubah
@@ -23,7 +33,7 @@ closure sempat gagal pada tes deadline Windows lama. Perbaikan tes mempertahanka
 deadline 200 ms dan watchdog nyata; riwayat serta 30/30 regresi Core dicatat pada
 Studio delivery. Seluruh gate pada SHA final diverifikasi sebelum laporan.
 
-Studio workspace melanjutkan `3a8ddb69`: grouped shell, scoped summary Overview,
+Historical Studio workspace melanjutkan `3a8ddb69`: grouped shell, scoped summary Overview,
 Projects/Divisions dengan Core authorization/CAS/audit, additive migration
 `016_workspace_structure`, bounded read APIs dan isolation cache. Source `80bac7d`
 lulus ARYN Quality 37835952417 (14/14 jobs); READY FOR PROMPT 02. Evidence lokal,

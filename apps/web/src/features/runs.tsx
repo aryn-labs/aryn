@@ -322,6 +322,9 @@ export function Runs({
       )}
       {selectedRun && (
         <Panel title="Captured Core execution">
+          <Link to={`/brief?source_kind=run&source_id=${selectedRun.id}`}>
+            Kumpulkan Core Run ke Brief
+          </Link>
           {selectedRun.execution_claim_verified &&
             selectedRun.assignment_provenance_verified &&
             selectedRun.execution_provenance?.workflow && (

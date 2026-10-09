@@ -29,6 +29,7 @@ import { PageHeading, Busy, Notice, Status } from "../components/shared";
 import { Panel as WorkspacePanel } from "../components/workspace";
 import { Button } from "../components/ui/button";
 import "./workflow.css";
+import { EvidenceLinks } from "./intelligence";
 
 function Panel({ children, ...props }: ComponentProps<typeof WorkspacePanel>) {
   return (
@@ -1017,6 +1018,14 @@ export function Workflows({ workspace, project, data }: Shared) {
             </Button>
           </Panel>
           {run.data && run.data.workflow_id === id && (
+            <EvidenceLinks
+              organization={org}
+              project={project}
+              kind="workflow_run"
+              id={run.data.id}
+            />
+          )}
+          {run.data && run.data.workflow_id === id && (
             <Timeline
               run={run.data}
               canCancel={!!data.permissions["run:cancel"]}
@@ -1293,6 +1302,11 @@ export function Outputs({ workspace, project, data }: Shared) {
       ) : (
         <>
           <Panel title="Artifact provenance">
+            <Link
+              to={`/brief?source_kind=artifact&source_id=${a.id}&workflow_run=${a.workflow_run_id}`}
+            >
+              Kumpulkan artifact ke Brief
+            </Link>
             <dl>
               {Object.entries(a).map(([k, v]) => (
                 <div key={k}>
@@ -1318,6 +1332,12 @@ export function Outputs({ workspace, project, data }: Shared) {
               Download artifact
             </a>
           </Panel>
+          <EvidenceLinks
+            organization={org}
+            project={project}
+            kind="artifact"
+            id={a.id}
+          />
           <Panel title="Inert preview">
             {preview.isPending ? (
               <Busy />

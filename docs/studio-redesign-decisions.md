@@ -1,5 +1,19 @@
 # Studio architecture decisions
 
+## Verified evidence and disposable recovery
+
+Prompt 04 reuses existing Core identity/permissions, ApprovalEngine, signer/protected heads, execution owner/fence and audit. `SignedRecords` supplies scoped storage verification and bounded pages without a new control plane. Additive migration 019 refuses populated downgrade before dropping anything. [ER/state diagrams and threat boundaries](intelligence-recovery-contracts.md) define fifteen tables, writer provisioning and rollback.
+
+Brief snapshots authorized actual Run/artifact and signed disposable observations/documents and rechecks origin/snapshot on reads. Use three narrow measured predicates, distinct applicable origin coverage and fresh verified evidence; health binds an exact fixture ID and unrelated target observations are neutral. No semantic diagnosis or confidence. Preserve contradictions. Current evaluation may change as sources age/disappear; immutable collection status/digest remains historical and is explicitly the list filter criterion.
+
+Demo health is real project-owned database fixture state created only by authorized explicit user action. Fixed restart changes one boolean and causal revision; no OS/file/command/model/browser/network capability or OS sandbox claim. Existing generic Core human `relay_action` approvals bind hash and current approver role; agent-version Bench/regression policy is unchanged and checked by existing regressions. Revalidate receipt and actor permission at effect commit.
+
+Durable claim precedes effect, followed by independent signed health observation. Only causal matching healthy after-state permits recovery/closure. Explicit reconciliation may establish failed unchanged unhealthy before-state without crediting recovery. Stale owner/process loss/verification loss retains unknown with no retry. Exact actor/incident/proposal/hash idempotency prevents another dispatch.
+
+Replay copies actual captured before-state in a capability-free adapter, grades the actual memory action trace/timing through pure Bench diagnostic graders, and persists signed diagnostic results with null model/provider and zero live remediation calls. Diagnostic contract cannot replace Agent promotion suites: `promotion_evidence=false`. Factory link opens ordinary draft/governance flow; no candidate is automatically created or published.
+
+UI retains shared panels, scoped queries/AbortSignal, semantic tables/filters/plain text, current-read error suppression of cached controls and project-switch guards during mutation. Lazy Brief/Relay/replay routes do not require runtime/model snapshots. Exact Workflow/Run/Output/replay links do not recreate lineage. Professional filenames describe product responsibilities. Current observed validation/source/CI are in [delivery evidence](studio-redesign-progress.md); decisions below are historical.
+
 ## Executable workflows and artifact review
 
 Audit baseline: `ba2140bc396a6dbebef76d510d8288309eafa847`, development equal to remote and dependency CI 37883814142 completed-success. Supplied PRD v1.2 / Prompt 03 authorize this delivery; absent normative PDFs are not claimed reviewed. Current results and source/CI references are in [delivery evidence](studio-redesign-progress.md). Earlier decisions below retain their historical context.

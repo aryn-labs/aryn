@@ -29,6 +29,10 @@ def build():
         names = bundle.namelist()
         assert "modules/core/workflows/coordinator.py" in names
         assert "database/migrations/versions/015_authentication_boundary.py" in names
+        assert all(name in names for name in (
+            "packages/contracts/intelligence.py", "modules/brief/service.py",
+            "modules/relay/service.py", "modules/relay/recovery.py", "modules/bench/replay.py",
+            "services/api/intelligence.py", "database/migrations/versions/019_intelligence_recovery.py"))
         assert all(name.endswith((".py", "METADATA", "WHEEL", "top_level.txt", "RECORD")) for name in names), "Unexpected wheel data."
         # Namespace packages require real extracted directories (zipimport cannot
         # resolve every implicit namespace). Verify the delivered wheel's files,
@@ -37,7 +41,7 @@ def build():
         verified.mkdir(parents=True, exist_ok=False)
         assert all(not Path(name).is_absolute() and ".." not in Path(name).parts for name in names)
         bundle.extractall(verified)
-        script = "import sys; sys.path.insert(0, sys.argv[1]); import modules.core.workflows.coordinator as c; assert c.__file__.startswith(sys.argv[1]); import services.api.authentication; print('BUILT_WHEEL_IMPORT_PASS')"
+        script = "import sys; sys.path.insert(0, sys.argv[1]); import modules.core.workflows.coordinator as c; assert c.__file__.startswith(sys.argv[1]); import services.api.authentication; import services.api.intelligence; import modules.brief.service; import modules.relay.recovery; import modules.bench.replay; print('BUILT_WHEEL_IMPORT_PASS')"
         subprocess.run([sys.executable, "-I", "-c", script, str(verified.resolve())], check=True)
     shutil.copytree("apps/web/dist", output / "web")
     for filename in ("pyproject.toml", "uv.lock", "alembic.ini", "README.md", "apps/web/package-lock.json"):

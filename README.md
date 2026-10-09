@@ -40,7 +40,7 @@ Set-Location D:\ARYN\aryn-labs\aryn
 .\scripts\start-aryn.ps1
 ```
 
-9Router must already listen at `http://127.0.0.1:20128/v1`; the combined launcher starts runtime and Studio with matching ephemeral authentication. See [9Router routing, readiness limitations and validation](docs/9router-gateway.md). Open `http://127.0.0.1:8710`. See [Studio setup, security, and capabilities](docs/studio.md) and [validation evidence](docs/studio-validation.md). Brief and Relay are not implemented in Studio.
+9Router must already listen at `http://127.0.0.1:20128/v1`; the combined launcher starts runtime and Studio with matching ephemeral authentication. See [9Router routing, readiness limitations and validation](docs/9router-gateway.md). Open `http://127.0.0.1:8710`. See [Studio setup, security, and capabilities](docs/studio.md) and [validation evidence](docs/studio-validation.md). Brief supports verified scoped evidence; Relay supports explicit disposable database-fixture incidents and approval-bound recovery with independent health checks. [Evidence/recovery boundaries and safe model-free Bench replay](docs/intelligence-recovery-contracts.md) exclude live infrastructure remediation and automatic promotion.
 
 See [Bench engine contracts and validation](docs/bench-engine.md).
 

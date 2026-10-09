@@ -1243,6 +1243,8 @@ def create_app(
 
     from services.api.workflows import register_workflows
     register_workflows(app, coordinator, context, require_runtime)
+    from services.api.intelligence import register_intelligence
+    register_intelligence(app, coordinator, context)
 
     assets = ROOT / "apps/web/dist/assets"
     if assets.is_dir():

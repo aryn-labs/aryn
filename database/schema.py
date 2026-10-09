@@ -535,6 +535,8 @@ def install_governance_guards(metadata, connection, **kwargs):
     install_history_protection(connection)
     from database.workflow_protection import install_workflow_protection
     install_workflow_protection(connection)
+    from database.intelligence_protection import install_intelligence_protection
+    install_intelligence_protection(connection)
 
 
 class WorkflowScope:
@@ -580,3 +582,128 @@ class WorkflowDeliverableModel(WorkflowScope, Base):
     __tablename__ = "workflow_deliverables"
     workflow_run_id = Column(String(64), ForeignKey("workflow_runs.id"), nullable=False, unique=True)
     artifact_id = Column(String(64), ForeignKey("workflow_artifacts.id"), nullable=False)
+
+
+class IntelligenceScope:
+    id = Column(String(64), primary_key=True)
+    organization_id = Column(String(64), ForeignKey("organizations.id"), nullable=False)
+    project_id = Column(String(64), ForeignKey("projects.id"), nullable=False)
+    details_json = Column(Text, nullable=False)
+    attestation = Column(String(64), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class DemoFixtureModel(IntelligenceScope, Base):
+    __tablename__ = "demo_fixtures"
+    revision = Column(Integer, nullable=False)
+
+
+class DemoObservationModel(IntelligenceScope, Base):
+    __tablename__ = "demo_observations"
+    target_id = Column(String(64), ForeignKey("demo_fixtures.id"), nullable=False)
+
+
+class EvidenceDocumentModel(IntelligenceScope, Base):
+    __tablename__ = "evidence_documents"
+    title = Column(String(160), nullable=False)
+
+
+class EvidenceSourceModel(IntelligenceScope, Base):
+    __tablename__ = "evidence_sources"
+    title = Column(String(160), nullable=False)
+    blob = Column(LargeBinary, nullable=False)
+
+
+class EvidenceBundleModel(IntelligenceScope, Base):
+    __tablename__ = "evidence_bundles"
+    title = Column(String(160), nullable=False)
+    status = Column(String(32), nullable=False)
+    workflow_run_id = Column(String(64), ForeignKey("workflow_runs.id"), nullable=True)
+
+
+class RelaySignalModel(IntelligenceScope, Base):
+    __tablename__ = "relay_signals"
+    target_id = Column(String(64), ForeignKey("demo_fixtures.id"), nullable=False)
+    source_id = Column(String(64), ForeignKey("evidence_sources.id"), nullable=False)
+
+
+class RelayIncidentModel(IntelligenceScope, Base):
+    __tablename__ = "relay_incidents"
+    title = Column(String(160), nullable=False)
+    target_id = Column(String(64), ForeignKey("demo_fixtures.id"), nullable=False)
+    signal_id = Column(String(64), ForeignKey("relay_signals.id"), nullable=False)
+    dedup_key = Column(String(128), nullable=False)
+    revision = Column(Integer, nullable=False)
+    status = Column(String(32), nullable=False)
+    __table_args__ = (UniqueConstraint("organization_id", "project_id", "dedup_key", name="uq_relay_incident_key"),)
+
+
+class RelayEventModel(IntelligenceScope, Base):
+    __tablename__ = "relay_events"
+    incident_id = Column(String(64), ForeignKey("relay_incidents.id"), nullable=False)
+    sequence = Column(Integer, nullable=False)
+    __table_args__ = (UniqueConstraint("incident_id", "sequence", name="uq_relay_event_sequence"),)
+
+
+class RelayInvestigationModel(IntelligenceScope, Base):
+    __tablename__ = "relay_investigations"
+    incident_id = Column(String(64), ForeignKey("relay_incidents.id"), nullable=False)
+    bundle_id = Column(String(64), ForeignKey("evidence_bundles.id"), nullable=False)
+
+
+class RelayProposalModel(IntelligenceScope, Base):
+    __tablename__ = "relay_proposals"
+    incident_id = Column(String(64), ForeignKey("relay_incidents.id"), nullable=False)
+    target_id = Column(String(64), ForeignKey("demo_fixtures.id"), nullable=False)
+    bundle_id = Column(String(64), ForeignKey("evidence_bundles.id"), nullable=False)
+
+
+class RelayExecutionModel(IntelligenceScope, Base):
+    __tablename__ = "relay_executions"
+    incident_id = Column(String(64), ForeignKey("relay_incidents.id"), nullable=False)
+    proposal_id = Column(String(64), ForeignKey("relay_proposals.id"), nullable=False, unique=True)
+    idempotency_key = Column(String(128), nullable=False)
+    status = Column(String(32), nullable=False)
+    __table_args__ = (UniqueConstraint("organization_id", "project_id", "idempotency_key", name="uq_relay_execution_key"),)
+
+
+class RelayVerificationModel(IntelligenceScope, Base):
+    __tablename__ = "relay_verifications"
+    incident_id = Column(String(64), ForeignKey("relay_incidents.id"), nullable=False)
+    execution_id = Column(String(64), ForeignKey("relay_executions.id"), nullable=False, unique=True)
+    target_id = Column(String(64), ForeignKey("demo_fixtures.id"), nullable=False)
+    observation_id = Column(String(64), ForeignKey("demo_observations.id"), nullable=False)
+
+
+class RelayCapsuleModel(IntelligenceScope, Base):
+    __tablename__ = "relay_capsules"
+    incident_id = Column(String(64), ForeignKey("relay_incidents.id"), nullable=False, unique=True)
+    bundle_id = Column(String(64), ForeignKey("evidence_bundles.id"), nullable=False)
+    proposal_id = Column(String(64), ForeignKey("relay_proposals.id"), nullable=False)
+    verification_id = Column(String(64), ForeignKey("relay_verifications.id"), nullable=False)
+
+
+class BenchReplayModel(IntelligenceScope, Base):
+    __tablename__ = "bench_capsule_replays"
+    capsule_id = Column(String(64), ForeignKey("relay_capsules.id"), nullable=False)
+
+
+class EvidenceLinkModel(IntelligenceScope, Base):
+    __tablename__ = "evidence_links"
+    bundle_id = Column(String(64), ForeignKey("evidence_bundles.id"), nullable=False)
+    reference_kind = Column(String(32), nullable=False)
+    reference_id = Column(String(64), nullable=False)
+    __table_args__ = (UniqueConstraint("bundle_id", "reference_kind", "reference_id", name="uq_evidence_link"),
+        Index("ix_evidence_link_reference", "organization_id", "project_id", "reference_kind", "reference_id"))
+
+
+for _intelligence_model in (DemoFixtureModel, DemoObservationModel, EvidenceDocumentModel,
+    EvidenceSourceModel, EvidenceBundleModel, RelaySignalModel, RelayIncidentModel, RelayEventModel,
+    RelayInvestigationModel, RelayProposalModel, RelayExecutionModel, RelayVerificationModel,
+    RelayCapsuleModel, BenchReplayModel, EvidenceLinkModel):
+    Index("ix_" + _intelligence_model.__tablename__ + "_scope", _intelligence_model.organization_id,
+        _intelligence_model.project_id, _intelligence_model.created_at, _intelligence_model.id)
+Index("ix_relay_active_execution", RelayExecutionModel.status)
+Index("ix_relay_incident_status", RelayIncidentModel.organization_id, RelayIncidentModel.project_id, RelayIncidentModel.status)
+Index("ix_demo_observation_target", DemoObservationModel.target_id, DemoObservationModel.created_at)
+Index("ix_relay_event_incident", RelayEventModel.incident_id, RelayEventModel.sequence)

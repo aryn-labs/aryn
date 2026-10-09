@@ -81,6 +81,26 @@ const RunHistory = lazy(() =>
 const BenchPage = lazy(() =>
   import("./features/bench").then((module) => ({ default: module.BenchPage })),
 );
+const Brief = lazy(() =>
+  import("./features/intelligence").then((module) => ({
+    default: module.Brief,
+  })),
+);
+const Relay = lazy(() =>
+  import("./features/intelligence").then((module) => ({
+    default: module.Relay,
+  })),
+);
+const CapsuleReplays = lazy(() =>
+  import("./features/intelligence").then((module) => ({
+    default: module.CapsuleReplays,
+  })),
+);
+const EvidenceLinks = lazy(() =>
+  import("./features/intelligence").then((module) => ({
+    default: module.EvidenceLinks,
+  })),
+);
 const Approvals = lazy(() =>
   import("./features/approval-queue").then((module) => ({
     default: module.ApprovalQueue,
@@ -151,7 +171,6 @@ const navigation = [
     label: "Brief",
     icon: FileText,
     group: "INTELLIGENCE & RELIABILITY",
-    future: true,
   },
   {
     path: "/bench",
@@ -164,7 +183,6 @@ const navigation = [
     label: "Relay",
     icon: Radio,
     group: "INTELLIGENCE & RELIABILITY",
-    future: true,
   },
   {
     path: "/approvals",
@@ -244,6 +262,7 @@ export function App() {
       (location.pathname === route ||
         location.pathname.startsWith(`${route}/`)) &&
       location.pathname !== "/factory" &&
+      !location.pathname.startsWith("/bench/replays") &&
       !(location.pathname === "/runs" && !location.search),
   );
   const summary = useQuery({
@@ -892,44 +911,83 @@ export function App() {
                   <RunHistory {...shared} />
                 ) : location.pathname === "/runs" ||
                   location.pathname.startsWith("/runs/") ? (
-                  <Runs
-                    {...shared}
-                    history={
-                      <ResourceBrowser
+                  <>
+                    <Runs
+                      {...shared}
+                      history={
+                        <ResourceBrowser
+                          organization={organization}
+                          project={project}
+                          resource="runs"
+                          title="run"
+                          statuses={[
+                            "queued",
+                            "running",
+                            "completed",
+                            "failed",
+                            "cancelled",
+                            "outcome_unknown",
+                          ]}
+                          link={(item) => `/runs/${item.id}`}
+                          extra={(item) => (
+                            <>
+                              <p className="mono">
+                                {String(
+                                  item.references.model || "Belum tersedia",
+                                )}
+                              </p>
+                              <p>
+                                Token{" "}
+                                {item.references.total_tokens == null
+                                  ? "Tidak tersedia"
+                                  : String(item.references.total_tokens)}
+                              </p>
+                            </>
+                          )}
+                        />
+                      }
+                    />
+                    {data?.runs.find(
+                      (run) =>
+                        run.id ===
+                        (routeIdentifier(location.pathname.split("/")[2]) ||
+                          new URLSearchParams(location.search).get("hasil")),
+                    ) && (
+                      <EvidenceLinks
                         organization={organization}
                         project={project}
-                        resource="runs"
-                        title="run"
-                        statuses={[
-                          "queued",
-                          "running",
-                          "completed",
-                          "failed",
-                          "cancelled",
-                          "outcome_unknown",
-                        ]}
-                        link={(item) => `/runs/${item.id}`}
-                        extra={(item) => (
-                          <>
-                            <p className="mono">
-                              {String(
-                                item.references.model || "Belum tersedia",
-                              )}
-                            </p>
-                            <p>
-                              Token{" "}
-                              {item.references.total_tokens == null
-                                ? "Tidak tersedia"
-                                : String(item.references.total_tokens)}
-                            </p>
-                          </>
-                        )}
+                        kind="run"
+                        id={
+                          routeIdentifier(location.pathname.split("/")[2]) ||
+                          new URLSearchParams(location.search).get("hasil")!
+                        }
                       />
-                    }
+                    )}
+                  </>
+                ) : location.pathname === "/brief" ||
+                  location.pathname.startsWith("/brief/") ? (
+                  <Brief
+                    key={`${organization}:${project}:${location.pathname}`}
+                    {...shared}
+                  />
+                ) : location.pathname === "/relay" ||
+                  location.pathname.startsWith("/relay/") ? (
+                  <Relay
+                    key={`${organization}:${project}:${location.pathname}`}
+                    {...shared}
+                  />
+                ) : location.pathname === "/bench/replays" ||
+                  location.pathname.startsWith("/bench/replays/") ? (
+                  <CapsuleReplays
+                    key={`${organization}:${project}:${location.pathname}`}
+                    {...shared}
                   />
                 ) : location.pathname === "/bench" ||
                   location.pathname.startsWith("/bench/") ? (
                   <>
+                    <NavLink to="/bench/replays">
+                      Capsule replay · diagnostic memory
+                    </NavLink>
                     <BenchPage {...shared} />
                     <ResourceBrowser
                       organization={organization}

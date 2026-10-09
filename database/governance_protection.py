@@ -66,6 +66,9 @@ def verify_hosted_writer(engine):
             "AND pg_has_role(current_user, oid, 'MEMBER'))")).scalar()
         from sqlalchemy import inspect
         from database.workflow_protection import TABLES, MUTABLE_TABLES
+        from database.intelligence_protection import TABLES as INTELLIGENCE_TABLES, MUTABLE_TABLES as INTELLIGENCE_MUTABLE
+        TABLES = TABLES + INTELLIGENCE_TABLES
+        MUTABLE_TABLES = MUTABLE_TABLES + INTELLIGENCE_MUTABLE
         protected = HISTORY_TABLES + tuple(table for table in TABLES + MUTABLE_TABLES if table in inspect(connection).get_table_names())
         for table in protected:
             privileges = "DELETE,TRUNCATE,TRIGGER" if table in MUTABLE_TABLES else "UPDATE,DELETE,TRUNCATE,TRIGGER"
