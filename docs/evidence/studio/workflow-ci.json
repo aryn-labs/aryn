@@ -1,0 +1,288 @@
+{
+  "conclusion": "success",
+  "createdAt": "2026-10-09T07:08:18Z",
+  "databaseId": 37897316354,
+  "event": "push",
+  "headBranch": "development",
+  "headSha": "d2fdc6da339f50340c2bc9c6a8b0b0e246424b74",
+  "jobs": [
+    {
+      "databaseId": 113711517317,
+      "name": "Security and Configuration",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/aryn-labs/aryn/actions/runs/37897316354/job/113711517317",
+      "startedAt": "2026-10-09T07:08:21Z",
+      "completedAt": "2026-10-09T07:08:49Z"
+    },
+    {
+      "databaseId": 113711517493,
+      "name": "Browser E2E (2/3)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/aryn-labs/aryn/actions/runs/37897316354/job/113711517493",
+      "startedAt": "2026-10-09T07:08:20Z",
+      "completedAt": "2026-10-09T07:12:01Z"
+    },
+    {
+      "databaseId": 113711517497,
+      "name": "Browser E2E (1/3)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/aryn-labs/aryn/actions/runs/37897316354/job/113711517497",
+      "startedAt": "2026-10-09T07:08:20Z",
+      "completedAt": "2026-10-09T07:10:30Z"
+    },
+    {
+      "databaseId": 113711517625,
+      "name": "Backend Quality (windows-2025, 4/4)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/aryn-labs/aryn/actions/runs/37897316354/job/113711517625",
+      "startedAt": "2026-10-09T07:08:20Z",
+      "completedAt": "2026-10-09T07:14:38Z"
+    },
+    {
+      "databaseId": 113711517661,
+      "name": "Native Hermes Boundary",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/aryn-labs/aryn/actions/runs/37897316354/job/113711517661",
+      "startedAt": "2026-10-09T07:08:21Z",
+      "completedAt": "2026-10-09T07:08:57Z"
+    },
+    {
+      "databaseId": 113711517664,
+      "name": "Backend Quality (windows-2025, 2/4)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/aryn-labs/aryn/actions/runs/37897316354/job/113711517664",
+      "startedAt": "2026-10-09T07:08:20Z",
+      "completedAt": "2026-10-09T07:18:26Z"
+    },
+    {
+      "databaseId": 113711517696,
+      "name": "Backend Quality (ubuntu-24.04)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/aryn-labs/aryn/actions/runs/37897316354/job/113711517696",
+      "startedAt": "2026-10-09T07:08:20Z",
+      "completedAt": "2026-10-09T07:14:00Z"
+    },
+    {
+      "databaseId": 113711517712,
+      "name": "Frontend Quality",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/aryn-labs/aryn/actions/runs/37897316354/job/113711517712",
+      "startedAt": "2026-10-09T07:08:20Z",
+      "completedAt": "2026-10-09T07:08:59Z"
+    },
+    {
+      "databaseId": 113711517723,
+      "name": "Browser E2E (3/3)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/aryn-labs/aryn/actions/runs/37897316354/job/113711517723",
+      "startedAt": "2026-10-09T07:08:21Z",
+      "completedAt": "2026-10-09T07:10:54Z"
+    },
+    {
+      "databaseId": 113711517762,
+      "name": "Backend Quality (windows-2025, 3/4)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/aryn-labs/aryn/actions/runs/37897316354/job/113711517762",
+      "startedAt": "2026-10-09T07:08:20Z",
+      "completedAt": "2026-10-09T07:16:26Z"
+    },
+    {
+      "databaseId": 113711517777,
+      "name": "PostgreSQL Integration",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/aryn-labs/aryn/actions/runs/37897316354/job/113711517777",
+      "startedAt": "2026-10-09T07:08:21Z",
+      "completedAt": "2026-10-09T07:10:20Z"
+    },
+    {
+      "databaseId": 113711517829,
+      "name": "Backend Quality (windows-2025, 1/4)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/aryn-labs/aryn/actions/runs/37897316354/job/113711517829",
+      "startedAt": "2026-10-09T07:08:21Z",
+      "completedAt": "2026-10-09T07:17:32Z"
+    },
+    {
+      "databaseId": 113714537419,
+      "name": "Required Quality Gates",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/aryn-labs/aryn/actions/runs/37897316354/job/113714537419",
+      "startedAt": "2026-10-09T07:18:28Z",
+      "completedAt": "2026-10-09T07:18:35Z"
+    },
+    {
+      "databaseId": 113714580940,
+      "name": "Validated Delivery Artifact",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/aryn-labs/aryn/actions/runs/37897316354/job/113714580940",
+      "startedAt": "2026-10-09T07:18:37Z",
+      "completedAt": "2026-10-09T07:19:07Z"
+    }
+  ],
+  "name": "ARYN Quality",
+  "status": "completed",
+  "updatedAt": "2026-10-09T07:19:08Z",
+  "url": "https://github.com/aryn-labs/aryn/actions/runs/37897316354",
+  "artifacts": [
+    {
+      "id": 11601481810,
+      "name": "backend-results-windows-2025-2-d2fdc6da339f50340c2bc9c6a8b0b0e246424b74",
+      "size_in_bytes": 23239,
+      "digest": "sha256:3dc0de03a69ceb46e9616e64b3345ecaa5a2b27cf429a3004d4da1480cbec0f2",
+      "expired": false
+    },
+    {
+      "id": 11601430162,
+      "name": "dependency-audit-d2fdc6da339f50340c2bc9c6a8b0b0e246424b74",
+      "size_in_bytes": 1310,
+      "digest": "sha256:1174202a9ef6237bb82aabf0e426cec9b142d79f32c9756d21d451da3e895a98",
+      "expired": false
+    },
+    {
+      "id": 11601286863,
+      "name": "backend-results-windows-2025-3-d2fdc6da339f50340c2bc9c6a8b0b0e246424b74",
+      "size_in_bytes": 23316,
+      "digest": "sha256:fda4149a8a279edb87eabd98f4976936e88765461ebb192cf3780292511b8b48",
+      "expired": false
+    },
+    {
+      "id": 11601110998,
+      "name": "native-runtime-results-d2fdc6da339f50340c2bc9c6a8b0b0e246424b74",
+      "size_in_bytes": 1435,
+      "digest": "sha256:173d0ab8a85d61f84abadac5de9ed189aef3a1f0b19b00f031f475241558915d",
+      "expired": false
+    },
+    {
+      "id": 11601031999,
+      "name": "aryn-delivery-d2fdc6da339f50340c2bc9c6a8b0b0e246424b74",
+      "size_in_bytes": 1049594,
+      "digest": "sha256:26fc9d9c053cfd3ab3026ec765f4aa3e05866dcc0184b9167c91c9e2769946ca",
+      "expired": false
+    },
+    {
+      "id": 11600952914,
+      "name": "backend-results-windows-2025-4-d2fdc6da339f50340c2bc9c6a8b0b0e246424b74",
+      "size_in_bytes": 23276,
+      "digest": "sha256:80f96b02ba39562bf484b5d4462cc5b152924773968680e485b6b7ef23a1d591",
+      "expired": false
+    },
+    {
+      "id": 11600867751,
+      "name": "backend-results-windows-2025-1-d2fdc6da339f50340c2bc9c6a8b0b0e246424b74",
+      "size_in_bytes": 23323,
+      "digest": "sha256:d133315d3da858e1751393be11d492de901557c7f545ad1f3e69ab55025bfd84",
+      "expired": false
+    },
+    {
+      "id": 11600866836,
+      "name": "postgresql-results-d2fdc6da339f50340c2bc9c6a8b0b0e246424b74",
+      "size_in_bytes": 1537,
+      "digest": "sha256:3ae4bad4875f6ba20f1cfb8d452980462596d89b6a1046161e021c27fd8c5bac",
+      "expired": false
+    },
+    {
+      "id": 11600579905,
+      "name": "backend-results-ubuntu-24.04-0-d2fdc6da339f50340c2bc9c6a8b0b0e246424b74",
+      "size_in_bytes": 41136,
+      "digest": "sha256:bac0d1cf56d6fe7691823cfd1a1c3d8bec0478a6631a2f9b3456621fb29b91d3",
+      "expired": false
+    }
+  ],
+  "backend_verification": {
+    "source_sha": "d2fdc6da339f50340c2bc9c6a8b0b0e246424b74",
+    "complete_test_cases": 796,
+    "coverage_both_platforms_verified": true,
+    "backend_results": [
+      {
+        "tests": 796,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 23,
+        "platform": "posix",
+        "shard": "1/1",
+        "seconds": 323.745,
+        "passed": 773
+      },
+      {
+        "tests": 199,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 3,
+        "platform": "nt",
+        "shard": "1/4",
+        "seconds": 517.341,
+        "passed": 196
+      },
+      {
+        "tests": 199,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 1,
+        "platform": "nt",
+        "shard": "2/4",
+        "seconds": 578.605,
+        "passed": 198
+      },
+      {
+        "tests": 199,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 1,
+        "platform": "nt",
+        "shard": "3/4",
+        "seconds": 454.611,
+        "passed": 198
+      },
+      {
+        "tests": 199,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 1,
+        "platform": "nt",
+        "shard": "4/4",
+        "seconds": 352.639,
+        "passed": 198
+      }
+    ]
+  },
+  "postgresql_results": {
+    "tests": 54,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0,
+    "seconds": 87.59
+  },
+  "native_runtime_results": {
+    "tests": 1,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0,
+    "seconds": 8.863
+  },
+  "delivery_verification": {
+    "commit": "d2fdc6da339f50340c2bc9c6a8b0b0e246424b74",
+    "source_modified": false,
+    "file_hashes_verified": 35,
+    "workflow_files_present": [
+      "modules/core/workflows/executor.py",
+      "packages/contracts/workflow.py",
+      "services/api/workflows.py",
+      "database/migrations/versions/018_workflow_execution.py"
+    ],
+    "deployment": "review-only; no production deployment"
+  }
+}
