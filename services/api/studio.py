@@ -33,6 +33,7 @@ from database.repositories.organization_repo import OrganizationRepository
 from database.schema import (
     AgentBlueprintModel,
     AgentVersionModel,
+    AgentAssignmentModel,
     ApprovalModel,
     AuditEventModel,
     BenchEvaluationModel,
@@ -41,6 +42,8 @@ from database.schema import (
     RunStateModel,
 )
 from modules.agent_factory.service import AgentFactoryService, ForbiddenToolError
+from modules.agent_factory.editor import AgentEditor, EditorConflictError
+from packages.contracts.agent_builder import WorkingCopyInput, WorkingCopyView, GenerationInput, LayoutInput, LayoutView, LifecycleProjection, StopInput, StopReceipt
 from modules.bench.quality_gate import QualityGateFailedError
 from modules.bench.runner import BenchRunner
 from modules.bench.scenarios import get_bench_suite_registry
@@ -271,6 +274,7 @@ def create_app(
     )
     workspace_reads = WorkspaceReads(db, permissions, coordinator)
     workspace_service = WorkspaceService(db, permissions)
+    editor = AgentEditor(factory)
     sessions = {}
     mutation_lock = asyncio.Lock()
     # Provision only dedicated development scope. Do not re-grant a revoked membership on restart.
@@ -429,12 +433,22 @@ def create_app(
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request, exc):
+        if request.url.path.endswith("/working-copy"):
+            from packages.contracts.agent_builder import AgentDraft
+            allowed = set(AgentDraft.model_fields) | {"definition", "source_version_id", "expected_generation"}
+            for policy in ("output_contract", "constraints", "tool_policy", "model_policy", "budget_policy", "evaluation_reference"):
+                allowed.update(AgentDraft.model_fields[policy].annotation.model_fields)
+            errors = [{"field": ".".join(str(part) if isinstance(part, int) or part in allowed else "field" for part in error["loc"] if part != "body"),
+                "message": "Nilai field tidak sesuai kontrak."} for error in exc.errors()[:32]]
+            return JSONResponse({"message": "Periksa konfigurasi AgentBuilder: format, panjang, atau nilai field belum sesuai.",
+                "error_code": "editor_validation", "field_errors": errors, "correlation_id": request_correlation.get()}, status_code=422)
         return fail(
             422,
             "Periksa formulir: format, panjang, atau nilai belum sesuai. Klaim identitas dari browser tidak diterima.",
         )
 
     exception_map = {
+        EditorConflictError: (409, "Generation working copy atau layout berubah. Muat ulang, lalu pulihkan input lokal sebelum menyimpan kembali."),
         RunInProgressError: (409, "Permintaan sudah tercatat. Periksa status dan riwayat; model tidak dijalankan ulang."),
         IdempotencyConflictError: (409, "Kunci permintaan sudah terikat pada input atau konfigurasi berbeda."),
         VersionIntegrityError: (
@@ -712,12 +726,12 @@ def create_app(
         limit: int = Query(default=25, ge=1, le=100), cursor: str | None = Query(default=None, max_length=4096),
         q: str = Query(default="", max_length=100), status: str = Query(default="", max_length=32),
         sort: str = Query(default="newest", max_length=16), actor: str = Query(default="", max_length=64),
-        resource_id: str = Query(default="", max_length=128)):
-        allowed = {"limit", "cursor", "q", "status", "sort", "actor", "resource_id"}
+        resource_id: str = Query(default="", max_length=128), blueprint_id: str = Query(default="", max_length=64)):
+        allowed = {"limit", "cursor", "q", "status", "sort", "actor", "resource_id", "blueprint_id"}
         if set(request.query_params) - allowed or any(len(request.query_params.getlist(key)) != 1 for key in request.query_params):
             raise HTTPException(422, "Unsupported query parameters.")
         return workspace_reads.page(context(project_id), resource, limit=limit, cursor=cursor, q=q,
-            status=status, sort=sort, actor=actor, resource_id=resource_id)
+            status=status, sort=sort, actor=actor, resource_id=resource_id, blueprint_id=blueprint_id)
 
     @app.get("/api/projects/{project_id}/resources/{resource}/{identifier}", response_model=ResourceItem)
     async def resource_detail(project_id: str, resource: str, identifier: str):
@@ -735,17 +749,82 @@ def create_app(
 
     @app.get("/api/projects/{project_id}/snapshot")
     async def snapshot(project_id: str):
+        return await project_projection(project_id)
+
+    @app.get("/api/projects/{project_id}/lifecycle", response_model=LifecycleProjection)
+    async def lifecycle(project_id: str, request: Request, limit: int = Query(default=25, ge=1, le=50),
+        blueprint_id: str = Query(default="", max_length=64), version_id: str = Query(default="", max_length=64),
+        run_id: str = Query(default="", max_length=64), assignment_id: str = Query(default="", max_length=64),
+        evaluation_id: str = Query(default="", max_length=64)):
+        allowed = {"limit", "blueprint_id", "version_id", "run_id", "assignment_id", "evaluation_id"}
+        if set(request.query_params) - allowed or any(len(request.query_params.getlist(key)) != 1 for key in request.query_params):
+            raise HTTPException(422, "Unsupported lifecycle parameters.")
+        return await project_projection(project_id, limit, blueprint_id, version_id, run_id, assignment_id, evaluation_id)
+
+    async def project_projection(project_id, limit=None, blueprint_id="", version_id="", run_id="", assignment_id="", evaluation_id=""):
         ctx = context(project_id)
         with db.session() as s:
-            blueprints = [row(x) for x in AgentRepository(s).list_blueprints(ctx)]
-            version_records = (s.query(AgentVersionModel)
+            repo = AgentRepository(s)
+            captured_version = None
+            if run_id:
+                captured = s.query(RunStateModel).filter_by(id=run_id, organization_id=ctx.organization_id, project_id=project_id).first()
+                if not captured or captured.execution_mode == "bench":
+                    raise EntityNotFoundError("Run unavailable in this project.")
+                captured_version, assignment_id = captured.agent_version_id, captured.assignment_id or ""
+                version_id, blueprint_id, evaluation_id = captured_version or "", "", ""
+            if evaluation_id:
+                evaluation = BenchRepository(s, db.evidence_signer).get_evaluation(ctx, evaluation_id)
+                version_id = evaluation.version_id
+            if version_id:
+                selected_version = repo.get_version(ctx, version_id)
+                if blueprint_id and selected_version.blueprint_id != blueprint_id:
+                    raise EntityNotFoundError("Version unavailable for this blueprint.")
+                blueprint_id = selected_version.blueprint_id
+            if blueprint_id:
+                repo.get_blueprint(ctx, blueprint_id)
+            assignments_query = s.query(AgentAssignmentModel).filter_by(organization_id=ctx.organization_id, project_id=project_id)
+            if blueprint_id:
+                assignments_query = assignments_query.filter_by(blueprint_id=blueprint_id)
+            if assignment_id:
+                repo.get_assignment(ctx, assignment_id)
+                assignments_query = assignments_query.filter_by(id=assignment_id)
+            assignments_query = assignments_query.order_by(AgentAssignmentModel.created_at.desc(), AgentAssignmentModel.id.desc())
+            assignments = assignments_query.limit(limit).all() if limit else assignments_query.all()
+            versions_query = (s.query(AgentVersionModel)
                 .join(AgentBlueprintModel)
                 .filter(
                     AgentBlueprintModel.organization_id == ctx.organization_id,
                     AgentBlueprintModel.project_id == project_id,
-                )
-                .order_by(AgentVersionModel.created_at.desc())
-                .all())
+                ))
+            if blueprint_id:
+                versions_query = versions_query.filter(AgentVersionModel.blueprint_id == blueprint_id)
+            if run_id or assignment_id:
+                required_versions = {a.version_id for a in assignments}
+                if captured_version:
+                    required_versions.add(captured_version)
+                versions_query = versions_query.filter(AgentVersionModel.id.in_(required_versions))
+            versions_query = versions_query.order_by(AgentVersionModel.created_at.desc(), AgentVersionModel.id.desc())
+            version_records = versions_query.limit(limit).all() if limit else versions_query.all()
+            if version_id and not any(v.id == version_id for v in version_records):
+                version_records = [selected_version, *version_records[:limit - 1]]
+            if limit and blueprint_id and not run_id:
+                pinned = []
+                if version_id:
+                    pinned.append(selected_version)
+                for assignment in assignments:
+                    active_version = repo.get_version(ctx, assignment.version_id)
+                    if active_version.blueprint_id == blueprint_id and not any(record.id == active_version.id for record in pinned):
+                        pinned.append(active_version)
+                pinned_ids = {record.id for record in pinned}
+                version_records = [*pinned, *[record for record in version_records if record.id not in pinned_ids]][:limit]
+            selected_configuration = version_id or captured_version or (version_records[0].id if version_records else None)
+            blueprint_query = s.query(AgentBlueprintModel).filter_by(organization_id=ctx.organization_id, project_id=project_id)
+            if blueprint_id:
+                blueprint_query = blueprint_query.filter_by(id=blueprint_id)
+            elif limit and version_records:
+                blueprint_query = blueprint_query.filter(AgentBlueprintModel.id.in_({v.blueprint_id for v in version_records}))
+            blueprint_query = blueprint_query.order_by(AgentBlueprintModel.created_at.desc(), AgentBlueprintModel.id.desc())
+            blueprints = [row(x) for x in (blueprint_query.limit(limit).all() if limit else blueprint_query.all())]
             versions = [row(record) for record in version_records]
             # Hold strong references for the duration of the verified projection.
             # SQLAlchemy's weak identity map otherwise re-fetches every audit/version.
@@ -760,9 +839,7 @@ def create_app(
                 ],
                 "blueprints": blueprints,
                 "versions": versions,
-                "assignments": [
-                    row(x) for x in AgentRepository(s).list_assignments(ctx)
-                ],
+                "assignments": [row(x) for x in assignments],
             }
             for key, model in {
                 "evaluations": BenchEvaluationModel,
@@ -773,6 +850,18 @@ def create_app(
                 query = s.query(model).filter_by(
                     organization_id=ctx.organization_id, project_id=project_id
                 )
+                if limit:
+                    version_ids = [record.id for record in version_records]
+                    if key == "evaluations":
+                        query = query.filter(model.version_id.in_(version_ids))
+                        if evaluation_id:
+                            query = query.filter_by(id=evaluation_id)
+                    elif key == "approvals":
+                        query = query.filter(model.target_type == "agent_version", model.target_id.in_(version_ids))
+                    elif key == "runs":
+                        query = query.filter(model.execution_mode != "bench", model.id == run_id) if run_id else query.filter(False)
+                    elif key == "audit":
+                        query = query.filter(model.resource_id.in_([run_id, blueprint_id, *version_ids, *[a.id for a in assignments]]))
                 order = (
                     model.occurred_at
                     if key == "audit"
@@ -780,7 +869,8 @@ def create_app(
                     if key == "evaluations"
                     else model.created_at
                 )
-                stored_records[key] = query.order_by(order.desc(), model.id.desc()).all()
+                query = query.order_by(order.desc(), model.id.desc())
+                stored_records[key] = query.limit(limit).all() if limit else query.all()
                 data[key] = [row(x) for x in stored_records[key]]
             from database.repositories.audit_repo import AuditRepository
             for audit_event in data["audit"]:
@@ -869,11 +959,19 @@ def create_app(
                     run.update(run_response(coordinator.stored_result(stored_run)))
                 except (ValueError, RuntimeError):
                     run["assignment_provenance_verified"] = False
+                    if limit:
+                        run["execution_claim_verified"] = False
+                        run["prompt"], run["output"] = "", ""
+                        run["output_reference"] = None
+                        run["usage_availability"] = "unavailable"
             data["budget"] = row(budget) if budget else None
             data["permissions"] = {
                 action: permissions.evaluate(action, ctx, ctx.organization_id, project_id).allowed
                 for action in (
                     "run:create",
+                    "blueprint:create",
+                    "version:create",
+                    "run:cancel",
                     "version:approve",
                     "version:publish",
                     "bench:accept_baseline",
@@ -881,6 +979,19 @@ def create_app(
                     "agent:rollback",
                 )
             }
+            if limit:
+                for version in data["versions"]:
+                    version["configuration_loaded"] = version["id"] == selected_configuration
+                    if not version["configuration_loaded"]:
+                        for field in ("system_prompt", "metadata", "constraints", "model_policy", "output_contract", "tool_policy", "budget_policy", "evaluation_reference"):
+                            version.pop(field, None)
+                for evaluation in data["evaluations"]:
+                    if evaluation["version_id"] != selected_configuration:
+                        evaluation["details"] = []
+                import datetime as dt
+                data.update(organization_id=ctx.organization_id, project_id=project_id, limit=limit,
+                    refreshed_at=dt.datetime.now(dt.timezone.utc).isoformat())
+            permissions.enforce("run:read", ctx, ctx.organization_id, project_id, session=s)
         from modules.core.errors import sanitize
         return sanitize(data, credentials=protected_credentials)
 
@@ -889,6 +1000,34 @@ def create_app(
         return factory.create_blueprint(
             context(project_id, "blueprint:create"), **body.model_dump()
         )
+
+    @app.get("/api/projects/{project_id}/blueprints/{blueprint_id}/working-copy", response_model=WorkingCopyView)
+    async def read_working_copy(project_id: str, blueprint_id: str):
+        return sanitize(editor.read(context(project_id), blueprint_id).model_dump(mode="json"), credentials=protected_credentials)
+
+    @app.post("/api/projects/{project_id}/blueprints/{blueprint_id}/working-copy", response_model=WorkingCopyView)
+    async def save_working_copy(project_id: str, blueprint_id: str, body: WorkingCopyInput):
+        return sanitize(editor.save(context(project_id, "version:create"), blueprint_id, body).model_dump(mode="json"), credentials=protected_credentials)
+
+    @app.post("/api/projects/{project_id}/blueprints/{blueprint_id}/working-copy/discard", response_model=WorkingCopyView)
+    async def discard_working_copy(project_id: str, blueprint_id: str, body: GenerationInput):
+        return editor.discard(context(project_id, "version:create"), blueprint_id, body)
+
+    @app.post("/api/projects/{project_id}/blueprints/{blueprint_id}/working-copy/versions", status_code=201)
+    async def create_candidate(project_id: str, blueprint_id: str, body: GenerationInput):
+        context(project_id, "version:create")
+        discovery = await model_catalog()
+        if not discovery.discovery_valid:
+            raise GatewayUnavailableError()
+        return editor.candidate(context(project_id, "version:create"), blueprint_id, body)
+
+    @app.get("/api/projects/{project_id}/blueprints/{blueprint_id}/editor-layout", response_model=LayoutView)
+    async def read_editor_layout(project_id: str, blueprint_id: str):
+        return editor.layout(context(project_id), blueprint_id)
+
+    @app.post("/api/projects/{project_id}/blueprints/{blueprint_id}/editor-layout", response_model=LayoutView)
+    async def save_editor_layout(project_id: str, blueprint_id: str, body: LayoutInput):
+        return editor.layout(context(project_id, "version:create"), blueprint_id, body)
 
     @app.post(
         "/api/projects/{project_id}/blueprints/{blueprint_id}/versions", status_code=201
@@ -1089,6 +1228,18 @@ def create_app(
             return StreamingResponse(run_stream(), media_type="text/event-stream")
         result = await execute()
         return run_response(result) if hasattr(result, "model_dump") else result
+
+    @app.post("/api/projects/{project_id}/runs/{run_id}/stop", response_model=StopReceipt)
+    async def stop_run(project_id: str, run_id: str, body: StopInput):
+        ctx = context(project_id, "run:cancel")
+        await coordinator.cancel_managed_run(run_id, ctx)
+        from database.repositories.run_state_repo import RunStateRepository
+        from modules.core.errors import sanitize
+        with db.session() as session:
+            stored = RunStateRepository(session).get_run(ctx, run_id)
+            result = coordinator.stored_result(stored)
+            permissions.enforce("run:read", ctx, ctx.organization_id, project_id, session=session)
+        return sanitize(StopReceipt(cancellation_confirmed=result.status.value == "cancelled", result=result).model_dump(mode="json"), credentials=protected_credentials)
 
     assets = ROOT / "apps/web/dist/assets"
     if assets.is_dir():

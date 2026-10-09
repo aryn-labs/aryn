@@ -82,6 +82,30 @@ class DivisionModel(Base):
     )
 
 
+class AgentWorkingCopyModel(Base):
+    __tablename__ = "agent_working_copies"
+    blueprint_id = Column(String(64), ForeignKey("agent_blueprints.id"), primary_key=True)
+    organization_id = Column(String(64), ForeignKey("organizations.id"), nullable=False)
+    project_id = Column(String(64), ForeignKey("projects.id"), nullable=False)
+    generation = Column(Integer, nullable=False, default=1)
+    definition_json = Column(Text, nullable=True)
+    source_version_id = Column(String(64), ForeignKey("agent_versions.id"), nullable=True)
+    updated_by = Column(String(64), nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+    __table_args__ = (Index("ix_working_copy_scope", "organization_id", "project_id", "blueprint_id"),)
+
+
+class AgentEditorLayoutModel(Base):
+    __tablename__ = "agent_editor_layouts"
+    blueprint_id = Column(String(64), ForeignKey("agent_blueprints.id"), primary_key=True)
+    actor_id = Column(String(64), primary_key=True)
+    organization_id = Column(String(64), ForeignKey("organizations.id"), nullable=False)
+    project_id = Column(String(64), ForeignKey("projects.id"), nullable=False)
+    generation = Column(Integer, nullable=False, default=1)
+    layout_json = Column(Text, nullable=False)
+    __table_args__ = (Index("ix_editor_layout_scope", "organization_id", "project_id", "blueprint_id"),)
+
+
 class MembershipModel(Base):
     __tablename__ = "memberships"
 

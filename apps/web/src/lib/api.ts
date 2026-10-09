@@ -103,7 +103,18 @@ export async function api<T>(
   }));
   if (!response.ok)
     throw new ApiError(
-      data.message || "Permintaan belum dapat diselesaikan. Coba kembali.",
+      (data.message || "Permintaan belum dapat diselesaikan. Coba kembali.") +
+        (Array.isArray(data.field_errors)
+          ? ` Field: ${data.field_errors
+              .filter(
+                (error: unknown) =>
+                  error &&
+                  typeof error === "object" &&
+                  typeof (error as { field?: unknown }).field === "string",
+              )
+              .map((error: { field: string }) => error.field)
+              .join(", ")}`
+          : ""),
       response.status,
       data.error_code,
       data.correlation_id,

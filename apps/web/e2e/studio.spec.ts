@@ -298,7 +298,7 @@ test("UAT Bench membedakan Lulus, Tidak Terverifikasi, dan Gagal", async ({
   // UI-only negative projection of a real Bench result. No PASS row is inserted,
   // and no backend approval/publish is executed against the projected snapshot.
   let historicalFailure = false;
-  await page.route("**/api/projects/*/snapshot", async (route) => {
+  await page.route("**/api/projects/*/lifecycle?*", async (route) => {
     const response = await route.fetch();
     const data = await response.json();
     const evaluation = data.evaluations.find(
@@ -405,8 +405,25 @@ test("vertical slice HTTP nyata ke Core dengan runtime pengujian terisolasi", as
   await expect(
     page.getByRole("heading", { name: "Research Agent — Tes Terisolasi" }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Buat versi pertama" }).click();
-  await dialog.getByRole("button", { name: "Simpan versi" }).click();
+  await page.getByRole("button", { name: "Buka AgentBuilder" }).click();
+  await expect(page.locator(".react-flow__node")).toHaveCount(8);
+  await page
+    .getByRole("button", { name: "Simpan working copy", exact: true })
+    .click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Tersimpan · generation 1" }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Buat candidate versi", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Versi 1.0.0", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("link", {
+      name: "Tinjau approval, publication, assignment, dan rollback",
+    })
+    .click();
   await expect(
     page.getByRole("button", { name: "Jalankan Bench" }),
   ).toBeEnabled();
@@ -502,7 +519,11 @@ test("vertical slice HTTP nyata ke Core dengan runtime pengujian terisolasi", as
   await dialog
     .getByRole("button", { name: "Buat penugasan", exact: true })
     .click();
-  await page.getByRole("button", { name: "Buka Eksekusi" }).first().click();
+  await page.goto("/operations");
+  await page
+    .getByRole("link", { name: "Jalankan melalui Core" })
+    .first()
+    .click();
   await page
     .getByLabel("Instruksi riset")
     .fill("Jelaskan perbedaan likuiditas dan solvabilitas.");
@@ -555,12 +576,12 @@ test("vertical slice HTTP nyata ke Core dengan runtime pengujian terisolasi", as
     .getByRole("navigation")
     .getByRole("link", { name: "Tata Kelola", exact: true })
     .click();
-  const governanceAudit = page.locator(".audit-event").first();
-  await governanceAudit.locator("summary").click();
-  await expect(governanceAudit.locator(".audit-details")).toHaveAttribute(
-    "open",
-    "",
-  );
+  const governanceAudit = page
+    .getByRole("region", { name: "Tabel audit" })
+    .getByRole("row")
+    .nth(1);
+  await governanceAudit.getByRole("button", { name: "Buka audit" }).click();
+  await expect(page.getByRole("heading", { name: /^Audit / })).toBeVisible();
   expect((await governanceAudit.locator(".status").boundingBox())?.height).toBe(
     24,
   );
@@ -577,11 +598,8 @@ test("vertical slice HTTP nyata ke Core dengan runtime pengujian terisolasi", as
   expect((await governanceAudit.locator(".status").boundingBox())?.height).toBe(
     24,
   );
-  await governanceAudit.locator("summary").click();
-  await expect(governanceAudit.locator(".audit-details")).not.toHaveAttribute(
-    "open",
-    "",
-  );
+  await page.getByRole("button", { name: "Tutup detail" }).click();
+  await expect(page.getByRole("heading", { name: /^Audit / })).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
@@ -827,8 +845,8 @@ test("canvas: New Execution B, Historical A, pending idle dan completion run bar
   } finally {
     release();
   }
-  await expect(page).toHaveURL(/\/runs\?hasil=/);
-  await expect(page).not.toHaveURL(new RegExp(`hasil=${runA}`));
+  await expect(page).toHaveURL(/\/runs\/run_/);
+  await expect(page).not.toHaveURL(new RegExp(`/runs/${runA}$`));
   await expect(
     page.getByRole("region", { name: "Inspector Node" }),
   ).toContainText(b.version.id);
@@ -838,7 +856,7 @@ test("canvas: New Execution B, Historical A, pending idle dan completion run bar
   const snapshot = await (
     await page.request.get(`${a.prefix}/snapshot`)
   ).json();
-  const newRunId = new URL(page.url()).searchParams.get("hasil");
+  const newRunId = new URL(page.url()).pathname.split("/")[2];
   expect(
     snapshot.runs.find((r: { id: string }) => r.id === newRunId).session_id,
   ).toBe(b.assignment.id);
@@ -854,7 +872,8 @@ test("canvas: New Execution B, Historical A, pending idle dan completion run bar
   ).toHaveCount(0);
   await expect(
     page.locator('.react-flow__node[data-id="exec-agent"]'),
-  ).toContainText("Versi historis tidak tersedia");
+  ).toHaveCount(0);
+  await expect(page.getByText(b.version.id, { exact: true })).toHaveCount(0);
 });
 
 test("Factory: rancangan inspector membuat versi baru dan mempertahankan published", async ({
@@ -998,6 +1017,7 @@ test("polish: axe seluruh halaman, tema, canvas mobile/tablet dan reduced motion
       "/",
       "/factory",
       "/runs",
+      "/operations",
       "/bench",
       "/approvals",
       "/governance",
@@ -1023,7 +1043,7 @@ test("polish: axe seluruh halaman, tema, canvas mobile/tablet dan reduced motion
       for (const path of [
         `/factory/${fixture.bp.id}?versi=${fixture.version.id}`,
         `/bench?evaluasi=${fixture.result.evaluation_id}`,
-        "/runs",
+        "/runs/new",
       ]) {
         await page.goto(path);
         await expect(

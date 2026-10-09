@@ -23,6 +23,58 @@ import { Panel, Lifecycle, AuditList } from "../components/workspace";
 import { VersionForm } from "../components/version-form";
 import { ArynCanvas } from "../components/canvas/aryn-canvas";
 import { buildFactoryNodesAndEdges } from "../components/canvas/canvas-builders";
+import { ResourceBrowser } from "./resource-browser";
+export function FactoryRegistry({
+  workspace,
+  project,
+  openBlueprint,
+  data,
+}: Shared) {
+  return (
+    <>
+      <PageHeading
+        eyebrow="AGENT FACTORY"
+        title="Agent Factory"
+        description="Blueprint, versi immutable, dan evidence aktual dalam proyek aktif."
+      >
+        <Button
+          onClick={openBlueprint}
+          disabled={!data.permissions["blueprint:create"]}
+        >
+          Buat blueprint
+        </Button>
+      </PageHeading>
+      <Panel title="Blueprint agent">
+        <ResourceBrowser
+          organization={workspace.organization.id}
+          project={project}
+          resource="blueprints"
+          title="blueprint"
+          link={(item) => `/factory/${item.id}`}
+        />
+      </Panel>
+      <Panel title="Version Registry">
+        <ResourceBrowser
+          organization={workspace.organization.id}
+          project={project}
+          resource="versions"
+          title="versi agent"
+          statuses={[
+            "draft",
+            "approved",
+            "published",
+            "deprecated",
+            "rejected",
+          ]}
+          link={(item) =>
+            `/factory/${item.references.blueprint_id}/versions/${item.id}`
+          }
+          extra={(item) => <code>{String(item.references.payload_hash)}</code>}
+        />
+      </Panel>
+    </>
+  );
+}
 export function Factory({ data, openBlueprint }: Shared) {
   const [search, setSearch] = useState("");
   const navigate = useNavigate();
@@ -257,7 +309,22 @@ export function AgentDetail({
           "Agent riset teks dengan evaluasi keselamatan dan tata kelola Core."
         }
       >
-        <div className="flex items-center gap-2">
+        <div className="agent-actions">
+          <Button
+            onClick={() =>
+              navigate(
+                `/factory/${blueprint.id}/builder${selected ? `?source=${selected.id}` : ""}`,
+              )
+            }
+            disabled={pending || !data.permissions["version:create"]}
+          >
+            Buka AgentBuilder
+          </Button>
+          {selected && (
+            <Link to={`/factory/${blueprint.id}/versions/${selected.id}`}>
+              Version Detail
+            </Link>
+          )}
           {selected && ["draft", "rejected"].includes(selected.status) && (
             <Button
               variant="secondary"

@@ -35,30 +35,53 @@ import { Overview } from "./features/overview";
 import { Projects } from "./features/projects";
 import "./workspace.css";
 import { AmbientBackground } from "./components/ambient-background";
+import { ResourceBrowser } from "./features/resource-browser";
 import arynMark from "./assets/aryn-mark.png";
 import arynMarkDark from "./assets/aryn-mark-dark.png";
 const Factory = lazy(() =>
-  import("./features/factory").then((module) => ({ default: module.Factory })),
+  import("./features/factory").then((module) => ({
+    default: module.FactoryRegistry,
+  })),
 );
 const AgentDetail = lazy(() =>
   import("./features/factory").then((module) => ({
     default: module.AgentDetail,
   })),
 );
+const AgentBuilder = lazy(() =>
+  import("./features/agent-builder").then((module) => ({
+    default: module.AgentBuilder,
+  })),
+);
+const VersionDetail = lazy(() =>
+  import("./features/version-detail").then((module) => ({
+    default: module.VersionDetail,
+  })),
+);
+const Operations = lazy(() =>
+  import("./features/operations").then((module) => ({
+    default: module.Operations,
+  })),
+);
+const RunHistory = lazy(() =>
+  import("./features/run-history").then((module) => ({
+    default: module.RunHistory,
+  })),
+);
 const BenchPage = lazy(() =>
   import("./features/bench").then((module) => ({ default: module.BenchPage })),
 );
 const Approvals = lazy(() =>
-  import("./features/approvals").then((module) => ({
-    default: module.Approvals,
+  import("./features/approval-queue").then((module) => ({
+    default: module.ApprovalQueue,
   })),
 );
 const Runs = lazy(() =>
   import("./features/runs").then((module) => ({ default: module.Runs })),
 );
 const Governance = lazy(() =>
-  import("./features/governance").then((module) => ({
-    default: module.Governance,
+  import("./features/governance-browser").then((module) => ({
+    default: module.GovernanceBrowser,
   })),
 );
 const SettingsPage = lazy(() =>
@@ -99,7 +122,6 @@ const navigation = [
     label: "Agent Operations",
     icon: Bot,
     group: "OPERATE",
-    future: true,
   },
   {
     path: "/automations",
@@ -207,12 +229,14 @@ export function App() {
     "/factory",
     "/runs",
     "/bench",
-    "/approvals",
-    "/governance",
+    "/operations",
     "/settings",
   ].some(
     (route) =>
-      location.pathname === route || location.pathname.startsWith(`${route}/`),
+      (location.pathname === route ||
+        location.pathname.startsWith(`${route}/`)) &&
+      location.pathname !== "/factory" &&
+      !(location.pathname === "/runs" && !location.search),
   );
   const summary = useQuery({
     queryKey: workspaceKey(organization, project, "summary"),
@@ -223,9 +247,44 @@ export function App() {
     retry: false,
   });
   const snapshot = useQuery({
-    queryKey: workspaceKey(organization, project, "snapshot"),
-    queryFn: ({ signal }) =>
-      api<Snapshot>(`/projects/${project}/snapshot`, undefined, signal),
+    queryKey: workspaceKey(
+      organization,
+      project,
+      "lifecycle",
+      location.pathname,
+      location.search,
+    ),
+    queryFn: ({ signal }) => {
+      const segments = location.pathname.split("/");
+      const params = new URLSearchParams(location.search);
+      const selection = new URLSearchParams();
+      if (segments[1] === "factory" && segments[2])
+        selection.set("blueprint_id", routeIdentifier(segments[2]));
+      const version =
+        segments[3] === "versions"
+          ? routeIdentifier(segments[4])
+          : params.get("versi") || params.get("source");
+      if (version) selection.set("version_id", version);
+      const run =
+        segments[1] === "runs" && segments[2] !== "new"
+          ? routeIdentifier(segments[2]) || params.get("hasil")
+          : params.get("hasil");
+      if (run) selection.set("run_id", run);
+      if (!run && params.get("penugasan"))
+        selection.set("assignment_id", params.get("penugasan")!);
+      const evaluation =
+        segments[1] === "bench" && segments[2]
+          ? routeIdentifier(
+              segments[2] === "evaluations" ? segments[3] : segments[2],
+            )
+          : params.get("evaluasi");
+      if (evaluation) selection.set("evaluation_id", evaluation);
+      return api<Snapshot>(
+        `/projects/${project}/${location.pathname === "/settings" ? "snapshot" : `lifecycle?${selection}`}`,
+        undefined,
+        signal,
+      );
+    },
     enabled:
       !!organization && !!project && !workspace.error && requiresSnapshot,
     refetchInterval: 10000,
@@ -319,7 +378,23 @@ export function App() {
           : {}),
       }
     : undefined;
-  const data = snapshot.data;
+  const data: Snapshot | undefined = requiresSnapshot
+    ? snapshot.data
+    : summary.data
+      ? {
+          blueprints: [],
+          versions: [],
+          assignments: [],
+          evaluations: [],
+          evaluation_suites: [],
+          approvals: [],
+          audit: [],
+          runs: [],
+          accepted_baselines: [],
+          budget: summary.data.budget,
+          permissions: summary.data.permissions,
+        }
+      : undefined;
   const readError =
     workspace.error ||
     summary.error ||
@@ -355,6 +430,12 @@ export function App() {
   };
   const switchProject = (next: string, route = "/") => {
     if (mutation.isPending || streamPending) return;
+    if (
+      !window.dispatchEvent(
+        new Event("aryn:scope-change", { cancelable: true }),
+      )
+    )
+      return;
     void queryClient.cancelQueries({ queryKey: ["studio"] });
     queryClient.removeQueries({ queryKey: ["studio"] });
     setNewBlueprint(false);
@@ -365,7 +446,9 @@ export function App() {
     navigate(route);
   };
   const selectedBlueprint = data?.blueprints.find(
-    (b) => location.pathname === `/factory/${b.id}`,
+    (b) =>
+      location.pathname === `/factory/${b.id}` ||
+      location.pathname.startsWith(`/factory/${b.id}/`),
   );
   const shared = {
     data: data!,
@@ -653,7 +736,18 @@ export function App() {
         </header>
         <main id="main" className="main-content" tabIndex={-1}>
           <Suspense fallback={<Busy />}>
-            {displayError ? (
+            {readError instanceof ApiError && readError.status === 404 ? (
+              <Empty
+                title={
+                  location.pathname.startsWith("/runs")
+                    ? "Run yang dipilih tidak tersedia"
+                    : "Sumber daya tidak tersedia"
+                }
+                description="Sumber daya tidak ditemukan dalam scope proyek aktif."
+                action="Kembali ke Ringkasan"
+                onAction={() => navigate("/")}
+              />
+            ) : displayError ? (
               <div className="connection-error">
                 <Terminal size={30} />
                 <h1>
@@ -734,13 +828,100 @@ export function App() {
                   />
                 ) : location.pathname === "/factory" ? (
                   <Factory {...shared} />
-                ) : selectedBlueprint ? (
-                  <AgentDetail {...shared} blueprint={selectedBlueprint} />
+                ) : selectedBlueprint &&
+                  location.pathname ===
+                    `/factory/${selectedBlueprint.id}/builder` ? (
+                  <AgentBuilder
+                    theme={theme.theme}
+                    key={`${project}:${selectedBlueprint.id}`}
+                    {...shared}
+                    blueprint={selectedBlueprint}
+                  />
+                ) : selectedBlueprint &&
+                  location.pathname.startsWith(
+                    `/factory/${selectedBlueprint.id}/versions/`,
+                  ) ? (
+                  <VersionDetail
+                    {...shared}
+                    blueprintId={selectedBlueprint.id}
+                    versionId={routeIdentifier(location.pathname.split("/")[4])}
+                  />
+                ) : selectedBlueprint &&
+                  location.pathname === `/factory/${selectedBlueprint.id}` ? (
+                  <>
+                    <AgentDetail {...shared} blueprint={selectedBlueprint} />
+                    <ResourceBrowser
+                      organization={organization}
+                      project={project}
+                      resource="versions"
+                      title="seluruh versi blueprint"
+                      blueprint={selectedBlueprint.id}
+                      statuses={[
+                        "draft",
+                        "approved",
+                        "published",
+                        "deprecated",
+                        "rejected",
+                      ]}
+                      link={(item) =>
+                        `/factory/${selectedBlueprint.id}/versions/${item.id}`
+                      }
+                    />
+                  </>
+                ) : location.pathname === "/operations" ? (
+                  <Operations {...shared} />
+                ) : location.pathname === "/runs" && !location.search ? (
+                  <RunHistory {...shared} />
                 ) : location.pathname === "/runs" ||
                   location.pathname.startsWith("/runs/") ? (
-                  <Runs {...shared} />
-                ) : location.pathname === "/bench" ? (
-                  <BenchPage {...shared} />
+                  <Runs
+                    {...shared}
+                    history={
+                      <ResourceBrowser
+                        organization={organization}
+                        project={project}
+                        resource="runs"
+                        title="run"
+                        statuses={[
+                          "queued",
+                          "running",
+                          "completed",
+                          "failed",
+                          "cancelled",
+                          "outcome_unknown",
+                        ]}
+                        link={(item) => `/runs/${item.id}`}
+                        extra={(item) => (
+                          <>
+                            <p className="mono">
+                              {String(
+                                item.references.model || "Belum tersedia",
+                              )}
+                            </p>
+                            <p>
+                              Token{" "}
+                              {item.references.total_tokens == null
+                                ? "Tidak tersedia"
+                                : String(item.references.total_tokens)}
+                            </p>
+                          </>
+                        )}
+                      />
+                    }
+                  />
+                ) : location.pathname === "/bench" ||
+                  location.pathname.startsWith("/bench/") ? (
+                  <>
+                    <BenchPage {...shared} />
+                    <ResourceBrowser
+                      organization={organization}
+                      project={project}
+                      resource="evaluations"
+                      title="evaluasi Bench"
+                      statuses={["passed", "failed"]}
+                      link={(item) => `/bench/evaluations/${item.id}`}
+                    />
+                  </>
                 ) : location.pathname === "/approvals" ? (
                   <Approvals {...shared} />
                 ) : location.pathname === "/governance" ? (

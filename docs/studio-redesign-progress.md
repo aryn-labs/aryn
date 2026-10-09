@@ -1,5 +1,72 @@
 # Studio redesign delivery evidence
 
+## Agent editing and manual operations delivery
+
+Current audit source: `40df9d1f894b257df3a277c4623466d6d03541dc`, equal to origin/development with a clean tree. Dependency workflow [37837626257](https://github.com/aryn-labs/aryn/actions/runs/37837626257) completed-success, 14/14 jobs. Push permission was verified. AGENTS.md, STATUS.md, PRD v1.2, Prompt 02, these four redesign documents, API/contracts, existing positive/negative evidence and CI were reviewed before editing. Earlier workspace evidence below is historical, not CI evidence for this delivery. Normative PDFs remain absent according to aryn-docs/DOCUMENT_INDEX.md; supplied PRD/source references do not substitute for reading missing PDFs.
+
+Current implementation CI: **UNVERIFIED until the exact implementation SHA has been pushed and its workflow reaches terminal status**. The closure evidence will record that SHA and terminal jobs. No change to main, production deployment, paid inference, runtime tool grants or scheduler is authorized by this delivery.
+
+### Implemented behavior and source
+
+- Agent Registry is scoped, filtered and paginated. Agent Detail retains actual Core lifecycle controls and verified known-good rollback; a paginated version registry reaches older versions. Version Detail is immutable and shows canonical configuration, exact hash, actual receipt references and complete field comparison, with object-key order ignored. Source: `features/factory.tsx`, `features/version-detail.tsx`, `features/resource-browser.tsx`, `services/api/workspace_reads.py`.
+- Agent Builder edits all eight semantic sections through React Flow nodes, typed inspector and a complete keyboard form. Server catalog supplies model availability. Save persists one scoped shared working copy; undo, discard, explicit reload/restore and generation conflict retain user input. Candidate creation is separate and delegates canonical format 3 to existing Factory/Core. Fixed connections represent definition relationships; no execution gesture exists. Published payloads remain immutable. Source: `features/agent-builder.tsx`, `lib/agent-editor-types.ts`, `contracts/agent_builder.py`, `modules/agent_factory/editor.py`.
+- Layout positions/viewport persist separately per actor with independent generation. Layout has no prompt fields and cannot create a version or change a canonical hash. Draft/candidate writes revalidate Core permissions in the transaction and audit atomically. Tombstones advance generation on discard to reject stale writers. SQLite/real restricted-writer PostgreSQL tests cover persistence and concurrency.
+- Bench retains actual scenario/grader/evidence verification, signed baseline comparisons, critical regression failure despite a good aggregate and exact-hash human approval. Its history is paginated; canonical evaluation detail and legacy links work. Approval queue displays exact hash/evaluation/scope and authenticated actor receipts; no read response grants authority. Governance uses paginated actor/resource/search filters and lazy sanitized audit detail. Source: `bench.tsx`, `approval-queue.tsx`, `governance-browser.tsx`, existing Core/Bench services unchanged.
+- Operations now lists actual assignments, published versions and recent runs, with actual runtime readiness and Core budget/reservation. Its manual action opens Core execution for the exact assignment. `/runs` is paginated/filtered history, `/runs/new` starts a manual run, `/runs/:id` is captured Execution Console. Legacy `?hasil`/`?penugasan` links remain. Historical selection overrides unrelated mutable version/assignment selectors; unknown consumption, held reservation, unavailable cost and stop acknowledgement are distinct from confirmed cancellation. Direct turns do not manufacture node traces. Source: `operations.tsx`, `run-history.tsx`, `runs.tsx`, `studio.tsx`.
+- Scoped cache keys, AbortSignal, mutation scope capture and permission checks continue to apply. 401/403 hide cached resources, missing detail returns a clear 404 without a false canvas/configuration, and unsaved editor changes guard navigation/project switching. Full snapshot is used only by Settings compatibility; canonical histories and selected lifecycle views use bounded reads.
+
+### API and additive persistence
+
+All paths below are under `/api/projects/:project`; actor, role and organization are resolved by existing Core identity.
+
+| Endpoint | Typed behavior and bound |
+|---|---|
+| GET /blueprints/:id/working-copy | WorkingCopyView; generation 0 for absent draft; scoped authorized read |
+| POST /blueprints/:id/working-copy | WorkingCopyInput; full AgentDraft, expected generation; field-path errors without echoing input; version:create |
+| POST /blueprints/:id/working-copy/discard | GenerationInput; guarded tombstone, no immutable version deletion |
+| POST /blueprints/:id/working-copy/versions | GenerationInput; fresh available-model discovery and reauthorization; atomic canonical candidate |
+| GET/POST /blueprints/:id/editor-layout | LayoutView/LayoutInput; at most eight unique semantic positions, bounded coordinates and zoom, per-actor generation |
+| GET /lifecycle | LifecycleProjection; limit 1–50, default 25; scoped blueprint/version/evaluation/assignment/run selection; only selected canonical configuration/run output loaded |
+| GET /resources/approvals | Existing ResourcePage with authenticated actor/hash/evaluation metadata, no publication eligibility claim from inventory alone |
+| GET /resources/{versions,assignments,evaluations} | Adds blueprint_id filter bound into existing scoped HMAC cursor |
+| POST /runs/:id/stop | Strict empty StopInput; StopReceipt uses actual Core RunResult; cancellation_confirmed only for terminal cancelled |
+
+Migration `017_agent_editor` follows `016_workspace_structure`, adding empty working-copy and actor-layout tables plus scoped indexes. It neither backfills nor alters signed historical evidence, memberships, grants or runtime routes. Both table counts are checked before any downgrade drop; populated drafts/layout refuse destructive downgrade. Latest-head assertions in migration/hosted/workspace PostgreSQL tests advance to 017 while retaining prior assertions. Candidate creation accepts an existing transaction in Factory so candidate and audit roll back together.
+
+### Observed validation
+
+| Command / scope | Observed result |
+|---|---|
+| uv lock --check --offline; python -m ruff check .; python scripts/check_repository.py | PASS; dependency locks/governance/CI configuration unchanged |
+| python -m pytest -m 'not postgresql' -q --junitxml=.local/backend-editor.xml | 754 passed, 5 skipped, 37 PostgreSQL deselected; 651.22 seconds; before five additional editor negative/bounded-history/activation tests |
+| python -m pytest tests/postgresql -q --junitxml=.local/postgresql-editor.xml | 37 passed; 93.67 seconds; disposable PostgreSQL 16.13 digest pinned; actual restricted writer, no SQLite fallback |
+| python -m pytest tests/integration/test_agent_editor.py tests/integration/test_workspace_api.py -q | 43 passed, including all 20 editor tests, 59.26 seconds; activation-pointer tampering withholds verified manual action even when the version is known-good |
+| python -m pytest tests/integration/test_core_execution_contract.py tests/integration/test_bench_regression_api.py tests/integration/test_agent_editor.py tests/integration/test_schema_migration_compatibility.py -q | 34 passed before the final activation-pointer test, 58.84 seconds |
+| npm.cmd run format:check; npm.cmd run build; npm.cmd test | PASS; 92 tests / 16 files; bundle main 437.91 KB / 137.02 KB gzip, features lazy loaded |
+| npm.cmd run test:e2e (ARYN_TEST_PYTHON=.venv/Scripts/python.exe) | 27/27 PASS, 0 failure/flaky/skip, 5.9 minutes; Operations lifecycle and large navigation rerun after final activation-history strengthening |
+| gitleaks git . --redact; actionlint | PASS on repository history/workflow; final source artifact scan is also required by existing CI |
+
+Five full-backend skips retain the existing requirement for owner-authorized live model opt-in (three) or local Hermes API key (two). Two existing Authlib/FastAPI dependency deprecation warnings remain; no paid inference was used. Intermediate browser failures were corrected and rerun: responsive action wrapping, paginated audit status height and missing historical run assertions; those failed runs are not claimed PASS. A local browser invocation without ARYN_TEST_PYTHON failed fixture startup; the documented Windows invocation uses `.venv/Scripts/python.exe` and then passed.
+
+Positive/negative evidence includes all nested draft fields save→reload→immutable candidate, layout/hash independence, published immutability, stale generation/tombstone, forbidden capabilities/fallback/unknown suite, viewer/revoked membership, cross-project scope/cursor, audit transaction rollback, safe validation errors and active version beyond the first history page. Existing full regressions retain critical Bench regression, tampered receipts, stale exact-hash approval, rollback consistency, actual model mismatch, unknown usage/cancellation/idempotency, JSON/SSE/cache parity and rollback-during-preflight captured provenance. No previous acceptance assertion was removed to make the new design pass.
+
+### Visual, source and performance evidence
+
+R02 filtered semantic tables, R03 typed React Flow sections and non-canvas alternative, R05 actual captured observability, R06 readiness/attention and R09 keyboard/focus/reflow/contrast are mapped in UX/traceability. Browser editor evidence checks 1440/768/390 in both themes, keyboard form completion, axe and page-level overflow. Existing polish checks cover lifecycle, Bench, history, Operations and governance in both themes, responsive inspector and reduced motion. Axe is automated evidence, not full WCAG certification. Final synthetic screenshots and browser performance attachments are preserved under `docs/evidence/studio`; no customer data or credentials are included.
+
+The reproducible API benchmark now measures every relevant paged resource plus selected Agent Detail and captured Console. Dataset large retains 200 blueprints, 1,000 historical runs, 5,000 signed audits and 200 divisions, plus one actual golden lifecycle (four Bench scenarios, approval/publication/assignment/manual run); it does not fabricate signed captured claims for seeded histories. Initial modified-source, 10-sample Windows SQLite/TestClient P95: summary 55.56 ms, run page 12.46 ms, audit page 13.23 ms, version page 115.89 ms, Agent Detail 369.81 ms, captured Console 446.08 ms; concurrent backend checks affected these samples. Clean-source repetition and browser timings will be recorded separately. Development thresholds remain summary ≤2,000 ms and usable navigation ≤3,000 ms; these are not production SLA claims.
+
+### Residuals and boundary
+
+1. Normative PDFs are unavailable; document-specific conformance remains unverified. PRD/repository ST mapping and tested product behavior are recorded independently.
+2. Settings retains the legacy full signed snapshot and its large-history cost. Agent/history/audit/Operations routes use bounded reads; layout/draft do not weaken integrity verification.
+3. Direct-turn per-node trace, provider cost/entitlement and real provider hard caps remain unavailable unless supplied by actual evidence. Stop acknowledgement does not settle unknown consumption or prove cancellation.
+4. IdP/TLS/VPS production UAT, paid provider integration, installer/commercial program remain external. Executable workflows/outputs, Brief, Relay and schedules remain subsequent scope; no enabled implementation is claimed here. Hosted production readiness remains BLOCKED.
+
+Delivery status stays pending until normal development push, remote equality and exact-SHA GitHub Actions are verified. The final closure section records READY FOR PROMPT 03 only after those checks.
+
+## Historical workspace delivery evidence
+
 Implementation source: `80bac7dfa59bd27a6ac1e7e5493f11285b625b2d`. Current source workflow: [ARYN Quality 37835952417](https://github.com/aryn-labs/aryn/actions/runs/37835952417); terminal outcome is recorded in delivery evidence. Subsequent evidence-only commits do not change this source.
 Audit source: `3a8ddb69b855ea37d1a33721c6c57a02f14ad881`; local and origin/development equal, clean tree, push permission verified. Baseline ARYN Quality run [37791265032](https://github.com/aryn-labs/aryn/actions/runs/37791265032) completed-success. Baseline evidence is not evidence for the new implementation.
 

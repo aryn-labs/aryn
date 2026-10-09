@@ -1,5 +1,17 @@
 # Studio workspace interaction contract
 
+## Agent lifecycle interaction specification
+
+Current audit source: `40df9d1f894b257df3a277c4623466d6d03541dc`. At 1440 px the Agent Builder uses semantic React Flow sections and an adjacent typed inspector. At 768/390 px the inspector stacks or closes; a complete structured form alternative remains available. Identity/Objective, Instructions, Model Policy, Output Contract, Constraints, Tool Policy, Budget Policy and Evaluation Reference are definition sections, not executable tasks. Connections are fixed explanatory relationships with no execution gesture.
+
+Explicit save shows dirty/saved/conflict state; undo/discard/reload are deliberate and preserve unsaved input on conflict. Candidate creation is separate from save/drag. Model options come from server discovery; unavailable saved models are labeled accurately. Tools are read-only denied. Version detail exposes canonical hash, actual verified receipts, comparisons and immutable status. Registry/diffs, Bench, exact-hash approval, manual Operations and captured Execution Console reuse Core evidence with read-only viewer states. Filtered history/audits page at the server and request details lazily. Existing lifecycle links remain compatible. No direct-turn node trace or usage/cost is invented.
+
+R02 uses semantic filtered/paged tables; R03 [React Flow custom nodes](https://reactflow.dev/learn/customization/custom-nodes) informs typed semantic sections and keyboard alternatives; R05 [Langfuse observability](https://langfuse.com/docs/observability/best-practices) informs actual captured provenance/evidence without adopting its service or inventing traces; R06/R09 retain attention, definitions, focus, reflow and contrast. Browser evidence covers both themes at 390/768/1440 plus keyboard/axe. React Flow controls follow the active theme; semantic section buttons provide selection without relying on canvas gestures.
+
+Captured Console uses the run's exact claim/assignment/version, with reservation, actual effective limits, settlement and unavailable usage shown separately. Stop requests report Core acknowledgement and only actual terminal cancellation confirms cancelled. A missing or unauthorized run shows a resource error and no substitute agent configuration. Operations remains manual; runtime readiness/evidence/permission guard the action. Approval/audit inventory displays authenticated receipts without inferring new authority. Field-path validation is sanitized, draft generation conflicts retain local input, and explicit reload offers restoration before saving again. No prompt or credential is kept in browser storage.
+
+The implementation source, synthetic screenshots, observed checks and exact-SHA CI are recorded in [delivery evidence](studio-redesign-progress.md). The following workspace source/CI record is historical.
+
 Implementation source: `80bac7dfa59bd27a6ac1e7e5493f11285b625b2d`. Current source workflow: [ARYN Quality 37835952417](https://github.com/aryn-labs/aryn/actions/runs/37835952417); terminal completed/success, 14/14 jobs; evidence-only closure is verified separately before the final report. Subsequent evidence-only commits do not change this source.
 Source baseline: `3a8ddb69b855ea37d1a33721c6c57a02f14ad881`. Reviewed 9 October 2026 (Asia/Bangkok).
 

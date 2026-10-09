@@ -76,6 +76,10 @@ def main():
                     "summary": measure(client, PREFIX + "/summary", args.samples),
                     "snapshot": measure(client, PREFIX + "/snapshot", args.samples),
                     "project_list": measure(client, PREFIX + "/resources/projects", args.samples)}
+                for resource in ("blueprints", "versions", "assignments", "evaluations", "approvals", "audits", "runs"):
+                    result["datasets"][size][resource + "_page"] = measure(client, PREFIX + f"/resources/{resource}?limit=10", args.samples)
+                result["datasets"][size]["agent_detail"] = measure(client, PREFIX + f"/lifecycle?blueprint_id={bp['id']}", args.samples)
+                result["datasets"][size]["execution_console"] = measure(client, PREFIX + f"/lifecycle?run_id={response.json()['run_id']}", args.samples)
                 assert result["datasets"][size]["summary"]["p95_ms"] <= 2000
     target = Path(args.output)
     target.parent.mkdir(parents=True, exist_ok=True)

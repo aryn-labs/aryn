@@ -20,7 +20,7 @@ from database.repositories.exceptions import EntityNotFoundError, InvalidStateTr
 from modules.bench.quality_gate import QualityGateFailedError
 from database.schema import (
     AgentAssignmentModel, AgentBlueprintModel, AgentVersionModel, AuditEventModel,
-    BenchEvaluationModel, DivisionModel, MembershipModel, ProjectMembershipModel,
+    BenchEvaluationModel, DivisionModel, MembershipModel, ProjectMembershipModel, ApprovalModel,
     ProjectModel, RunStateModel,
 )
 from modules.core.errors import sanitize
@@ -43,6 +43,7 @@ RESOURCES = {
     "versions": (AgentVersionModel, AgentVersionModel.created_at, {"", "draft", "evaluating", "approved", "published", "deprecated", "rejected"}),
     "evaluations": (BenchEvaluationModel, BenchEvaluationModel.evaluated_at, {"", "passed", "failed"}),
     "audits": (AuditEventModel, AuditEventModel.occurred_at, {"", "attempted", "allowed", "denied", "completed", "failed", "cancelled"}),
+    "approvals": (ApprovalModel, ApprovalModel.created_at, {"", "approved", "rejected", "pending"}),
 }
 
 
@@ -122,7 +123,9 @@ class WorkspaceReads:
                 pass
             item.verification_reason = "verified_captured_claim" if item.verified else "unverified_execution_provenance"
             item.references = {"model": record.actual_model, "agent_version_id": record.agent_version_id,
-                "usage_availability": record.usage_availability, "total_tokens": record.total_tokens if item.verified and record.usage_availability == "measured" else None}
+                "usage_availability": record.usage_availability, "total_tokens": record.total_tokens if item.verified and record.usage_availability == "measured" else None,
+                "effective_limits": json.loads(record.effective_limits_json) if item.verified else None,
+                "reserved_tokens": record.reserved_tokens, "usage_settled": bool(record.usage_settled)}
         elif resource == "evaluations":
             item.status = "passed" if record.passed else "failed"
             item.verified = False
@@ -137,19 +140,52 @@ class WorkspaceReads:
             item.references = {"version_id": record.version_id}
         elif resource == "assignments":
             item.name = record.role_name
-            item.references = {"blueprint_id": record.blueprint_id, "version_id": record.version_id, "division_id": record.division_id}
+            version = self.query(session, context, "versions").filter(AgentVersionModel.id == record.version_id).first()
+            activation = AgentActivationRepository(session, self.db.evidence_signer, self.permissions)
+            registry = activation.registry_entry(context, version) if version else None
+            activation_verified = False
+            try:
+                activation_verified = bool(activation.history(context, record))
+            except (ValueError, RuntimeError):
+                pass
+            item.verified = bool(registry and registry.rollback_eligible and activation_verified)
+            item.verification_reason = (registry.reason if registry else "version_unavailable") if activation_verified else "activation_history_unverified"
+            item.references = {"blueprint_id": record.blueprint_id, "version_id": record.version_id, "division_id": record.division_id,
+                "model": version.model if version else None, "payload_hash": version.payload_hash if version else None,
+                "version_number": version.version_number if version else None,
+                "activation_verified": activation_verified,
+                "registry": registry.model_dump(mode="json") if registry else None}
+        elif resource == "approvals":
+            from modules.core.approvals.engine import ApprovalRequiredError
+            item.verified = False
+            try:
+                self.db.approval_authority.verify_signature(record, session=session)
+                item.verified = True
+            except (ValueError, RuntimeError, ApprovalRequiredError):
+                pass
+            item.references = {"actor_id": record.approved_by, "target_id": record.target_id, "target_type": record.target_type,
+                "payload_hash": record.payload_hash, "evaluation_id": record.evaluation_id}
         return item
 
-    def page(self, context, resource, *, limit=25, cursor=None, q="", status="", sort="newest", actor="", resource_id=""):
+    def page(self, context, resource, *, limit=25, cursor=None, q="", status="", sort="newest", actor="", resource_id="", blueprint_id=""):
         if resource not in RESOURCES:
             raise HTTPException(404, "Resource unavailable.")
         model, order, statuses = RESOURCES[resource]
         if status not in statuses or sort not in {"newest", "oldest"} or ((actor or resource_id) and resource != "audits"):
             raise HTTPException(422, "Unsupported filter or ordering.")
-        binding = [context.organization_id, context.project_id, context.actor.actor_id, resource, limit, q, status, sort, actor, resource_id]
+        if blueprint_id and resource not in {"versions", "assignments", "evaluations"}:
+            raise HTTPException(422, "Unsupported blueprint filter.")
+        binding = [context.organization_id, context.project_id, context.actor.actor_id, resource, limit, q, status, sort, actor, resource_id, blueprint_id]
         with self.db.session() as session:
             self.authorize(session, context)
             query = self.query(session, context, resource)
+            if blueprint_id:
+                from database.repositories.agent_repo import AgentRepository
+                AgentRepository(session).get_blueprint(context, blueprint_id)
+                if resource == "evaluations":
+                    query = query.join(AgentVersionModel, AgentVersionModel.id == model.version_id).filter(AgentVersionModel.blueprint_id == blueprint_id)
+                else:
+                    query = query.filter(model.blueprint_id == blueprint_id)
             if q:
                 field = getattr(model, "name", None)
                 if field is None:
@@ -242,7 +278,7 @@ class WorkspaceReads:
             budget = BudgetRepository(session).get_budget(context)
             budget_data = {key: getattr(budget, key) for key in ("max_tokens_per_run", "cumulative_tokens", "reserved_tokens")} if budget else None
             capabilities = {action: self.permissions.evaluate(action, context, context.organization_id, context.project_id, session=session).allowed
-                for action in ("blueprint:create", "run:create", "version:approve", "version:publish", "agent:assign", "division:manage")}
+                for action in ("blueprint:create", "version:create", "run:create", "run:cancel", "version:approve", "version:publish", "agent:assign", "division:manage")}
             self.authorize(session, context)
             result = WorkspaceSummary(organization_id=context.organization_id, project_id=context.project_id,
                 refreshed_at=timestamp(dt.datetime.now(dt.timezone.utc)), metrics=metrics, permissions=capabilities,

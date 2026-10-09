@@ -92,6 +92,9 @@ export type AssignmentTransition = {
   committed_at: string;
 };
 export type Version = {
+  tool_grants?: string[];
+  configuration_loaded?: boolean;
+  metadata?: Record<string, unknown>;
   registry?: VersionRegistryEntry;
   id: string;
   blueprint_id: string;
@@ -281,6 +284,10 @@ export type StreamPayload = Partial<
 export type StreamEvent = { type: string; data: StreamPayload };
 
 export type Run = {
+  execution_claim_verified?: boolean;
+  reserved_tokens?: number;
+  usage_settled?: boolean;
+  runtime_run_id?: string | null;
   assignment_id?: string | null;
   agent_version_id?: string | null;
   agent_payload_hash?: string | null;
@@ -329,7 +336,11 @@ export type Snapshot = {
   runs: Run[];
   audit: Audit[];
   permissions: Record<string, boolean>;
-  budget: { max_tokens_per_run: number; cumulative_tokens: number };
+  budget: {
+    max_tokens_per_run: number;
+    cumulative_tokens: number;
+    reserved_tokens?: number;
+  } | null;
 };
 
 export type EvaluationIdentity = {

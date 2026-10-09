@@ -8,6 +8,7 @@ Complies with ARYN-ARCH-001 Section 04 and AGENTS.md rules 3, 4, 5, 6, 7.
 from __future__ import annotations
 
 import uuid
+from contextlib import nullcontext
 from typing import Any, Callable, Dict, List, Optional
 
 from database.connection import DatabaseManager
@@ -148,6 +149,7 @@ class AgentFactoryService:
         model_policy: Optional[Dict[str, Any] | AgentModelPolicy] = None,
         budget_policy: Optional[Dict[str, Any] | AgentBudgetPolicy] = None,
         evaluation_reference: Optional[Dict[str, Any] | AgentEvaluationReference] = None,
+        session=None,
     ) -> AgentVersion:
         self.permission_engine.enforce("run:create", context, context.organization_id, context.project_id)
 
@@ -190,7 +192,8 @@ class AgentFactoryService:
 
         version_id = f"av_{uuid.uuid4().hex[:16]}"
 
-        with self.db_manager.session(write=True) as session:
+        provided_session = session is not None
+        with (nullcontext(session) if provided_session else self.db_manager.session(write=True)) as session:
             self.permission_engine.enforce("version:create", context, context.organization_id, context.project_id, session=session)
             repo = AgentRepository(session)
             blueprint = repo.get_blueprint(context, blueprint_id)
@@ -247,6 +250,7 @@ class AgentFactoryService:
                 evaluation_reference=evaluation_reference,
             )
             created_version = AgentVersion.from_stored(m)
+            self.permission_engine.enforce("version:create", context, context.organization_id, context.project_id, session=session)
 
         self.audit_logger.record(
             event_type="factory.version.created",
@@ -261,6 +265,7 @@ class AgentFactoryService:
                 "schema_version": schema_version,
                 "role": resolved_role,
             },
+            session=session if provided_session else None,
         )
         return created_version
 

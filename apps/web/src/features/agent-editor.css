@@ -1,0 +1,183 @@
+.editor-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0;
+}
+.resource-browser {
+  min-width: 0;
+}
+.resource-browser .status {
+  height: 24px;
+}
+.agent-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.page-heading:has(.agent-actions) .heading-actions {
+  max-width: 100%;
+}
+@media (max-width: 1200px) {
+  .page-heading:has(.agent-actions) {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+.resource-browser .list-toolbar {
+  flex-wrap: wrap;
+}
+.resource-browser .list-toolbar label {
+  flex: 1 1 150px;
+  min-width: 0;
+}
+.resource-browser .list-toolbar input,
+.resource-browser .list-toolbar select {
+  width: 100%;
+  min-width: 0;
+}
+.editor-toolbar h2 {
+  flex: 1;
+  margin: 0;
+  font-size: 16px;
+}
+.editor-section-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.editor-section-tabs button {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface);
+}
+.editor-section-tabs button[aria-pressed="true"] {
+  border-color: var(--primary);
+}
+.agent-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.agent-editor.with-inspector {
+  grid-template-columns: minmax(0, 1fr) 360px;
+}
+.definition-canvas {
+  min-width: 0;
+  height: 620px;
+  background: var(--surface);
+}
+.definition-node {
+  width: 240px;
+  padding: 18px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px #0002;
+}
+.definition-node.selected {
+  border: 2px solid var(--primary);
+}
+.definition-node small {
+  display: block;
+  margin-top: 10px;
+  overflow-wrap: anywhere;
+}
+.editor-inspector {
+  padding: 20px;
+  border-left: 1px solid var(--border);
+  max-height: 620px;
+  overflow: auto;
+  background: var(--surface);
+}
+.editor-inspector label,
+.editor-section label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 16px 0;
+}
+.editor-inspector input,
+.editor-inspector textarea,
+.editor-inspector select,
+.editor-section input,
+.editor-section textarea,
+.editor-section select {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+.editor-inspector .checkbox-row,
+.editor-section .checkbox-row {
+  flex-direction: row;
+  align-items: center;
+}
+.editor-inspector input[type="checkbox"],
+.editor-section input[type="checkbox"] {
+  width: auto;
+}
+.editor-full-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.editor-section {
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.editor-section legend {
+  padding: 0 8px;
+  font-weight: 600;
+}
+.canonical-definition {
+  max-height: 520px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.definition-diff {
+  table-layout: fixed;
+  width: 100%;
+}
+.definition-diff td {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+@media (max-width: 1000px) {
+  .agent-editor.with-inspector {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .editor-inspector {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+    max-height: none;
+  }
+  .definition-canvas {
+    height: 380px;
+  }
+}
+@media (max-width: 600px) {
+  .editor-full-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .editor-section,
+  .editor-inspector {
+    padding: 14px;
+  }
+  .editor-toolbar {
+    gap: 8px;
+  }
+}

@@ -236,15 +236,28 @@ test("future detail routes are truthful and have no enabled feature actions", as
     "/relay/demo",
     "/automations",
     "/capabilities",
-    "/operations",
-    "/factory/demo/builder",
-    "/bench/evaluations/demo",
   ]) {
     await page.goto(path);
     await expect(
       page.getByRole("heading", { name: "Belum tersedia", exact: true }),
     ).toBeVisible();
     await expect(page.locator("main button")).toHaveCount(0);
+  }
+  await page.goto("/operations");
+  await expect(
+    page.getByRole("heading", { name: "Agent Operations", exact: true }),
+  ).toBeVisible();
+  for (const path of ["/factory/demo/builder", "/bench/evaluations/demo"]) {
+    await page.goto(path);
+    await expect(
+      page.getByRole("heading", {
+        name: "Sumber daya tidak tersedia",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(page.locator(".definition-canvas, .bench-canvas")).toHaveCount(
+      0,
+    );
   }
   await page.goto("/runs/missing");
   await expect(page.getByText("Run yang dipilih tidak tersedia")).toBeVisible();
@@ -306,5 +319,48 @@ test.describe("large deterministic workspace", () => {
       page.getByRole("status").filter({ hasText: "Halaman 2" }),
     ).toBeVisible();
     await expect(page.locator("tbody tr")).toHaveCount(10);
+    const lifecycleReads: string[] = [];
+    page.on("request", (request) => {
+      if (/\/(snapshot|lifecycle)(\?|$)/.test(request.url()))
+        lifecycleReads.push(request.url());
+    });
+    const resourceNavigation: { path: string; milliseconds: number }[] = [];
+    for (const path of [
+      "/factory",
+      "/governance",
+      "/runs",
+      "/approvals",
+      "/operations",
+    ]) {
+      const start = performance.now();
+      await page.goto(path);
+      await expect(
+        page.getByText("Diperbarui", { exact: false }).last(),
+      ).toBeVisible();
+      resourceNavigation.push({
+        path,
+        milliseconds: performance.now() - start,
+      });
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth,
+        ),
+      ).toBe(true);
+    }
+    expect(lifecycleReads.filter((path) => path.includes("/snapshot"))).toEqual(
+      [],
+    );
+    expect(
+      lifecycleReads.filter(
+        (path) => !path.includes("lifecycle?") && path.includes("lifecycle"),
+      ),
+    ).toEqual([]);
+    expect(resourceNavigation.every((item) => item.milliseconds <= 3000)).toBe(
+      true,
+    );
+    await info.attach("agent-resource-navigation", {
+      body: JSON.stringify(resourceNavigation, null, 2),
+      contentType: "application/json",
+    });
   });
 });

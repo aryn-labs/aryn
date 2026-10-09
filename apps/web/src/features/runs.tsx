@@ -1,5 +1,5 @@
 import { executionReady } from "../lib/studio-state";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useSearchParams, useLocation, useNavigate } from "react-router-dom";
 import { ChevronRight } from "lucide-react";
 import type { Shared } from "../lib/types";
@@ -14,7 +14,14 @@ import { historicalRunContext } from "../lib/studio-state";
 import { useReducedMotion } from "../lib/motion";
 import type { PublishedAgentItem } from "../components/canvas/canvas-inspector";
 
-export function Runs({ data, workspace, pending, act, actStream }: Shared) {
+export function Runs({
+  data,
+  workspace,
+  pending,
+  act,
+  actStream,
+  history,
+}: Shared & { history?: ReactNode }) {
   const [params, setParams] = useSearchParams();
   const routeRun = useLocation().pathname.split("/")[2];
   const navigate = useNavigate();
@@ -97,6 +104,7 @@ export function Runs({ data, workspace, pending, act, actStream }: Shared) {
   const [runKey, setRunKey] = useState(() => crypto.randomUUID());
   const [validation, setValidation] = useState("");
   const [executing, setExecuting] = useState(false);
+  const [stopMessage, setStopMessage] = useState("");
   const [liveEvent, setLiveEvent] = useState<{
     step: string;
     message?: string;
@@ -107,7 +115,8 @@ export function Runs({ data, workspace, pending, act, actStream }: Shared) {
   const [creatingAssignment, setCreatingAssignment] = useState(false);
 
   const runIdentifier =
-    params.get("hasil") || (routeRun ? routeIdentifier(routeRun) : null);
+    params.get("hasil") ||
+    (routeRun && routeRun !== "new" ? routeIdentifier(routeRun) : null);
   const isHistorical = !!runIdentifier;
   const selectedRun = isHistorical
     ? data.runs.find((r) => r.id === runIdentifier)
@@ -123,7 +132,8 @@ export function Runs({ data, workspace, pending, act, actStream }: Shared) {
     "unknown";
 
   const viewResult = (runId: string) => {
-    setParams({ hasil: runId });
+    if (history) navigate(`/runs/${runId}`);
+    else setParams({ hasil: runId });
     const target = document.getElementById("canvas-inspector");
     if (target) {
       target.scrollIntoView({
@@ -226,6 +236,7 @@ export function Runs({ data, workspace, pending, act, actStream }: Shared) {
       selectedVersionId: activeVersionId,
       onSelectVersion: (id: string) => {
         setSelectedVersionId(id);
+        if (history) setParams({ versi: id });
         setRunKey(crypto.randomUUID());
         setValidation("");
       },
@@ -286,7 +297,10 @@ export function Runs({ data, workspace, pending, act, actStream }: Shared) {
           {isHistorical ? "HISTORICAL RUN" : "NEW EXECUTION"}
         </span>
         {isHistorical && (
-          <Button variant="secondary" onClick={() => navigate("/runs")}>
+          <Button
+            variant="secondary"
+            onClick={() => navigate(history ? "/runs/new" : "/runs")}
+          >
             Eksekusi baru
           </Button>
         )}
@@ -300,6 +314,76 @@ export function Runs({ data, workspace, pending, act, actStream }: Shared) {
           Konfigurasi historis run tidak tersedia. Pilihan form baru tidak
           digunakan sebagai penggantinya.
         </Notice>
+      )}
+      {selectedRun && (
+        <Panel title="Captured Core execution">
+          <p>
+            Claim{" "}
+            {selectedRun.execution_claim_verified
+              ? "terverifikasi"
+              : "belum terverifikasi"}{" "}
+            · Version {selectedRun.agent_version_id || "Tidak tersedia"} ·
+            Assignment {selectedRun.assignment_id || "Tidak tersedia"}
+          </p>
+          {selectedRun.status === "outcome_unknown" && (
+            <Notice tone="warning">
+              Outcome tidak pasti. Reservation tetap ditahan sampai Core
+              memiliki evidence settlement; jangan menganggap run gagal atau
+              dibatalkan.
+            </Notice>
+          )}
+          {selectedRun.status === "stopping" && (
+            <Notice tone="warning">
+              Stop diminta; ACK belum membuktikan cancellation. Status terminal
+              dan usage harus dikonfirmasi Core.
+            </Notice>
+          )}
+          <p>
+            Reservation{" "}
+            {selectedRun.reserved_tokens == null
+              ? "Tidak tersedia"
+              : number(selectedRun.reserved_tokens)}{" "}
+            token · Settlement{" "}
+            {selectedRun.usage_settled == null
+              ? "Tidak tersedia"
+              : selectedRun.usage_settled
+                ? "tercatat"
+                : "belum selesai"}
+          </p>
+          {selectedRun.execution_claim_verified &&
+            ["queued", "started", "running", "stopping"].includes(
+              selectedRun.status,
+            ) &&
+            data.permissions["run:cancel"] && (
+              <Button
+                disabled={pending}
+                variant="secondary"
+                onClick={async () => {
+                  try {
+                    const receipt = await act(
+                      `/runs/${selectedRun.id}/stop`,
+                      {},
+                      "Permintaan stop telah ditinjau Core.",
+                    );
+                    setStopMessage(
+                      receipt.cancellation_confirmed === true
+                        ? "Cancellation dikonfirmasi oleh status terminal Core."
+                        : "Cancellation belum dikonfirmasi. ACK tidak membuktikan penghentian.",
+                    );
+                  } catch (failure) {
+                    setStopMessage((failure as Error).message);
+                  }
+                }}
+              >
+                Minta stop melalui Core
+              </Button>
+            )}
+          {stopMessage && <Notice>{stopMessage}</Notice>}
+          <p>
+            Trace per-node tidak tersedia untuk direct turn. Audit Core dan
+            provenance tersimpan dapat ditelusuri.
+          </p>
+        </Panel>
       )}
       {historical.version && !historical.version.integrity_valid && (
         <Notice tone="warning">
@@ -345,60 +429,61 @@ export function Runs({ data, workspace, pending, act, actStream }: Shared) {
         title="Riwayat eksekusi"
         subtitle="Tetap tersedia setelah halaman dimuat ulang."
       >
-        {data.runs.length ? (
-          <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Instruksi</th>
-                  <th>Status</th>
-                  <th>Model</th>
-                  <th>Token</th>
-                  <th>Waktu</th>
-                  <th>
-                    <span className="sr-only">Aksi</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.runs.map((r) => {
-                  const isCurrent = selectedRun?.id === r.id;
-                  return (
-                    <tr
-                      key={r.id}
-                      className={isCurrent ? "table-row-selected" : ""}
-                    >
-                      <td className="run-prompt-cell">{r.prompt}</td>
-                      <td>
-                        <Status value={r.status} />
-                      </td>
-                      <td className="mono">{r.model}</td>
-                      <td className="mono">{number(r.total_tokens)}</td>
-                      <td className="subtle">{date(r.created_at)}</td>
-                      <td>
-                        <Button
-                          size="sm"
-                          variant={isCurrent ? "secondary" : "ghost"}
-                          onClick={() => viewResult(r.id)}
-                          disabled={executing}
-                          aria-label={`Lihat hasil eksekusi ${r.id}`}
-                        >
-                          Lihat hasil
-                          <ChevronRight size={14} />
-                        </Button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <Empty
-            title="Riwayat masih kosong"
-            description="Setiap eksekusi yang dimulai Core akan dicatat beserta status dan hasilnya."
-          />
-        )}
+        {history ||
+          (data.runs.length ? (
+            <div className="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Instruksi</th>
+                    <th>Status</th>
+                    <th>Model</th>
+                    <th>Token</th>
+                    <th>Waktu</th>
+                    <th>
+                      <span className="sr-only">Aksi</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.runs.map((r) => {
+                    const isCurrent = selectedRun?.id === r.id;
+                    return (
+                      <tr
+                        key={r.id}
+                        className={isCurrent ? "table-row-selected" : ""}
+                      >
+                        <td className="run-prompt-cell">{r.prompt}</td>
+                        <td>
+                          <Status value={r.status} />
+                        </td>
+                        <td className="mono">{r.model}</td>
+                        <td className="mono">{number(r.total_tokens)}</td>
+                        <td className="subtle">{date(r.created_at)}</td>
+                        <td>
+                          <Button
+                            size="sm"
+                            variant={isCurrent ? "secondary" : "ghost"}
+                            onClick={() => viewResult(r.id)}
+                            disabled={executing}
+                            aria-label={`Lihat hasil eksekusi ${r.id}`}
+                          >
+                            Lihat hasil
+                            <ChevronRight size={14} />
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <Empty
+              title="Riwayat masih kosong"
+              description="Setiap eksekusi yang dimulai Core akan dicatat beserta status dan hasilnya."
+            />
+          ))}
       </Panel>
     </>
   );

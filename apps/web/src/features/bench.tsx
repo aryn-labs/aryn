@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useLocation, useSearchParams } from "react-router-dom";
 import { Beaker, Check, ChevronDown, ChevronRight, X } from "lucide-react";
 import type { Evaluation, RegressionComparison, Shared } from "../lib/types";
 import { readBenchCompletion } from "../lib/api";
@@ -287,6 +287,9 @@ export function BenchPage({
   actStream,
 }: Partial<Shared> & Pick<Shared, "data">) {
   const [params, setParams] = useSearchParams();
+  const evaluationPath = useLocation().pathname.split("/");
+  const routeEvaluation =
+    evaluationPath[2] === "evaluations" ? evaluationPath[3] : evaluationPath[2];
   const [benchRunning, setBenchRunning] = useState(false);
   const [benchError, setBenchError] = useState<string | null>(null);
   const [consent, setConsent] = useState(false);
@@ -300,13 +303,13 @@ export function BenchPage({
     const fromParam = params.get("versi");
     if (fromParam && data.versions.some((v) => v.id === fromParam))
       return fromParam;
-    const evalId = params.get("evaluasi");
+    const evalId = routeEvaluation || params.get("evaluasi");
     if (evalId) {
       const match = data.evaluations.find((e) => e.id === evalId);
       if (match) return match.version_id;
     }
     return data.versions[0]?.id || "";
-  }, [params, data.versions, data.evaluations]);
+  }, [params, routeEvaluation, data.versions, data.evaluations]);
 
   const selectedVersion = useMemo(() => {
     return data.versions.find((v) => v.id === activeVersionId) || null;
@@ -322,7 +325,7 @@ export function BenchPage({
   }, [data.evaluations, activeVersionId]);
 
   const selectedEvaluation = useMemo(() => {
-    const evalId = params.get("evaluasi");
+    const evalId = routeEvaluation || params.get("evaluasi");
     if (evalId) {
       return (
         versionEvaluations.find((e) => e.id === evalId) ||
@@ -334,7 +337,13 @@ export function BenchPage({
     }
     // Default to the first evaluation OF THIS VERSION ONLY (never another version)
     return versionEvaluations[0] || null;
-  }, [versionEvaluations, params, completedEvaluation, activeVersionId]);
+  }, [
+    versionEvaluations,
+    params,
+    routeEvaluation,
+    completedEvaluation,
+    activeVersionId,
+  ]);
 
   const [liveBenchEvent, setLiveBenchEvent] = useState<{
     step: string;

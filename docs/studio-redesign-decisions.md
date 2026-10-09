@@ -1,7 +1,19 @@
 # Studio architecture decisions
 
+## Agent editing and manual operations
+
+Audit source for the current delivery: `40df9d1f894b257df3a277c4623466d6d03541dc` (development equals remote; ARYN Quality 37837626257 success). Existing canonical format 3, signed Bench/regression/baseline, approval, activation history and captured execution remain authoritative.
+
+Persist one shared scoped working copy per blueprint with generation conflict detection. Explicit candidate creation passes the saved exact definition to the existing Factory service within the same Core transaction; editor saves and dragging do not create versions. Discard is generation guarded. Published versions are inspected read-only and may seed a separate working copy, never be mutated. Layout positions/viewport are stored in a separate per-actor table, with their own generation and no prompt fields; they never enter AgentVersion canonical payloads. No editor data is stored in localStorage.
+
+Reuse bounded resource reads for registries/history/audit, and add a scoped lifecycle projection that loads only a bounded selection and its actual governance dependencies. Keep legacy snapshot compatibility. An execution detail binds to the captured version, not the assignment's mutable current pointer. Tool grants and native scheduling remain unavailable; cost limits are policies, not provider hard-cap guarantees. Future workflow/artifact/Brief/Relay/scheduler contracts remain design-only.
+
 Implementation source: `80bac7dfa59bd27a6ac1e7e5493f11285b625b2d`. Current source workflow: [ARYN Quality 37835952417](https://github.com/aryn-labs/aryn/actions/runs/37835952417); terminal completed/success, 14/14 jobs; evidence-only closure is verified separately before the final report. Subsequent evidence-only commits do not change this source.
 Source baseline: `3a8ddb69b855ea37d1a33721c6c57a02f14ad881`. 9 October 2026.
+
+## Historical workspace decisions
+
+The preceding workspace source/CI reference is historical. Current implementation source, exact-SHA CI and residuals are recorded in [delivery evidence](studio-redesign-progress.md).
 
 ## Workspace reads and authority
 
@@ -13,13 +25,13 @@ Cursor pagination orders by timestamp plus unique ID, binds organization/project
 
 Projects are existing authoritative Core objects; this delivery provides list/detail without inventing organization management. Division is a project-owned organizational grouping, not a role/membership store. A forward migration after 015 creates divisions without backfilling assignment history. Human organization admins manage division records through a narrow Core permission. Creation/edit is audited in the same transaction; edits require the expected generation. Assignment linkage remains existing immutable provenance and is not rewritten.
 
-## Future contracts (design only)
+## Subsequent contracts
 
-- Agent Builder: editable working copy with generation and explicit save creates a new immutable canonical AgentVersion. Published payloads and exact-hash approvals remain unchanged. Canvas positions/viewport belong in separate project/user layout metadata excluded from signed canonical hashes. Tool grants remain empty.
+- Agent Builder decision is now implemented by AgentDraft/AgentEditor and migration 017: editable working copy with generation and explicit save, separate candidate creation and per-actor layout. Published payloads/exact-hash approvals remain unchanged; empty tool grants are enforced. Remaining contracts below are design only.
 - WorkflowDefinition owns the editable typed graph; WorkflowVersion pins validated graph plus exact AgentVersions. WorkflowRun/TaskExecution own durable execution states and checkpoints under the existing Core owner/fence, reservation and idempotency authority. Unknown outcomes cannot be retried automatically. No general code execution nodes.
 - Artifact has scoped immutable storage reference, digest, MIME/size/validation and run/task lineage. Deliverable adds hash-bound human review. Safe download authorizes Core scope; HTML preview is inert or separated/sandboxed. No host filesystem reference is exposed.
 - Brief EvidenceBundle retains timestamped source references, digest verification and support/conflict/neutral relations. Empty or missing evidence abstains. Removed/tampered evidence cannot claim support.
 - Relay Incident/Proposal use deterministic dedup and legal transitions, evidence references and exact-payload Core approval. Only an explicitly allowlisted disposable remediation adapter may execute. Verified health after action is required for recovery. Bench capsules use safe replay adapters.
 - Automations persist recurrence/timezone/occurrence identity, missed/overlap policy, budget and owner in Core. A single Core scheduler authority admits work; Hermes native cron/jobs remain forbidden. Entitlement/payment/installer/provider/production work stays external.
 
-These future decisions introduce no empty services, migrations or enabled actions. Their implementation owners are packages 02–05 in traceability.
+Workflow/artifact/Brief/Relay/scheduler decisions introduce no empty services, migrations or enabled actions. Their implementation owners remain packages 03–05 in traceability. AgentEditor migration adds necessary editor state only, with no new authority.

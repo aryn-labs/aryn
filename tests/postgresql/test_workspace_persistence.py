@@ -51,4 +51,4 @@ def test_live_workspace_populated_downgrade_guard(postgres_db, hosted_lifecycle)
     with db.engine.connect() as connection:
         assert connection.execute(text("SELECT COUNT(*) FROM divisions")).scalar() == 1
     with postgres_db.owner.connect() as connection:
-        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar() == "016_workspace_structure"
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar() == "017_agent_editor"

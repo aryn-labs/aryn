@@ -1,0 +1,54 @@
+{
+  "source_sha": "40df9d1f894b257df3a277c4623466d6d03541dc",
+  "source_modified": true,
+  "source_context": "uncommitted Agent editing implementation; before the final activation-history read strengthening, which was separately rerun",
+  "environment": "Windows 11, Chromium, isolated HTTP API/Core/runtime/database per test",
+  "suite": {
+    "total": 27,
+    "expected": 27,
+    "unexpected": 0,
+    "flaky": 0,
+    "skipped": 0,
+    "ok": true
+  },
+  "workspace": {
+    "fixture": {
+      "blueprints": 200,
+      "runs": 1000,
+      "audits": 5000,
+      "divisions": 200
+    },
+    "navigation": {
+      "p50_ms": 203.55449999996927,
+      "p95_ms": 357.16070000000764
+    },
+    "summary": {
+      "p50_ms": 56.18959999998333,
+      "p95_ms": 74.87729999999283
+    },
+    "environment": "win32"
+  },
+  "resource_navigation": [
+    {
+      "path": "/factory",
+      "milliseconds": 982.0598000000464
+    },
+    {
+      "path": "/governance",
+      "milliseconds": 930.0262999999686
+    },
+    {
+      "path": "/runs",
+      "milliseconds": 934.1220000000321
+    },
+    {
+      "path": "/approvals",
+      "milliseconds": 929.9618000000482
+    },
+    {
+      "path": "/operations",
+      "milliseconds": 929.579299999983
+    }
+  ],
+  "resource_samples_per_route": 1
+}
