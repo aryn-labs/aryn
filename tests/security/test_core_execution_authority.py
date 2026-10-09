@@ -1,9 +1,11 @@
 """Execution constraints, single owner fencing and cross-boundary negative evidence."""
 import asyncio
+import datetime
 import json
 from pathlib import Path
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import text
@@ -264,13 +266,41 @@ async def test_revoked_membership_after_claim_blocks_runtime_dispatch(lifecycle)
 
 
 @pytest.mark.asyncio
-async def test_async_deadline_transitions_without_polling_and_cannot_be_completed(lifecycle):
+async def test_async_deadline_transitions_without_polling_and_cannot_be_completed(lifecycle, monkeypatch):
+    from modules.core.workflows import coordinator
+
     db, ctx, runtime, *_ = lifecycle
+    now = datetime.datetime.now(datetime.timezone.utc)
+    starting = True
+    clock_offset = datetime.timedelta(0)
+
+    class ControlledDateTime(datetime.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            current = now if starting else datetime.datetime.now(datetime.timezone.utc) + clock_offset
+            return current.astimezone(tz) if tz else current.replace(tzinfo=None)
+
+    # Freeze only the coordinator's clock through claim and runtime startup.
+    # The signed deadline and the actual asynchronous watchdog remain unchanged;
+    # loaded-host admission must not consume this test's watchdog interval.
+    monkeypatch.setattr(coordinator, "datetime", SimpleNamespace(
+        datetime=ControlledDateTime, timedelta=datetime.timedelta, timezone=datetime.timezone,
+    ))
     core = RunCoordinator(runtime, db_manager=db)
     run_id = await core.start_managed_run(request(timeout_seconds=0.2), ctx)
-    await asyncio.sleep(0.3)
     with db.session() as session:
-        assert RunStateRepository(session).get_run(ctx, run_id).status == "outcome_unknown"
+        row = RunStateRepository(session).get_run(ctx, run_id)
+        assert row.status == "started" and row.runtime_run_id == "test_only"
+        assert row.reserved_tokens == 4096
+    watchdogs = tuple(core._deadline_tasks)
+    assert len(watchdogs) == 1
+    clock_offset = now - datetime.datetime.now(datetime.timezone.utc)
+    starting = False
+    # Await the real watchdog, without polling or calling _fail_dispatch.
+    await asyncio.wait_for(asyncio.gather(*watchdogs), timeout=10)
+    with db.session() as session:
+        row = RunStateRepository(session).get_run(ctx, run_id)
+        assert row.status == "outcome_unknown" and row.reserved_tokens == 4096
     before = (await core.get_managed_result(run_id, ctx)).model_dump()
     result = await runtime.execute_direct_turn(request(), ctx)
     assert core._complete_dispatch(run_id, result, ctx).model_dump() == before

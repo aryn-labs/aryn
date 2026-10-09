@@ -19,7 +19,9 @@ scheduler masih pekerjaan berikut; hosted production readiness tetap BLOCKED.
 Source `d2fdc6d` lulus ARYN Quality 37897316354 (14/14 jobs), dengan 796 kasus
 backend terverifikasi lintas platform, PostgreSQL 54/54 dan browser lokal 33/33.
 **READY FOR PROMPT 04** untuk scope executable staging/review; evidence-only
-closure diverifikasi lagi pada SHA final sebelum laporan kepada pemilik.
+closure sempat gagal pada tes deadline Windows lama. Perbaikan tes mempertahankan
+deadline 200 ms dan watchdog nyata; riwayat serta 30/30 regresi Core dicatat pada
+Studio delivery. Seluruh gate pada SHA final diverifikasi sebelum laporan.
 
 Studio workspace melanjutkan `3a8ddb69`: grouped shell, scoped summary Overview,
 Projects/Divisions dengan Core authorization/CAS/audit, additive migration
