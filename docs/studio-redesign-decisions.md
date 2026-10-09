@@ -16,6 +16,8 @@ UI retains shared panels, scoped queries/AbortSignal, semantic tables/filters/pl
 
 The first source workflow exposed slow Windows SQLite metadata DDL in disposable lifecycle fixtures and a failed positive Bench setup in an existing governance test. Batch all fixture tables/indexes/protection triggers inside one explicit SQLite transaction; preserve production durability, existing migration tests, policy limits, complete test selection and CI timeouts. Assert the actual positive Bench result before its approval, retaining all scope-substitution rejection assertions. The failed run is recorded separately and never treated as delivery evidence.
 
+Verified follow-up source `b563034` passed [ARYN Quality 37951612966](https://github.com/aryn-labs/aryn/actions/runs/37951612966), 14/14 jobs. Complete 830-case collections match across Linux/Windows; actual PostgreSQL 74/74, native 1/1, UI 97/97 and browser 44/44 pass. All delivered file hashes and required wheel modules were checked. [Observed proof and residuals](studio-redesign-progress.md) support readiness for the next requested scope; hosted production readiness remains independently blocked.
+
 ## Executable workflows and artifact review
 
 Audit baseline: `ba2140bc396a6dbebef76d510d8288309eafa847`, development equal to remote and dependency CI 37883814142 completed-success. Supplied PRD v1.2 / Prompt 03 authorize this delivery; absent normative PDFs are not claimed reviewed. Current results and source/CI references are in [delivery evidence](studio-redesign-progress.md). Earlier decisions below retain their historical context.

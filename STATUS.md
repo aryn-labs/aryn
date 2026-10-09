@@ -14,8 +14,11 @@ Core approval exact hash, fixed disposable recovery, health independen dan
 capsule Bench replay tanpa live remediation/model/promotion. Migration 019
 additive mempertahankan history/governance. [Delivery evidence](docs/studio-redesign-progress.md)
 dan [contracts/threat/rollback](docs/intelligence-recovery-contracts.md) mencatat
-hasil lokal dan CI SHA aktual. Regresi lengkap dan CI masih harus selesai;
-READY FOR PROMPT 05 belum dinyatakan. Automations/scheduler tetap pekerjaan
+hasil lokal dan CI SHA aktual. Source `b563034` lulus ARYN Quality 37951612966,
+14/14 jobs: 830 kasus backend lintas platform, PostgreSQL 74/74, frontend 97/97,
+browser 44/44 dan native 1/1, dengan skip existing dijelaskan di evidence.
+**READY FOR PROMPT 05** untuk scope Brief/Relay/replay. CI SHA checkpoint
+penutup diverifikasi secara terpisah sebelum laporan final. Automations/scheduler tetap pekerjaan
 berikut, dan hosted production readiness tetap BLOCKED secara terpisah.
 
 Historical Studio executable workflow melanjutkan baseline `ba2140bc`: typed graph/CAS,

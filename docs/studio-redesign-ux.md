@@ -12,6 +12,8 @@ Reference adoption: R02 [Carbon data table](https://www.carbondesignsystem.com/b
 
 Existing light/dark tokens, Geist typography, shared panels and semantic controls are retained. 1440 px uses paired panels; 768/390 stack forms/cards and scroll wide tables inside their container. Long opaque hashes/IDs wrap, evidence remains plain escaped text, and state is written as text rather than color alone. Browser checks cover three widths/both themes, all tagged axe rules/keyboard/overflow plus actual screenshots; they do not imply full WCAG or external security certification. Current proof is in [delivery evidence](studio-redesign-progress.md); interactions below are historical.
 
+Source `b563034` passed [current source CI](https://github.com/aryn-labs/aryn/actions/runs/37951612966), including all 44 browser and 97 unit cases. Eighteen actual Brief/proposal/replay captures and the final eleven-case browser rerun cover all six width/theme combinations and scope/error boundaries. The clean-source 20-read/10-navigation fixture measured API P95 38.24 ms and usable navigation P95 988.46 ms; the small disposable dataset does not imply a production SLA. Exact evidence and the failed Windows setup history are linked from progress.
+
 ## Workflow and output interaction specification
 
 Audit baseline: `ba2140bc396a6dbebef76d510d8288309eafa847`. Current executable workflow evidence, observed checks and exact-source CI are in [delivery evidence](studio-redesign-progress.md); older source references below are historical.
