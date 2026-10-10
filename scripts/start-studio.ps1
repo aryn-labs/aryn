@@ -61,17 +61,19 @@ try {
         & $studioPython -m pip install -e '.[dev]'
         if ($LASTEXITCODE -ne 0) { throw 'Instalasi dependensi API gagal.' }
     }
-    Push-Location (Join-Path $studioRoot 'apps\web')
-    try {
-        if (-not $SkipInstall) {
-            & npm.cmd ci
-            if ($LASTEXITCODE -ne 0) { throw 'Instalasi dependensi frontend gagal.' }
-        }
-        if (-not $SkipBuild) {
-            & npm.cmd run build
-            if ($LASTEXITCODE -ne 0) { throw 'Build frontend gagal.' }
-        }
-    } finally { Pop-Location }
+    if (Test-Path (Join-Path $studioRoot 'apps\web\package.json')) {
+        Push-Location (Join-Path $studioRoot 'apps\web')
+        try {
+            if (-not $SkipInstall) {
+                & npm.cmd ci
+                if ($LASTEXITCODE -ne 0) { throw 'Instalasi dependensi frontend gagal.' }
+            }
+            if (-not $SkipBuild) {
+                & npm.cmd run build
+                if ($LASTEXITCODE -ne 0) { throw 'Build frontend gagal.' }
+            }
+        } finally { Pop-Location }
+    }
     $studioProcess = Start-Process -FilePath $studioPython -ArgumentList @('-m','services.api','--host',"$studioHost",'--port',"$Port") -WorkingDirectory $studioRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $studioLocal 'studio.stdout.log') -RedirectStandardError (Join-Path $studioLocal 'studio.stderr.log')
     @{pid=$studioProcess.Id;port=$Port;started=$studioProcess.StartTime.ToUniversalTime().ToString('o')} | ConvertTo-Json | Set-Content -LiteralPath $studioPidFile
     $studioReady = $false

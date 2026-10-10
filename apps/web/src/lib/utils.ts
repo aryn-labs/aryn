@@ -1,12 +1,25 @@
-import { clsx, type ClassValue } from "clsx";
-import { twMerge } from "tailwind-merge";
-export const cn = (...inputs: ClassValue[]) => twMerge(clsx(inputs));
-export const date = (value?: string | number) =>
-  value
-    ? new Intl.DateTimeFormat("id-ID", {
-        dateStyle: "medium",
-        timeStyle: "short",
-      }).format(new Date(typeof value === "number" ? value * 1000 : value))
-    : "—";
-export const number = (value: number) =>
-  new Intl.NumberFormat("id-ID").format(value);
+import { clsx, type ClassValue } from 'clsx'
+import { twMerge } from 'tailwind-merge'
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs))
+}
+export function readPreference(key: string, fallback = '') {
+  try {
+    return localStorage.getItem(`aryn.shell.${key}`) ?? fallback
+  } catch {
+    return fallback
+  }
+}
+export function savePreference(key: string, value: string) {
+  try {
+    localStorage.setItem(`aryn.shell.${key}`, value)
+  } catch {
+    /* Preferences are optional in restricted browsers. */
+  }
+}
+export function formatDate(value: string) {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime())
+    ? 'Timestamp unavailable'
+    : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date)
+}

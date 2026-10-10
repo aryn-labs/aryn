@@ -21,6 +21,8 @@ def build():
     if os.getenv("GITHUB_SHA") and dirty:
         raise RuntimeError("CI delivery cannot contain modified source.")
     output = Path(".local/delivery")
+    if output.exists():
+        shutil.rmtree(output)
     output.mkdir(parents=True, exist_ok=False)
     wheels = output / "python"
     subprocess.run([sys.executable, "-m", "build", "--wheel", "--no-isolation", "--outdir", str(wheels)], check=True)
@@ -42,13 +44,20 @@ def build():
         # resolve every implicit namespace). Verify the delivered wheel's files,
         # never an editable source import; keep verification data out of delivery.
         verified = Path(".local/wheel-verification")
+        if verified.exists():
+            shutil.rmtree(verified)
         verified.mkdir(parents=True, exist_ok=False)
         assert all(not Path(name).is_absolute() and ".." not in Path(name).parts for name in names)
         bundle.extractall(verified)
         script = "import sys; sys.path.insert(0, sys.argv[1]); import modules.core.workflows.coordinator as c; assert c.__file__.startswith(sys.argv[1]); import services.api.authentication; import services.api.intelligence; import modules.brief.service; import modules.relay.recovery; import modules.bench.replay; import modules.core.automations.service; import modules.core.capabilities; import services.api.automations; print('BUILT_WHEEL_IMPORT_PASS')"
         subprocess.run([sys.executable, "-I", "-c", script, str(verified.resolve())], check=True)
-    shutil.copytree("apps/web/dist", output / "web")
-    for filename in ("pyproject.toml", "uv.lock", "alembic.ini", "README.md", "apps/web/package-lock.json"):
+    web_dist = Path("apps/web/dist")
+    if web_dist.is_dir():
+        shutil.copytree(web_dist, output / "web")
+    manifests = ["pyproject.toml", "uv.lock", "alembic.ini", "README.md"]
+    if Path("apps/web/package-lock.json").is_file():
+        manifests.append("apps/web/package-lock.json")
+    for filename in manifests:
         shutil.copyfile(filename, output / Path(filename).name)
     protected = [value.encode() for name, value in os.environ.items()
                  if name.startswith(("ARYN_", "API_SERVER_")) and any(part in name for part in ("SECRET", "KEY")) and len(value) >= 16]
@@ -62,9 +71,12 @@ def build():
                 with zipfile.ZipFile(path) as bundle:
                     assert not any(value in bundle.read(name) for name in bundle.namelist() for value in protected)
             entries.append({"path": path.relative_to(output).as_posix(), "sha256": hashlib.sha256(data).hexdigest()})
+    dep_sources = ["uv.lock"]
+    if (output / "package-lock.json").is_file():
+        dep_sources.append("package-lock.json")
     metadata = {"commit": sha, "source_modified": dirty, "workflow_run": os.getenv("GITHUB_RUN_ID"), "workflow_attempt": os.getenv("GITHUB_RUN_ATTEMPT"),
                 "repository": "aryn-labs/aryn", "python": sys.version.split()[0], "files_sha256": entries,
-                "dependency_sources": ["uv.lock", "package-lock.json"], "deployment": "review-only; no production deployment"}
+                "dependency_sources": dep_sources, "deployment": "review-only; no production deployment"}
     (output / "build-metadata.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
     print(f"Safe delivery artifact bound to {sha}")
 

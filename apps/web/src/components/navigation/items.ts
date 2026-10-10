@@ -1,0 +1,33 @@
+import {
+  Home,
+  Folder,
+  Bot,
+  Workflow,
+  CirclePlay,
+  Scan,
+  Orbit,
+  FileText,
+  FlaskConical,
+  Cable,
+  Rocket,
+  BadgeCheck,
+  Settings,
+  CircleHelp,
+} from 'lucide-react'
+export const navigation = [
+  { label: 'Home', path: '/', icon: Home, group: '' },
+  { label: 'Projects', path: '/projects', icon: Folder, group: 'Workspace' },
+  { label: 'Agents', path: '/agents', icon: Bot, group: 'Workspace' },
+  { label: 'Workflows', path: '/workflows', icon: Workflow, group: 'Workspace' },
+  { label: 'Runs', path: '/runs', icon: CirclePlay, group: 'Workspace' },
+  { label: 'Automations', path: '/automations', icon: Scan, group: 'Workspace' },
+  { label: 'Relay', path: '/relay', icon: Orbit, group: 'Intelligence' },
+  { label: 'Brief', path: '/brief', icon: FileText, group: 'Intelligence' },
+  { label: 'Bench', path: '/bench', icon: FlaskConical, group: 'Intelligence' },
+  { label: 'Integrations', path: '/integrations', icon: Cable, group: 'Connect' },
+  { label: 'Deployments', path: '/deployments', icon: Rocket, group: 'Connect' },
+  { label: 'Approvals', path: '/approvals', icon: BadgeCheck, group: 'Manage' },
+  { label: 'Settings', path: '/settings', icon: Settings, group: 'Manage' },
+  { label: 'Help & Support', path: '/help', icon: CircleHelp, group: 'Support' },
+] as const
+export type RoutePath = (typeof navigation)[number]['path']
