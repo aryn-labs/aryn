@@ -16,8 +16,36 @@ async function mockApi(
     longNames?: boolean
   } = {},
 ) {
-  await page.route('http://127.0.0.1:5173/api/**', async (route) => {
+  await page.route('http://127.0.0.1:5175/api/**', async (route) => {
     const path = new URL(route.request().url()).pathname
+    if (path.endsWith('/chat/preferences')) {
+      await route.fulfill({
+        json: { organization_id: 'org-test', actor_id: 'user-test', locale: 'en-US' },
+      })
+      return
+    }
+    if (path.endsWith('/chat/provider-consent')) {
+      await route.fulfill({
+        json: {
+          organization_id: 'org-test',
+          project_id: path.includes('project-two') ? 'project-two' : 'project-one',
+          actor_id: 'user-test',
+          models: {},
+        },
+      })
+      return
+    }
+    if (path.endsWith('/chat/conversations')) {
+      await route.fulfill({
+        json: {
+          organization_id: 'org-test',
+          project_id: path.includes('project-two') ? 'project-two' : 'project-one',
+          items: [],
+          next_cursor: null,
+        },
+      })
+      return
+    }
     if (path === '/api/session') {
       await route.fulfill({
         json: { csrf: 'test-csrf', mode: options.hosted ? 'oidc' : 'development' },
@@ -125,7 +153,7 @@ for (const width of [1440, 768, 390]) {
       await mockApi(page)
       await page.addInitScript((value) => localStorage.setItem('aryn.shell.theme', value), theme)
       await page.goto('/')
-      await expect(page.getByText('Getting Started')).toBeVisible()
+      await expect(page.getByText('Start with an idea')).toBeVisible()
       await page.evaluate(() => document.fonts.ready)
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
@@ -169,7 +197,7 @@ for (const width of [1440, 768, 390]) {
         await page.locator('.main-workspace').evaluate((el) => {
           el.scrollTop = el.scrollHeight
         })
-        await expect(page.getByText('Getting Started')).toBeInViewport()
+        await expect(page.getByText('Start with an idea')).toBeInViewport()
         await page.screenshot({ path: resolve(evidence, `home-${width}-${theme}-activity.png`) })
       }
     })
@@ -182,7 +210,7 @@ for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 })
     await mockApi(page)
     await page.goto('/')
-    await expect(page.getByText('Getting Started')).toBeVisible()
+    await expect(page.getByText('Start with an idea')).toBeVisible()
     const trigger = page.getByRole('button', { name: 'Switch workspace' })
     await trigger.focus()
     await page.keyboard.press('ArrowDown')
@@ -215,7 +243,7 @@ test('long organization and project names remain usable on a narrow mobile viewp
   await page.setViewportSize({ width: 320, height: 740 })
   await mockApi(page, { longNames: true })
   await page.goto('/')
-  await expect(page.getByText('Getting Started')).toBeVisible()
+  await expect(page.getByText('Start with an idea')).toBeVisible()
   expect(await page.locator('.app-topbar').evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(
     true,
   )
@@ -254,7 +282,7 @@ test('legacy context preference stays removed and logo divider follows sidebar s
   await mockApi(page)
   await page.addInitScript(() => localStorage.setItem('aryn.shell.inspector', 'true'))
   await page.goto('/')
-  await expect(page.getByText('Getting Started')).toBeVisible()
+  await expect(page.getByText('Start with an idea')).toBeVisible()
   await expect(page.getByRole('button', { name: /context inspector/i })).toHaveCount(0)
   await expect(page.getByRole('complementary', { name: 'Context inspector' })).toHaveCount(0)
   const collapse = page.getByRole('button', { name: 'Collapse sidebar' })
@@ -304,7 +332,7 @@ test('all sidebar routes, browser back and deep link reload work', async ({ page
 test('keyboard search opens, filters resources and restores focus', async ({ page }) => {
   await mockApi(page)
   await page.goto('/')
-  await expect(page.getByText('Getting Started')).toBeVisible()
+  await expect(page.getByText('Start with an idea')).toBeVisible()
   await page.keyboard.press('Control+k')
   await expect(page.getByRole('combobox')).toBeFocused()
   await page.getByRole('combobox').fill('Test search')
@@ -385,7 +413,7 @@ test('notifications, environment, account and hosted logout use real states and 
 }) => {
   await mockApi(page, { hosted: true })
   await page.goto('/')
-  await expect(page.getByText('Getting Started')).toBeVisible()
+  await expect(page.getByText('Start with an idea')).toBeVisible()
   await page.getByRole('button', { name: 'Notifications' }).click()
   await expect(page.getByText('Notifications unavailable')).toBeVisible()
   await page.keyboard.press('Escape')
@@ -417,11 +445,11 @@ for (const status of [401, 403, 503])
     await mockApi(page, { contextStatus: status })
     await page.goto('/')
     await expect(
-      page.getByText(status === 503 ? 'Unable to load data' : 'Access required').first(),
+      page.getByText(status === 503 ? 'Data tidak dapat dimuat' : 'Akses diperlukan').first(),
     ).toBeVisible()
     await expect(page.getByText('Test Studio')).toHaveCount(0)
     if (status === 401)
-      await expect(page.getByRole('link', { name: 'Sign in to ARYN' }).first()).toHaveAttribute(
+      await expect(page.getByRole('link', { name: 'Masuk ke ARYN' }).first()).toHaveAttribute(
         'href',
         '/auth/login',
       )
@@ -429,42 +457,44 @@ for (const status of [401, 403, 503])
 test('loading, no projects, recovery and unavailable runtime remain explicit', async ({ page }) => {
   await mockApi(page, { slow: true })
   await page.goto('/')
-  await expect(page.getByText('Loading Home overview')).toBeVisible()
-  await expect(page.getByText('Getting Started')).toBeVisible()
-  await page.unroute('http://127.0.0.1:5173/api/**')
+  await expect(page.getByText('Memuat ringkasan Home')).toBeVisible()
+  await expect(page.getByText('Start with an idea')).toBeVisible()
+  await page.unroute('http://127.0.0.1:5175/api/**')
   await mockApi(page, { empty: true })
   await page.reload()
-  await expect(page.getByRole('heading', { name: 'No accessible projects' })).toBeVisible()
+  await expect(
+    page.getByRole('heading', { name: 'Tidak ada proyek yang dapat diakses' }),
+  ).toBeVisible()
 })
 test('unknown routes have a recoverable 404', async ({ page }) => {
   await mockApi(page)
   await page.goto('/unknown-route')
   await expect(page.getByRole('heading', { name: 'Page not found' })).toBeVisible()
   await page.getByRole('link', { name: 'Back to Home' }).click()
-  await expect(page.getByRole('heading', { name: 'Your workspace' })).toBeVisible()
+  await expect(page.locator('.home-header h1')).toBeVisible()
 })
 test('API recovery reboots the session and reloads the workspace', async ({ page }) => {
   await mockApi(page, { contextStatus: 503 })
   await page.goto('/')
-  await expect(page.getByText('Unable to load data').first()).toBeVisible()
-  await page.unroute('http://127.0.0.1:5173/api/**')
+  await expect(page.getByText('Data tidak dapat dimuat').first()).toBeVisible()
+  await page.unroute('http://127.0.0.1:5175/api/**')
   await mockApi(page)
-  await page.getByRole('button', { name: 'Try again' }).first().click()
-  await expect(page.getByText('Getting Started')).toBeVisible()
+  await page.getByRole('button', { name: 'Coba lagi' }).first().click()
+  await expect(page.getByText('Start with an idea')).toBeVisible()
 })
 test('global search reports partial API failure while keeping keyboard navigation usable', async ({
   page,
 }) => {
   await mockApi(page)
   await page.route(
-    'http://127.0.0.1:5173/api/projects/project-one/resources/blueprints?*',
+    'http://127.0.0.1:5175/api/projects/project-one/resources/blueprints?*',
     (route) =>
       new URL(route.request().url()).searchParams.get('limit') === '4'
         ? route.fallback()
         : route.fulfill({ status: 503, json: {} }),
   )
   await page.goto('/')
-  await expect(page.getByText('Getting Started')).toBeVisible()
+  await expect(page.getByText('Start with an idea')).toBeVisible()
   await page.keyboard.press('Control+k')
   await page.getByRole('combobox').fill('Agents')
   await expect(page.getByText('Agents search unavailable.')).toBeVisible()

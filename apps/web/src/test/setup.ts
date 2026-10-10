@@ -1,7 +1,12 @@
+import i18n from '@/i18n'
 import '@testing-library/jest-dom/vitest'
 import { cleanup, configure } from '@testing-library/react'
-import { afterEach, vi } from 'vitest'
+import { beforeEach, afterEach, vi } from 'vitest'
 configure({ asyncUtilTimeout: 3000 })
+// Legacy interaction suites use English receipts; dedicated i18n tests verify the product default.
+beforeEach(async () => {
+  await i18n.changeLanguage('en-US')
+})
 afterEach(() => {
   cleanup()
   localStorage.clear()

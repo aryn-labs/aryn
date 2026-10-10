@@ -1,3 +1,5 @@
+import { translate as tr } from '@/i18n'
+import { useTranslation } from 'react-i18next'
 import { useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { ArrowRight, Bot, Workflow } from 'lucide-react'
@@ -12,23 +14,27 @@ declare module '@tanstack/history' {
   }
 }
 export function BriefReview({ brief }: { brief: CreationBrief }) {
+  useTranslation()
+
   return (
     <dl className="home-recap">
-      <dt>Objective</dt>
-      <dd>{brief.goal || 'To be defined in Builder'}</dd>
-      <dt>Artifact</dt>
-      <dd>{brief.kind === 'agent' ? 'Agent definition' : 'Workflow graph'}</dd>
-      <dt>Expected output</dt>
-      <dd>{brief.output || 'To be defined in Builder'}</dd>
-      <dt>Integration needs</dt>
+      <dt>{tr('ui.objective')}</dt>
+      <dd>{brief.goal || tr('ui.to_be_defined_in_builder')}</dd>
+      <dt>{tr('ui.artifact')}</dt>
+      <dd>{brief.kind === 'agent' ? tr('ui.agent_definition') : tr('ui.workflow_graph')}</dd>
+      <dt>{tr('ui.expected_output')}</dt>
+      <dd>{brief.output || tr('ui.to_be_defined_in_builder')}</dd>
+      <dt>{tr('ui.integration_needs')}</dt>
       <dd>
         {brief.integration === 'external'
-          ? brief.integrationNotes || 'Integration review required'
-          : 'No integration requested'}
+          ? brief.integrationNotes || tr('ui.integration_review_required')
+          : tr('ui.no_integration_requested')}
       </dd>
-      <dt>Next step</dt>
+      <dt>{tr('ui.next_step')}</dt>
       <dd>
-        Review the definition. Publishing, approvals, and execution remain separate decisions.
+        {tr(
+          'ui.review_the_definition_publishing_approvals_and_execution_remain_separate_decisions',
+        )}
       </dd>
     </dl>
   )
@@ -46,6 +52,8 @@ export function GuidedCreation({
   permissions: Record<string, boolean>
   onClose: () => void
 }) {
+  useTranslation()
+
   const workspace = useWorkspace()
   const navigate = useNavigate()
   const [brief, setBrief] = useState<CreationBrief>({
@@ -86,14 +94,16 @@ export function GuidedCreation({
       >
         <div className="home-drawer-heading">
           <p className="home-kicker">
-            {scratch ? 'START FROM SCRATCH' : 'GUIDED CREATION'} · STEP{' '}
-            {step === 'details' ? '1' : '2'} OF 2
+            {scratch ? tr('ui.start_from_scratch') : tr('ui.guided_creation')} {tr('ui.step')}{' '}
+            {step === 'details' ? '1' : '2'} {tr('ui.of_2')}
           </p>
           <DialogTitle ref={heading} tabIndex={-1}>
-            {step === 'details' ? 'Turn your idea into a plan' : 'Review your starting brief'}
+            {step === 'details'
+              ? tr('ui.turn_your_idea_into_a_plan')
+              : tr('ui.review_your_starting_brief')}
           </DialogTitle>
           <DialogDescription>
-            {workspace.project?.name} · A starting brief for your review.
+            {workspace.project?.name} {tr('ui.a_starting_brief_for_your_review')}
           </DialogDescription>
         </div>
         <form
@@ -107,18 +117,21 @@ export function GuidedCreation({
             {step === 'details' ? (
               <>
                 <div className="home-field">
-                  <label htmlFor="brief-goal">Describe the work{!scratch && ' (required)'}</label>
+                  <label htmlFor="brief-goal">
+                    {tr('ui.describe_the_work')}
+                    {!scratch && tr('ui.required_suffix')}
+                  </label>
                   <textarea
                     id="brief-goal"
                     required={!scratch}
                     maxLength={1200}
                     value={brief.goal}
                     onChange={(event) => setBrief({ ...brief, goal: event.target.value })}
-                    placeholder="What should this accomplish?"
+                    placeholder={tr('ui.what_should_this_accomplish')}
                   />
                 </div>
                 <fieldset className="home-choices">
-                  <legend>What would you like to create?</legend>
+                  <legend>{tr('ui.what_would_you_like_to_create')}</legend>
                   {(['agent', 'workflow'] as const).map((kind) => {
                     const Icon = kind === 'agent' ? Bot : Workflow
                     return (
@@ -133,13 +146,15 @@ export function GuidedCreation({
                         />
                         <Icon size={19} aria-hidden="true" />
                         <span>
-                          <strong>{kind === 'agent' ? 'Agent definition' : 'Workflow'}</strong>
+                          <strong>
+                            {kind === 'agent' ? tr('ui.agent_definition') : tr('common.workflow')}
+                          </strong>
                           <small>
                             {!canCreate(permissions, kind)
-                              ? 'Creation permission required'
+                              ? tr('ui.creation_permission_required')
                               : kind === 'agent'
-                                ? 'One agent, its behavior and output contract'
-                                : 'Tasks, handoffs, and human review'}
+                                ? tr('ui.one_agent_its_behavior_and_output_contract')
+                                : tr('ui.tasks_handoffs_and_human_review')}
                           </small>
                         </span>
                       </label>
@@ -147,17 +162,17 @@ export function GuidedCreation({
                   })}
                 </fieldset>
                 <div className="home-field">
-                  <label htmlFor="brief-output">Expected output</label>
+                  <label htmlFor="brief-output">{tr('ui.expected_output')}</label>
                   <input
                     id="brief-output"
                     maxLength={220}
                     value={brief.output}
                     onChange={(event) => setBrief({ ...brief, output: event.target.value })}
-                    placeholder="A summary, a reviewable draft, or a structured result"
+                    placeholder={tr('ui.a_summary_a_reviewable_draft_or_a_structured_result')}
                   />
                 </div>
                 <div className="home-field">
-                  <label htmlFor="brief-integration">Does it need another system?</label>
+                  <label htmlFor="brief-integration">{tr('ui.does_it_need_another_system')}</label>
                   <select
                     id="brief-integration"
                     value={brief.integration}
@@ -168,14 +183,16 @@ export function GuidedCreation({
                       })
                     }
                   >
-                    <option value="none">Not now</option>
-                    <option value="external">Yes — integration review required</option>
+                    <option value="none">{tr('ui.not_now')}</option>
+                    <option value="external">{tr('ui.yes_integration_review_required')}</option>
                   </select>
-                  <small>No connections or tool permissions are granted here.</small>
+                  <small>{tr('ui.no_connections_or_tool_permissions_are_granted_here')}</small>
                 </div>
                 {brief.integration === 'external' && (
                   <div className="home-field">
-                    <label htmlFor="brief-integration-notes">Integration requirements</label>
+                    <label htmlFor="brief-integration-notes">
+                      {tr('ui.integration_requirements')}
+                    </label>
                     <input
                       id="brief-integration-notes"
                       maxLength={220}
@@ -183,7 +200,7 @@ export function GuidedCreation({
                       onChange={(event) =>
                         setBrief({ ...brief, integrationNotes: event.target.value })
                       }
-                      placeholder="Which system and what access is needed?"
+                      placeholder={tr('ui.which_system_and_what_access_is_needed')}
                     />
                   </div>
                 )}
@@ -192,8 +209,9 @@ export function GuidedCreation({
               <>
                 <BriefReview brief={brief} />
                 <p className="home-note">
-                  This brief is kept only for this navigation session. The builder UI is not
-                  available in this release; your brief will be shown at its destination for review.
+                  {tr(
+                    'ui.this_brief_is_kept_only_for_this_navigation_session_the_builder_ui_is_not_available_in_this_release_your_brief_will_be_shown_at_its_destination_for_review',
+                  )}
                 </p>
               </>
             )}
@@ -202,17 +220,17 @@ export function GuidedCreation({
             {step === 'details' ? (
               <>
                 <Button variant="secondary" type="button" onClick={onClose}>
-                  Cancel
+                  {tr('ui.cancel')}
                 </Button>
                 <Button type="submit" disabled={!allowed || !valid}>
-                  Review brief
+                  {tr('ui.review_brief')}
                   <ArrowRight size={15} aria-hidden="true" />
                 </Button>
               </>
             ) : (
               <>
                 <Button variant="secondary" type="button" onClick={() => moveStep('details')}>
-                  Edit details
+                  {tr('ui.edit_details')}
                 </Button>
                 <Button
                   type="button"
@@ -239,7 +257,9 @@ export function GuidedCreation({
                     })
                   }}
                 >
-                  Open {brief.kind === 'agent' ? 'Agent' : 'Workflow'} Builder
+                  {tr('ui.open_builder', {
+                    kind: brief.kind === 'agent' ? tr('common.agent') : tr('common.workflow'),
+                  })}
                   <ArrowRight size={15} aria-hidden="true" />
                 </Button>
               </>

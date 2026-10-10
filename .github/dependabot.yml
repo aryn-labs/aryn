@@ -12,3 +12,9 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 3
+  - package-ecosystem: npm
+    directory: /apps/web
+    target-branch: development
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3

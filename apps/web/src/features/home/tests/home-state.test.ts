@@ -5,10 +5,18 @@ import {
   readBrief,
   stageBrief,
   workspaceCondition,
+  workActivity,
 } from '../lib/home-state'
 import { assertScope, homeSummarySchema } from '../lib/home-api'
 import { homeFixture } from './fixtures'
 describe('Home API-derived state', () => {
+  it('uses customer labels when a run projection has only an internal identifier', () => {
+    const data = homeFixture('issues')
+    data.summary.latest_runs[0]!.name = data.summary.latest_runs[0]!.id
+    expect(workActivity(data.summary).find((item) => item.kind === 'run')?.name).toBe(
+      'Run activity',
+    )
+  })
   it.each(['new', 'active', 'issues'] as const)(
     'derives %s from actual inventory contracts',
     (scenario) => {
@@ -33,7 +41,7 @@ describe('Home API-derived state', () => {
       attentionItems(data.summary, data.incidents, data.reviews, data.lifecycle).map(
         (item) => item.kind,
       ),
-    ).toEqual(['bench', 'incident', 'run', 'version', 'workflow-run'])
+    ).toEqual(['bench', 'incident', 'run'])
     data.summary.permissions['version:approve'] = false
     data.summary.permissions['version:create'] = false
     data.summary.permissions['version:publish'] = false

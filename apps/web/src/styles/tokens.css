@@ -5,6 +5,7 @@
   --background: #f5f8fa;
   --sidebar: #eff4f7;
   --surface: #ffffff;
+  --composer: #edf3f6;
   --surface-hover: #e9f1f6;
   --foreground: #162b3c;
   --muted: #506880;
@@ -28,20 +29,21 @@
   --warning: #a87510;
 }
 .dark {
-  --background: #081520;
-  --sidebar: #091722;
-  --surface: #0d1e2c;
-  --surface-hover: #152d40;
-  --foreground: #e5ecfb;
-  --muted: #a7bdd8;
-  --subtle: #8fa7c3;
+  --background: #0a1119;
+  --sidebar: #0e1821;
+  --surface: #15212b;
+  --composer: #192632;
+  --surface-hover: #1d303e;
+  --foreground: #f0f5f8;
+  --muted: #93a9b9;
+  --subtle: #93a9b9;
   --border: #1a2d3e;
-  --accent: #27d9dc;
-  --accent-bright: #27caff;
-  --accent-fill: #19d4cc;
+  --accent: #62dccb;
+  --accent-bright: #62dccb;
+  --accent-fill: #62dccb;
   --accent-foreground: #06232c;
-  --active: #142e45;
-  --card: #0e1e2b;
+  --active: #1d303e;
+  --card: #15212b;
   --banner: #0a2731;
   --icon-bg: #0b222e;
   --purple-bg: #35336c;
@@ -49,7 +51,7 @@
   --blue-bg: #163966;
   --blue: #52b9ff;
   --overlay: rgb(0 5 12 / 0.68);
-  --ring: #43d8df;
+  --ring: #62dccb;
   --success: #26c99d;
   --warning: #f2c44e;
 }
@@ -230,7 +232,6 @@ button {
   align-items: center;
   gap: 12px;
   padding: 0 18px 0 0;
-  border-bottom: 1px solid var(--border);
   background: var(--sidebar);
   z-index: 20;
 }
@@ -241,7 +242,6 @@ button {
   width: var(--sidebar-width);
   height: 100%;
   padding-inline: 18px;
-  border-right: 1px solid var(--border);
 }
 .is-sidebar-collapsed .topbar-brand {
   padding-inline: 12px;
@@ -372,7 +372,6 @@ button {
   display: flex;
   align-items: center;
   gap: 9px;
-  border: 1px solid var(--border);
   border-radius: 7px;
   background: var(--surface);
   height: 36px;
@@ -437,7 +436,6 @@ kbd {
 .app-sidebar {
   width: var(--sidebar-width);
   flex-shrink: 0;
-  border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   background: var(--sidebar);
@@ -486,7 +484,6 @@ kbd {
 .nav-group {
   margin: 14px 0 8px;
   padding: 14px 11px 0;
-  border-top: 1px solid var(--border);
   color: var(--subtle);
   text-transform: uppercase;
   font-size: 10px;
@@ -507,7 +504,6 @@ kbd {
 }
 .collapse-button {
   justify-content: flex-start;
-  border-top: 1px solid var(--border);
   border-radius: 0;
   width: 100%;
   height: 44px;
@@ -828,10 +824,9 @@ kbd {
   align-items: center;
   flex-shrink: 0;
   height: 30px;
-  font-size: 10px;
+  font-size: 12px;
   padding: 0 18px;
   color: var(--subtle);
-  border-top: 1px solid var(--border);
 }
 .workspace-footer > span:last-child {
   display: flex;
@@ -839,7 +834,6 @@ kbd {
   align-items: center;
 }
 .footer-divider {
-  border-left: 1px solid var(--border);
   height: 10px;
   margin: 0 4px;
 }

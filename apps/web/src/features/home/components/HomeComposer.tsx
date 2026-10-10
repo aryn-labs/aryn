@@ -1,5 +1,6 @@
-import { useLayoutEffect, useRef } from 'react'
-import { ArrowUp, Sparkles } from 'lucide-react'
+import { useId, useLayoutEffect, useRef, type ReactNode } from 'react'
+import { ArrowRight, LoaderCircle, Info } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 export function HomeComposer({
   compact,
@@ -7,7 +8,17 @@ export function HomeComposer({
   onChange,
   followUp = false,
   onContinue,
+  disabled = false,
+  pending = false,
+  readOnly = false,
+  help,
+  controls,
 }: {
+  disabled?: boolean
+  pending?: boolean
+  readOnly?: boolean
+  help?: string
+  controls?: ReactNode
   compact: boolean
   value: string
   onChange: (value: string) => void
@@ -15,6 +26,8 @@ export function HomeComposer({
   onContinue: (goal: string) => void
 }) {
   const input = useRef<HTMLTextAreaElement>(null)
+  const { t } = useTranslation()
+  const helpId = useId()
   useLayoutEffect(() => {
     const node = input.current
     if (!node) return
@@ -22,8 +35,8 @@ export function HomeComposer({
       if (!node) return
       node.style.height = 'auto'
       const style = getComputedStyle(node)
-      const minimum = parseFloat(style.minHeight) || 72
-      const maximum = parseFloat(style.maxHeight) || 200
+      const minimum = parseFloat(style.minHeight) || 48
+      const maximum = parseFloat(style.maxHeight) || 154
       node.style.height = `${Math.max(minimum, Math.min(node.scrollHeight, maximum))}px`
       node.style.overflowY = node.scrollHeight > maximum ? 'auto' : 'hidden'
     }
@@ -46,7 +59,7 @@ export function HomeComposer({
     }
   }, [value, compact, followUp])
   function submit() {
-    if (!followUp && value.trim()) onContinue(value.trim())
+    if (!disabled && !pending && value.trim()) onContinue(value.trim())
   }
   return (
     <form
@@ -55,32 +68,26 @@ export function HomeComposer({
         event.preventDefault()
         submit()
       }}
-      aria-labelledby="composer-title"
+      aria-label={t('composer.label')}
     >
-      <h2 id="composer-title">
-        <Sparkles size={20} aria-hidden="true" />
-        {followUp ? 'Continue the conversation' : 'What would you like to build?'}
-      </h2>
-      <label className="sr-only" htmlFor="home-goal">
-        {followUp ? 'Follow-up message' : 'Describe the agent or workflow you want to build'}
+      <label className="sr-only" htmlFor={followUp ? 'chat-message' : 'home-goal'}>
+        {t('composer.label')}
       </label>
       <textarea
-        id="home-goal"
+        id={followUp ? 'chat-message' : 'home-goal'}
         ref={input}
-        rows={2}
+        rows={1}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        maxLength={1200}
-        placeholder={
-          followUp
-            ? 'Prepare a follow-up… Sending is currently unavailable.'
-            : 'Describe what you’d like to build or ask a question…'
-        }
-        aria-describedby="composer-help"
+        maxLength={4000}
+        readOnly={pending || readOnly}
+        placeholder={t('composer.placeholder')}
+        aria-describedby={help ? helpId : undefined}
         onKeyDown={(event) => {
           if (
             !event.nativeEvent.isComposing &&
-            (event.ctrlKey || event.metaKey) &&
+            !event.shiftKey &&
+            event.keyCode !== 229 &&
             event.key === 'Enter'
           ) {
             event.preventDefault()
@@ -89,20 +96,28 @@ export function HomeComposer({
         }}
       />
       <div className="home-composer-footer">
-        <p id="composer-help">
-          {followUp
-            ? 'Sending requires an ARYN conversation API. Nothing is sent or saved.'
-            : 'AI chat is unavailable on this server. Continue to review your message.'}
-        </p>
+        <div className="composer-controls">{controls}</div>
+        {help && (
+          <details className="composer-reason">
+            <summary aria-label={t('composer.reason')}>
+              <Info size={17} aria-hidden="true" />
+            </summary>
+            <p id={helpId}>{help}</p>
+          </details>
+        )}
         <Button
           type="submit"
           size="sm"
-          disabled={followUp || !value.trim()}
-          aria-describedby="composer-help"
-          aria-keyshortcuts="Control+Enter Meta+Enter"
+          disabled={disabled || pending || !value.trim()}
+          aria-label={t(pending ? 'composer.sending' : 'composer.send')}
+          aria-describedby={help ? helpId : undefined}
+          aria-keyshortcuts="Enter"
         >
-          {followUp ? 'Send' : 'Continue'}
-          <ArrowUp size={15} aria-hidden="true" />
+          {pending ? (
+            <LoaderCircle className="animate-spin" size={19} aria-hidden="true" />
+          ) : (
+            <ArrowRight size={19} aria-hidden="true" />
+          )}
         </Button>
       </div>
     </form>

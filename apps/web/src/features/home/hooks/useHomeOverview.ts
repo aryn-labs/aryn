@@ -10,6 +10,8 @@ import {
   workflowSchema,
 } from '../lib/home-api'
 import { attentionItems, workActivity, workspaceCondition } from '../lib/home-state'
+import { chatKey, chatPath, historySchema, scoped } from '@/features/chat/lib/chat-api'
+import { request } from '@/lib/api/client'
 
 export function useHomeOverview() {
   const workspace = useWorkspace()
@@ -18,7 +20,22 @@ export function useHomeOverview() {
     projectId: workspace.project?.id ?? '',
   }
   const enabled = !!workspace.context && !!workspace.project
-  const key = [scope.organizationId, scope.projectId]
+  const key = [workspace.context?.user.id, scope.organizationId, scope.projectId]
+  const chatScope = {
+    user: workspace.context?.user.id ?? '',
+    organization: scope.organizationId,
+    project: scope.projectId,
+  }
+  const conversations = useQuery({
+    queryKey: [...chatKey(chatScope), 'recent'],
+    queryFn: async ({ signal }) =>
+      scoped(
+        await request(chatPath(chatScope) + '/conversations', historySchema, { signal }),
+        chatScope,
+      ),
+    enabled,
+    retry: false,
+  })
   const summary = useQuery({
     queryKey: ['summary', ...key, 'home'],
     enabled,
@@ -64,6 +81,7 @@ export function useHomeOverview() {
     agents,
     workflows,
     incidents,
+    conversations,
     ...(canReview ? [reviewQueue] : []),
     ...(checkBench ? [lifecycle] : []),
   ]
@@ -83,16 +101,28 @@ export function useHomeOverview() {
             lifecycle.isError ? undefined : lifecycle.data,
           ),
           activity: workActivity(summary.data),
+          conversations: conversations.isError ? [] : (conversations.data?.items ?? []),
         }
       : undefined
   const measuredCondition = data
-    ? workspaceCondition(data.summary, data.agents, data.workflows, data.incidents, data.attention)
+    ? data.attention.length
+      ? 'issues'
+      : data.conversations.length
+        ? 'active'
+        : workspaceCondition(
+            data.summary,
+            data.agents,
+            data.workflows,
+            data.incidents,
+            data.attention,
+          )
     : undefined
   const incomplete = queries.some((query) => query.isError)
   const condition = measuredCondition === 'new' && incomplete ? 'unavailable' : measuredCondition
   const services = [
     { label: 'Workflow definitions', query: workflows },
     { label: 'Relay incidents', query: incidents },
+    { label: 'Conversation history', query: conversations },
     ...(canReview ? [{ label: 'Workflow output reviews', query: reviewQueue }] : []),
     ...(checkBench ? [{ label: 'Bench comparisons', query: lifecycle }] : []),
   ]

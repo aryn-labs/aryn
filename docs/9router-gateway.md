@@ -1,5 +1,12 @@
 # ARYN: Hermes runtime, gateway model 9Router
 
+Status Home/Chat V1.0 pada 11 Oktober 2026: percakapan nyata multi-turn memakai
+`ds/deepseek-flash` telah diverifikasi melalui API/Core/Hermes/9Router. Consent
+first-use memakai receipt Core tersimpan dan dapat dicabut, bukan checkbox setiap
+percakapan. Provider downstream/local-only yang tidak diattest tetap tidak diklaim.
+Bagian berikut mencatat tahap gateway sebelumnya; kontrak dan bukti terbaru ada
+di [Home/Chat](chat-workspace.md) dan [validasi](../apps/web/VALIDATION.md).
+
 Audit dan implementasi pada branch `development`, mulai dari
 `c3dbd87368bbf9c22293b409ffd2ff84861fbc6d`. Tidak ada perubahan pada `main`,
 Batch 2, Brief/Relay, instalasi/config provider 9Router, atau hardening Hermes.
@@ -62,6 +69,31 @@ provider discovery tidak tersedia. Karena itu listing saja berstatus `unknown`.
 Unix seconds dengan umur 0–60 detik. Tidak ada endpoint pemberian evidence dari
 browser. Penolakan model oleh provider dilatch `unavailable` selama proses API
 berjalan. Preflight selalu menyegarkan discovery; cache listing bukan izin run.
+
+Tambahan Chat (10 Oktober 2026): endpoint standar 9Router tidak wajib menyediakan
+field evidence tambahan tersebut. Model LLM dengan status `unknown` dapat dipilih
+untuk **verifikasi pada saat kirim**, tanpa dilabeli `available`. Consent pengguna
+mencakup biaya probe singkat. Core melakukan claim persisten `model_probe`, izin,
+reservasi budget, deadline, audit dan idempotency sebelum Hermes mengirim prompt
+verifikasi tetap, text-only, tanpa tool, ke satu model yang dipilih. Hanya hasil
+Core `completed` dengan identitas gateway/runtime/model yang tepat dan usage
+terukur menjadi evidence readiness selama 60 detik. Eksekusi chat normal tetap
+melewati preflight `require_model_available`; claim probe gagal/unknown tidak
+diulang dengan idempotency key yang sama dan tidak menerima pesan pengguna.
+Discovery sendiri tidak memanggil inference. Combo, route non-LLM, model yang
+ditolak, binding runtime tidak cocok dan input di luar katalog tetap ditolak.
+Tidak ada pembacaan credential/database private 9Router atau silent fallback.
+
+Verifikasi live Chat 10 Oktober 2026 berhasil untuk `ds/deepseek-v4-pro` dan
+`ds/deepseek-flash`. Rute V4 Flash lama mengembalikan `deepseek-flash` sehingga
+ditolak oleh pemeriksaan identitas; DeepSeek telah
+[mengalihkan rute V4 Flash ke V4.1 Flash](https://api-docs.deepseek.com/updates/).
+Setelah pengguna login, **Add Custom Model** pada dashboard 9Router mendaftarkan
+ID resmi `deepseek-flash` pada provider DeepSeek existing. Publik `/v1/models`
+sekarang menampilkan `ds/deepseek-flash`; kandidat lain tidak otomatis tersedia.
+Tidak ada perubahan key/provider, grant, fallback, atau instalasi 9Router.
+Tiga turn nyata Flash melewati API/Core/Hermes, menyimpan history dan usage,
+termasuk follow-up setelah refresh. Lihat [bukti dan kontrak Chat](chat-workspace.md).
 
 Residual pre-Batch-2 (7 Oktober 2026): pembacaan `_active_gateway_providers()`
 terhadap database internal 9Router telah dihapus. `providerConnections.isActive`

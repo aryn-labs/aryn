@@ -48,9 +48,25 @@ class NineRouterGateway:
         self._checked = 0.0
         self._lock = asyncio.Lock()
         self._rejected = set()
+        self._runtime_verified = {}
+
+    def record_runtime_verification(self, result):
+        """Only Core-settled, measured, exact-model results establish readiness.
+
+        This is a server-only boundary; no browser evidence or provider credentials.
+        A probe does not authorize later execution: all normal admission gates remain.
+        """
+        if (not result.execution_claim_verified or result.status.value != "completed"
+                or result.gateway != "9Router" or result.runtime_backend != "Hermes"
+                or result.requested_model != result.model or result.actual_model != result.model
+                or result.usage.availability != "measured" or result.completed_at is None
+                or not 0 <= time.time() - result.completed_at <= 60):
+            raise ValueError("Unverified Core model result")
+        self._runtime_verified[result.model] = result.completed_at
 
     def reject(self, model):
         self._rejected.add(model)
+        self._runtime_verified.pop(model, None)
 
     async def discover(self, *, refresh=False):
         async with self._lock:
@@ -90,6 +106,10 @@ class NineRouterGateway:
                                 or type(observed) not in {int, float} or not 0 <= time.time() - observed <= 60):
                             status = "unknown"
                         reason = "gateway_verified_availability" if status == "available" else "gateway_catalog_only"
+                        verified_at = self._runtime_verified.get(mid)
+                        if (status == "unknown" and verified_at is not None
+                                and 0 <= time.time() - verified_at <= 60):
+                            status, reason = "available", "core_runtime_verified"
                         if model.get("owned_by") == "combo" or model.get("kind", "llm") != "llm":
                             status, reason = "unavailable", "non_exact_route"
                         if mid in self._rejected:
@@ -99,11 +119,17 @@ class NineRouterGateway:
                         # Raw labels, provider metadata and errors never cross the boundary.
                         rows.append({"model_id": mid, "display_name": mid, "gateway": "9Router", "provider": "9router",
                                      "availability": status, "availability_reason": reason,
-                                     "availability_source": "9router_discovery"})
+                                     "availability_source": "core_runtime_probe" if reason == "core_runtime_verified" else "9router_discovery"})
                     self._snapshot = GatewayDiscovery(connected=True, discovery_valid=True, reason="discovered", models=rows)
             except (httpx.HTTPError, ValueError, TypeError):
                 self._snapshot = GatewayDiscovery(reason="discovery_unavailable")
             finally:
+                if not self._snapshot.discovery_valid:
+                    self._runtime_verified.clear()
+                else:
+                    current = {row["model_id"] for row in self._snapshot.models}
+                    self._runtime_verified = {key: value for key, value in self._runtime_verified.items()
+                        if key in current and 0 <= time.time() - value <= 60}
                 self._checked = time.monotonic()
                 if self.client is None:
                     await client.aclose()

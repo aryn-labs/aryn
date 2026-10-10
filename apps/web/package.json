@@ -10,7 +10,9 @@
     "preview": "vite preview --host 127.0.0.1",
     "lint": "eslint . --max-warnings 0",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "format:check": "prettier --check src e2e integration-e2e scripts *.ts *.json *.js",
+    "test:chat:e2e": "playwright test --config playwright.chat.config.ts"
   },
   "dependencies": {
     "@fontsource/inter": "^5.2.8",
@@ -24,9 +26,13 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
+    "i18next": "^26.4.3",
     "lucide-react": "^0.468.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
+    "react-i18next": "^17.0.16",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.3.1",
     "zod": "^4.6.5"
   },

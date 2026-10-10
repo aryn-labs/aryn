@@ -55,9 +55,9 @@ binding.ExactGatewayTransport = lambda settings, receipt: ExactGatewayTransport(
 
 def request(model="test/model-a", *, asynchronous=False):
     from aiohttp.test_utils import make_mocked_request
-    result = make_mocked_request("POST", "/v1/runs" if asynchronous else "/v1/chat/completions", headers={"Content-Type": "application/json",
-                                  "Idempotency-Key": "isolated-" + model,
-                                  "Authorization": "Bearer " + os.environ["API_SERVER_KEY"]})
+    headers = {"Content-Type": "application/json", "Idempotency-Key": "isolated-" + model,
+        "Authorization": "Bearer " + os.environ["API_SERVER_KEY"]}
+    result = make_mocked_request("POST", "/v1/runs" if asynchronous else "/v1/chat/completions", headers=headers)
     body = {"model": model, "provider": "9router", "temperature": 0.2, "max_tokens": 128,
             "model_options": {"temperature": 0.2, "max_tokens": 128}}
     if asynchronous:
@@ -75,6 +75,12 @@ async def check():
     socket.socket.connect_ex = reject_network
     print("PHASE_BUILD", flush=True)
     api = binding.build_adapter(settings, os.environ["API_SERVER_KEY"], port=0)
+    native_sessions = []
+    native_factory = api._create_agent
+    def tracked_factory(**kwargs):
+        native_sessions.append(kwargs.get("session_id"))
+        return native_factory(**kwargs)
+    api._create_agent = tracked_factory
     print("PHASE_TURN", flush=True)
     # Calls the real Hermes API handler and real AIAgent, with model transport isolated.
     response = await api._handle_chat_completions(request())
@@ -83,6 +89,7 @@ async def check():
     assert response.status == 200, (response.status, data)
     assert data["aryn"]["actual_model"] == data["aryn"]["requested_model"] == "test/model-a"
     assert data["aryn"]["actual_model_source"] == "gateway_response"
+    assert response.headers["X-Hermes-Session-Id"].startswith("aryn_")
     assert len(calls) == 1, len(calls)
     assert calls[0]["model"] == "test/model-a" and not calls[0].get("tools")
     assert calls[0].get("temperature") == 0.2
@@ -166,6 +173,15 @@ async def check():
     assert response.status == 200, response.body
     assert json.loads(response.body)["aryn"]["actual_model"] == "test/model-http"
     assert len(calls) == 7
+    assert "X-Hermes-Session-Id" not in response.headers
+    first_session = native_sessions[-1]
+    second = await dispatch("POST", "/v1/chat/completions", body,
+        extra_headers={"Idempotency-Key": "isolated-same-text-new-core-scope"})
+    assert second.status == 200, second.body
+    assert "X-Hermes-Session-Id" not in second.headers
+    assert native_sessions[-1].startswith("aryn_")
+    assert native_sessions[-1] != first_session
+    assert len(calls) == 8
     assert (await dispatch("POST", "/v1/chat/completions", body, extra_headers={"X-Hermes-Session-Id": "foreign"})).status == 403
     assert (await dispatch("POST", "/v1/chat/completions", body, extra_headers={"X-Hermes-Session-Key": "foreign"})).status == 403
     assert (await dispatch("GET", "/v1/capabilities", extra_headers={"Upgrade": "websocket"})).status == 403

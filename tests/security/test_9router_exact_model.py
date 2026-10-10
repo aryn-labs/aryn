@@ -71,6 +71,37 @@ def test_sdk_never_dispatches_alternate_gateway_or_model():
     assert calls == []
 
 
+@pytest.mark.parametrize("actual,accepted", [("openai/gpt-4o-mini", True), ("gpt-4o-mini", True),
+    ("gpt-4o-mini-2024-07-18", False), ("gpt-4o", False), ("other/gpt-4o-mini", False)])
+def test_openai_gateway_namespace_is_not_a_model_substitution(actual, accepted):
+    requested = "openai/gpt-4o-mini"
+    response = copy.deepcopy(COMPLETION)
+    response["model"] = actual
+    receipt = ModelReceipt(requested)
+    with httpx.Client(transport=ExactGatewayTransport(GatewaySettings(), receipt,
+            httpx.MockTransport(lambda r: httpx.Response(200, json=response)))) as client:
+        result = client.post("http://127.0.0.1:20128/v1/chat/completions", json={"model": requested})
+    assert (result.status_code == 200) is accepted
+    assert bool(receipt.evidence()) is accepted
+
+
+def test_text_turn_native_history_is_private_to_actor_scope_and_request(lifecycle):
+    _, ctx, *_ = lifecycle
+    from packages.runtime_adapters import HermesRuntimeAdapter
+    adapter = HermesRuntimeAdapter(api_key="isolated")
+    request = RunRequest(model=MODEL, prompt="Identical text", idempotency_key="isolated-key")
+    original = adapter._run_headers(request, ctx)["Idempotency-Key"]
+    assert adapter._run_headers(request, ctx)["Idempotency-Key"] == original
+    assert "X-Hermes-Session-Id" not in adapter._run_headers(request, ctx)
+    variants = [ctx.model_copy(update={"organization_id": "other-org"}),
+        ctx.model_copy(update={"project_id": "other-project"}),
+        ctx.model_copy(update={"actor": ctx.actor.model_copy(update={"actor_id": "other-user"})})]
+    assert all(adapter._run_headers(request, changed)["Idempotency-Key"] != original for changed in variants)
+    assert adapter._run_headers(request.model_copy(update={"idempotency_key": "other-key"}), ctx)["Idempotency-Key"] != original
+    assigned = adapter._run_headers(request.model_copy(update={"session_id": "assignment-owned"}), ctx)
+    assert assigned["X-Hermes-Session-Key"] == "assignment-owned" and "X-Hermes-Session-Id" not in assigned
+
+
 @pytest.mark.asyncio
 async def test_gateway_secret_does_not_leak_in_response_errors_or_logs(lifecycle, caplog):
     _, ctx, *_ = lifecycle
@@ -146,7 +177,7 @@ def test_gateway_output_cap_and_single_dispatch_even_after_success():
         body = {"model": MODEL, "max_tokens": 9999, "max_completion_tokens": 9999, "n": 5}
         assert client.post("http://127.0.0.1:20128/v1/chat/completions", json=body).status_code == 200
         assert client.post("http://127.0.0.1:20128/v1/chat/completions", json=body).status_code == 400
-    assert calls == [{"model": MODEL, "max_tokens": 64}]
+    assert calls == [{"model": MODEL, "max_tokens": 64, "stream": False}]
     assert receipt.failure == "additional_dispatch_forbidden" and receipt.evidence() is None
 
 

@@ -1,3 +1,6 @@
+import { labelText } from '@/i18n'
+import { translate as tr } from '@/i18n'
+import { useTranslation } from 'react-i18next'
 import { Link } from '@tanstack/react-router'
 import { ChevronsLeft, ChevronsRight } from 'lucide-react'
 import { navigation } from '@/components/navigation/items'
@@ -11,8 +14,10 @@ export function SidebarNavigation({
   compact?: boolean
   onNavigate?: () => void
 }) {
+  useTranslation()
+
   return (
-    <nav aria-label="Primary navigation" className="sidebar-nav">
+    <nav aria-label={tr('ui.primary_navigation')} className="sidebar-nav">
       {navigation.map((item, index) => {
         const heading = item.group && item.group !== navigation[index - 1]?.group
         const link = (
@@ -22,20 +27,20 @@ export function SidebarNavigation({
             activeProps={{ className: 'nav-link active', 'aria-current': 'page' }}
             className="nav-link"
             onClick={onNavigate}
-            aria-label={compact ? item.label : undefined}
+            aria-label={compact ? labelText(item.label) : undefined}
           >
             <item.icon size={19} strokeWidth={1.7} />
-            <span>{item.label}</span>
+            <span>{labelText(item.label)}</span>
           </Link>
         )
         return (
           <div key={item.path}>
             {heading && (
               <div className={`nav-group ${item.group === 'Support' ? 'support-group' : ''}`}>
-                <span>{item.group}</span>
+                <span>{labelText(item.group)}</span>
               </div>
             )}
-            {compact ? <Tooltip label={item.label}>{link}</Tooltip> : link}
+            {compact ? <Tooltip label={labelText(item.label)}>{link}</Tooltip> : link}
           </div>
         )
       })}
@@ -43,11 +48,13 @@ export function SidebarNavigation({
   )
 }
 export function AppSidebar() {
+  useTranslation()
+
   const { collapsed, toggleSidebar } = useShell()
   return (
     <aside
       className={`app-sidebar ${collapsed ? 'is-collapsed' : ''}`}
-      aria-label="Workspace sidebar"
+      aria-label={tr('ui.workspace_sidebar')}
     >
       <div className="expanded-navigation">
         <SidebarNavigation compact={collapsed} />
@@ -59,11 +66,11 @@ export function AppSidebar() {
         variant="ghost"
         onClick={toggleSidebar}
         className="collapse-button"
-        aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        aria-label={collapsed ? tr('ui.expand_sidebar') : tr('ui.collapse_sidebar')}
         aria-expanded={!collapsed}
       >
         {collapsed ? <ChevronsRight size={18} /> : <ChevronsLeft size={18} />}
-        <span>{collapsed ? 'Expand' : 'Collapse'}</span>
+        <span>{collapsed ? labelText('Expand') : labelText('Collapse')}</span>
       </Button>
     </aside>
   )

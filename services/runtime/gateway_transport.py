@@ -1,6 +1,7 @@
 """Hermes SDK transport restriction and evidence capture, independently testable."""
 
 import json
+import re
 import threading
 from dataclasses import dataclass, field
 
@@ -13,6 +14,9 @@ from packages.model_adapters.gateway import GatewaySettings, MODEL_ID
 class ModelReceipt:
     requested_model: str
     actual_model: str | None = None
+    reported_model: str | None = None
+    response_fields: list[str] = field(default_factory=list)
+    session_id: str | None = None
     provider: str | None = None
     failure: str | None = None
     verified: bool = False
@@ -65,6 +69,7 @@ class ExactGatewayTransport(httpx.BaseTransport):
             body["max_tokens"] = min(cap, body.get("max_tokens", cap)) if type(body.get("max_tokens", cap)) is int else cap
         body.pop("max_completion_tokens", None)
         body.pop("n", None)
+        body["stream"] = False
         # Strip all SDK/config headers. Only the optional gateway credential is forwarded.
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
         key = self.settings.api_key.get_secret_value()
@@ -98,7 +103,13 @@ class ExactGatewayTransport(httpx.BaseTransport):
             if "data: [DONE]" in raw_text:
                 raw_text = raw_text.split("data: [DONE]")[0].strip()
             data = json.loads(raw_text)
+            if isinstance(data, dict):
+                self.receipt.response_fields = [name for name in data
+                    if isinstance(name, str) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,31}", name)][:16]
+            if key and key in json.dumps(data, ensure_ascii=False):
+                return self._reject(request, "gateway_secret_leak")
             actual = data.get("model")
+            self.receipt.reported_model = actual if isinstance(actual, str) and MODEL_ID.fullmatch(actual) else None
             requested = self.receipt.requested_model
             model_matches = (
                 isinstance(actual, str) and (
@@ -107,13 +118,12 @@ class ExactGatewayTransport(httpx.BaseTransport):
                     or (requested.startswith("gemini/") and actual in {requested[7:], f"google/{requested[7:]}"})
                     or (requested.startswith("ag/") and actual in {requested[3:], f"antigravity/{requested[3:]}"})
                     or (requested.startswith("cx/") and actual in {requested[3:], f"codex/{requested[3:]}", f"openai/{requested[3:]}"})
+                    or (requested.startswith("openai/") and actual == requested[7:])
                     or (actual.startswith("ds/") and requested in {actual[3:], f"deepseek/{actual[3:]}"})
                 )
             )
             if not model_matches:
                 return self._reject(request, "actual_model_mismatch")
-            if key and key in json.dumps(data, ensure_ascii=False):
-                return self._reject(request, "gateway_secret_leak")
             provider = data.get("provider")
             self.receipt.provider = provider if isinstance(provider, str) and MODEL_ID.fullmatch(provider) else None
             self.receipt.actual_model, self.receipt.verified = requested, True

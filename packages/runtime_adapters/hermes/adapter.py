@@ -119,7 +119,7 @@ class HermesRuntimeAdapter(RuntimeAdapter):
         import uuid
         headers = self._headers()
         key = request.idempotency_key or uuid.uuid4().hex
-        scope = "\0".join((context.organization_id, context.project_id, key))
+        scope = "\0".join((context.organization_id, context.project_id, context.actor.actor_id, key))
         headers["Idempotency-Key"] = "aryn_" + hashlib.sha256(scope.encode()).hexdigest()
         if request.session_id:
             headers["X-Hermes-Session-Key"] = request.session_id
@@ -158,6 +158,17 @@ class HermesRuntimeAdapter(RuntimeAdapter):
         if not await self.gateway_binding():
             raise RuntimeGatewayError()
 
+    async def require_model_candidate(self, model):
+        """Probe admission only: an exact, listed LLM route, never a combo or fallback."""
+        discovery = await self.discover_models(refresh=True)
+        if not discovery.discovery_valid:
+            raise GatewayUnavailableError()
+        row = next((m for m in discovery.models if m["model_id"] == model), None)
+        if not row or row["availability"] == "unavailable":
+            raise ModelUnavailableError(RuntimeModelAvailability(model=model, status="unavailable"))
+        if not await self.gateway_binding():
+            raise RuntimeGatewayError()
+
     def _provenance(self, data, requested):
         evidence = data.get("aryn")
         if (not isinstance(evidence, dict) or evidence.get("gateway") != "9Router"
@@ -167,7 +178,10 @@ class HermesRuntimeAdapter(RuntimeAdapter):
                 or not isinstance(evidence.get("actual_model"), str) or not evidence["actual_model"]):
             raise RuntimeGatewayError()
         if evidence["actual_model"] != requested:
-            raise ModelIdentityError()
+            error = ModelIdentityError()
+            error.identity_stage = "gateway_receipt"
+            error.reported_model = evidence["actual_model"]
+            raise error
         provider = evidence.get("provider")
         # Only a bounded identifier; upstream payloads and error text never become metadata.
         from packages.model_adapters.gateway import MODEL_ID
@@ -189,11 +203,21 @@ class HermesRuntimeAdapter(RuntimeAdapter):
             return
         try:
             body = response.json()
+            self._assert_no_secret(body)
             error = body.get("error", {}) if isinstance(body, dict) else {}
             message = error.get("message", "") if isinstance(error, dict) else error
             code = error.get("code", "") if isinstance(error, dict) else ""
             if code == "actual_model_mismatch":
-                raise ModelIdentityError()
+                error = ModelIdentityError()
+                error.identity_stage = "gateway_response"
+                from packages.model_adapters.gateway import MODEL_ID
+                reported = body.get("error", {}).get("reported_model")
+                error.reported_model = reported if isinstance(reported, str) and MODEL_ID.fullmatch(reported) else None
+                fields = body.get("error", {}).get("response_fields", [])
+                import re
+                error.response_fields = [name for name in fields
+                    if isinstance(name, str) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,31}", name)][:16] if isinstance(fields, list) else []
+                raise error
             if code in {"missing_gateway_provenance", "gateway_route_mismatch"}:
                 raise RuntimeGatewayError()
             message = message.lower() if isinstance(message, str) else ""
@@ -483,6 +507,18 @@ class HermesRuntimeAdapter(RuntimeAdapter):
 
         await self.require_model_available(request.model)
 
+        return await self._execute_direct_turn(request, context)
+
+    async def execute_model_verification(self, request: RunRequest, context: SecurityContext) -> RunResult:
+        """Core's bounded readiness probe; ordinary direct turns still require readiness."""
+        caps = await self.capabilities()
+        if not caps.tools_confined or caps.enabled_toolsets:
+            raise RuntimeSecurityError("Model verification requires no runtime tools.")
+        await self.require_model_candidate(request.model)
+        return await self._execute_direct_turn(request, context)
+
+    async def _execute_direct_turn(self, request: RunRequest, context: SecurityContext) -> RunResult:
+
         client = self._get_client()
         should_close = self._custom_client is None
         start_time = time.time()
@@ -532,7 +568,10 @@ class HermesRuntimeAdapter(RuntimeAdapter):
             provenance = self._provenance(data, request.model)
             self._assert_no_secret(data)
             if data["model"] != request.model:
-                raise ModelIdentityError()
+                error = ModelIdentityError()
+                error.identity_stage = "runtime_envelope"
+                error.reported_model = data["model"]
+                raise error
             if (choices[0].get("finish_reason") != "stop" or data.get("hermes", {}).get("failed")
                     or data.get("hermes", {}).get("partial")):
                 raise HermesAdapterError("Runtime completion is incomplete or failed.")

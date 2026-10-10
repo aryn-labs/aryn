@@ -1,3 +1,6 @@
+import { labelText } from '@/i18n'
+import { translate as tr } from '@/i18n'
+import { useTranslation } from 'react-i18next'
 import { Command } from 'cmdk'
 import { Search, Bot, CirclePlay, Folder, CornerDownLeft } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
@@ -10,6 +13,8 @@ import { useDebouncedValue } from '@/hooks/use-debounced-value'
 import { navigation } from '@/components/navigation/items'
 import { Button } from '@/components/ui/button'
 export function GlobalSearch() {
+  useTranslation()
+
   const { searchOpen, setSearchOpen, inspect, setMobileOpen } = useShell()
   const { project, context, selectProject } = useWorkspace()
   const [search, setSearch] = useState('')
@@ -30,7 +35,7 @@ export function GlobalSearch() {
     setMobileOpen(false)
   }
   const routes = navigation.filter((item) =>
-    item.label.toLowerCase().includes(search.toLowerCase()),
+    labelText(item.label).toLowerCase().includes(search.toLowerCase()),
   )
   return (
     <Dialog
@@ -44,29 +49,29 @@ export function GlobalSearch() {
         className="search-dialog"
         onCloseAutoFocus={(event) => {
           event.preventDefault()
-          document.querySelector<HTMLButtonElement>('[aria-label="Global search"]')?.focus()
+          document.querySelector<HTMLButtonElement>('.global-search-trigger')?.focus()
         }}
       >
-        <DialogTitle className="sr-only">Global search</DialogTitle>
+        <DialogTitle className="sr-only">{tr('ui.global_search')}</DialogTitle>
         <DialogDescription className="sr-only">
-          Search navigation, agents, runs and projects. Use arrow keys and Enter to select.
+          {tr('ui.search_navigation_agents_runs_and_projects_use_arrow_keys_and_enter_to_select')}
         </DialogDescription>
-        <Command label="Search workspace" shouldFilter={false} loop>
+        <Command label={tr('ui.search_workspace')} shouldFilter={false} loop>
           <div className="command-input-row">
             <Search size={20} />
             <Command.Input
               value={search}
               onValueChange={setSearch}
-              placeholder="Where would you like to go?"
+              placeholder={tr('ui.where_would_you_like_to_go')}
               maxLength={100}
-              aria-label="Search workspace"
+              aria-label={tr('ui.search_workspace')}
             />
-            <kbd>Esc</kbd>
+            <kbd>{tr('ui.esc')}</kbd>
           </div>
           <Command.List className="command-list">
-            <Command.Empty>No matching pages or resources.</Command.Empty>
+            <Command.Empty>{tr('ui.no_matching_pages_or_resources')}</Command.Empty>
             {routes.length > 0 && (
-              <Command.Group heading="Navigation">
+              <Command.Group heading={tr('ui.navigation')}>
                 {routes.map((item) => (
                   <Command.Item
                     key={item.path}
@@ -77,7 +82,7 @@ export function GlobalSearch() {
                     }}
                   >
                     <item.icon size={18} />
-                    <span>{item.label}</span>
+                    <span>{labelText(item.label)}</span>
                     <CornerDownLeft size={14} />
                   </Command.Item>
                 ))}
@@ -86,7 +91,7 @@ export function GlobalSearch() {
             {enabled &&
               project &&
               results.map(({ label, resource, icon: Icon, result }) => (
-                <Command.Group key={resource} heading={label}>
+                <Command.Group key={resource} heading={labelText(label)}>
                   {!result.isError &&
                     result.data?.items.map((item) => (
                       <Command.Item
@@ -109,7 +114,10 @@ export function GlobalSearch() {
                       </Command.Item>
                     ))}
                   {result.isSuccess && !result.data.items.length && (
-                    <p className="search-note">No matching {label.toLowerCase()}.</p>
+                    <p className="search-note">
+                      {tr('ui.no_matching')}
+                      {labelText(label).toLowerCase()}.
+                    </p>
                   )}
                 </Command.Group>
               ))}
@@ -119,13 +127,14 @@ export function GlobalSearch() {
               {results.map(({ label, resource, result }) =>
                 result.isLoading ? (
                   <p key={resource} className="search-note">
-                    Searching {label.toLowerCase()}…
+                    {tr('ui.searching')}
+                    {labelText(label).toLowerCase()}…
                   </p>
                 ) : result.error ? (
                   <div key={resource} className="search-note" role="alert">
-                    {label} search unavailable.{' '}
+                    {label} {tr('ui.search_unavailable')}{' '}
                     <Button variant="ghost" size="sm" onClick={() => void result.refetch()}>
-                      Retry
+                      {tr('ui.retry')}
                     </Button>
                   </div>
                 ) : null,
@@ -134,9 +143,11 @@ export function GlobalSearch() {
           )}
           <div className="command-footer">
             <span>
-              {project ? `Searching in ${project.name}` : 'Navigation only · no project available'}
+              {project
+                ? `Searching in ${project.name}`
+                : tr('ui.navigation_only_no_project_available')}
             </span>
-            <span>↑ ↓ navigate · ↵ open</span>
+            <span>{tr('ui.navigate_open')}</span>
           </div>
         </Command>
       </DialogContent>

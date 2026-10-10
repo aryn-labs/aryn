@@ -99,3 +99,27 @@ async def test_only_fresh_public_availability_evidence_is_authoritative(monkeypa
     async with httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(200, json=payload))) as client:
         gateway = NineRouterGateway(http_client=client)
         assert (await gateway.availability("cx/model-a")).status == expected
+
+
+@pytest.mark.asyncio
+async def test_core_probe_evidence_expires_and_does_not_override_rejection(monkeypatch):
+    from packages.contracts.runtime import RunResult, RunUsage
+    now = [1000.0]
+    monkeypatch.setattr("packages.model_adapters.gateway.time.time", lambda: now[0])
+    payload = {"object": "list", "data": [{"id": MODEL}]}
+    async with httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(200, json=payload))) as client:
+        gateway = NineRouterGateway(http_client=client)
+        result = RunResult(run_id="test-core-run", status="completed", output="isolated",
+            model=MODEL, requested_model=MODEL, actual_model=MODEL, gateway="9Router", runtime_backend="Hermes",
+            created_at=999, completed_at=1000, usage=RunUsage(input_tokens=2, output_tokens=3, total_tokens=5),
+            execution_claim_verified=True)
+        with pytest.raises(ValueError):
+            gateway.record_runtime_verification(result.model_copy(update={"execution_claim_verified": False}))
+        gateway.record_runtime_verification(result)
+        assert (await gateway.availability(MODEL, refresh=True)).status == "available"
+        now[0] += 61
+        assert (await gateway.availability(MODEL, refresh=True)).status == "unknown"
+        result.completed_at = now[0]
+        gateway.record_runtime_verification(result)
+        gateway.reject(MODEL)
+        assert (await gateway.availability(MODEL, refresh=True)).status == "unavailable"

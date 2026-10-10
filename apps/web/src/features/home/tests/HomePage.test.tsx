@@ -23,6 +23,15 @@ function mockHome(scenario: HomeScenario = 'new', writable = true) {
       url.includes('project-two') ? 'project-two' : 'project-one',
       writable,
     )
+    if (url.endsWith('/chat/preferences'))
+      return Response.json({ organization_id: 'org-test', actor_id: 'user-test', locale: 'en-US' })
+    if (url.endsWith('/chat/conversations'))
+      return Response.json({
+        organization_id: 'org-test',
+        project_id: url.includes('project-two') ? 'project-two' : 'project-one',
+        items: [],
+        next_cursor: null,
+      })
     if (url === '/api/session') return Response.json({ csrf: 'test', mode: 'development' })
     if (url === '/api/workspace/context') return Response.json(data.context)
     if (url.endsWith('/summary')) return Response.json(data.summary)
@@ -64,19 +73,19 @@ describe('Home overview interactions', () => {
   it('uses confirmed new workspace data without empty dashboards or recent lists', async () => {
     mockHome()
     renderHome()
-    await screen.findByRole('heading', { name: 'Getting Started' })
+    await screen.findByRole('heading', { name: 'Start with an idea' })
     expect(screen.queryByRole('heading', { name: 'Continue Working' })).toBeNull()
     expect(screen.queryByRole('heading', { name: 'Recent Activity' })).toBeNull()
     expect(screen.queryByRole('heading', { name: 'Needs Your Attention' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Create Agent' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled()
   })
   it('shows active compact lists and opens actual workflow details with focus return', async () => {
     mockHome('active')
     const { user } = renderHome()
     const trigger = await screen.findByRole('button', { name: 'Inspect Research review' })
     expect(screen.getByRole('heading', { name: 'Continue Working' })).toBeVisible()
-    expect(screen.queryByText('Getting Started')).toBeNull()
+    expect(screen.queryByText('Start with an idea')).toBeNull()
     await user.click(trigger)
     const drawer = screen.getByRole('dialog', { name: 'Resource details' })
     expect(await within(drawer).findByText('Revision')).toBeVisible()
@@ -92,104 +101,76 @@ describe('Home overview interactions', () => {
     expect(
       attention.compareDocumentPosition(continued) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
-    expect(screen.getAllByRole('button', { name: /^Inspect/ })).toHaveLength(8)
+    expect(
+      within(attention.closest('section')!).getAllByRole('button', { name: /^Inspect/ }),
+    ).toHaveLength(3)
     expect(screen.queryByRole('button', { name: /^(Retry|Approve|Publish|Run agent)/ })).toBeNull()
   })
-  it('opens an honest conversation and creates a draft only after explicit selection', async () => {
+  it('keeps unavailable input on Home and opens Guided Creation only explicitly', async () => {
     const fetchMock = mockHome()
     const { user, router } = renderHome()
-    await screen.findByText('Getting Started')
+    await screen.findByText('Start with an idea')
+    const input = screen.getByRole('textbox', {
+      name: 'Message to ARYN',
+    })
+    await user.type(input, 'Review research sources')
+    await user.keyboard('{Control>}{Enter}{/Control}')
+    expect(router.state.location.pathname).toBe('/')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Build Workflow' }))
+    const drawer = screen.getByRole('dialog')
     await user.type(
-      screen.getByRole('textbox', { name: 'Describe the agent or workflow you want to build' }),
+      within(drawer).getByRole('textbox', { name: 'Describe the work (required)' }),
       'Review research sources',
     )
-    await user.keyboard('{Control>}{Enter}{/Control}')
-    expect(screen.queryByRole('dialog')).toBeNull()
-    expect(screen.getByText('Not sent')).toBeVisible()
-    expect(screen.getByRole('heading', { name: 'Assistant unavailable' })).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
-    const followUp = screen.getByRole('textbox', { name: 'Follow-up message' })
-    await user.type(followUp, 'Do not execute anything')
-    await user.keyboard('{Control>}{Enter}{/Control}')
-    expect(screen.getByRole('list', { name: 'Conversation messages' }).children).toHaveLength(1)
-    await user.click(screen.getByRole('button', { name: 'Create Workflow draft' }))
-    const drawer = screen.getByRole('dialog')
-    expect(
-      within(drawer).getByRole('textbox', { name: 'Describe the work (required)' }),
-    ).toHaveValue('Review research sources')
-    expect(within(drawer).getByRole('radio', { name: /Workflow Tasks/ })).toBeChecked()
     await user.type(
       within(drawer).getByRole('textbox', { name: 'Expected output' }),
       'Cited report',
     )
-    await user.selectOptions(within(drawer).getByRole('combobox'), 'external')
-    await user.type(
-      within(drawer).getByRole('textbox', { name: 'Integration requirements' }),
-      'Read access to approved knowledge sources',
-    )
     await user.click(within(drawer).getByRole('button', { name: 'Review brief' }))
-    expect(within(drawer).getByText('Cited report')).toBeVisible()
-    await user.click(within(drawer).getByRole('button', { name: 'Open Workflow Builder' }))
+    await user.click(within(drawer).getByRole('button', { name: /Open.*Workflow.*Builder/ }))
     await waitFor(() => expect(router.state.location.pathname).toBe('/workflows'))
     expect(
       await screen.findByRole('heading', { name: 'Workflow Builder unavailable' }),
     ).toBeVisible()
-    expect(screen.getByText('Review research sources')).toBeVisible()
-    expect(router.state.location.search).toEqual({})
-    expect([...Object.values(localStorage)]).not.toContain('Review research sources')
     expect(
       fetchMock.mock.calls.filter(
-        ([url, options]) => url !== '/api/session' && options?.method && options.method !== 'GET',
+        ([url, options]) => url !== '/api/session' && options?.method === 'POST',
       ),
     ).toHaveLength(0)
   })
-  it('offers scratch creation without inventing a saved definition', async () => {
+  it('does not invent tool connection capability', async () => {
     mockHome()
-    const { user } = renderHome()
-    await user.click(await screen.findByRole('button', { name: 'Start from Scratch' }))
-    await user.click(screen.getByRole('button', { name: 'Review brief' }))
-    expect(screen.getAllByText('To be defined in Builder')).toHaveLength(2)
-    await user.click(screen.getByRole('button', { name: 'Edit details' }))
-    expect(screen.getByRole('textbox', { name: 'Describe the work' })).toHaveValue('')
+    renderHome()
+    const trigger = await screen.findByRole('button', { name: 'Connect Apps' })
+    await userEvent.setup().click(trigger)
+    expect(screen.getByRole('dialog')).toHaveTextContent(
+      'App connections are not available on this server.',
+    )
   })
-  it('returns to the overview with editable input and clears conversation on scope change', async () => {
+  it('clears unsent conversation input on project change', async () => {
     mockHome()
     const { user } = renderHome()
-    await screen.findByText('Getting Started')
-    const composer = screen.getByRole('textbox', {
-      name: 'Describe the agent or workflow you want to build',
-    })
-    await user.type(composer, 'Private message for project one')
-    await user.click(screen.getByRole('button', { name: 'Continue' }))
-    expect(screen.queryByText('Getting Started')).toBeNull()
-    await user.click(screen.getByRole('button', { name: 'Back to overview' }))
-    expect(
-      screen.getByRole('textbox', { name: 'Describe the agent or workflow you want to build' }),
-    ).toHaveValue('Private message for project one')
-    await user.click(screen.getByRole('button', { name: 'Continue' }))
+    await screen.findByText('Start with an idea')
+    await user.type(
+      screen.getByRole('textbox', { name: 'Message to ARYN' }),
+      'Private message for project one',
+    )
     await user.click(screen.getByRole('button', { name: 'Switch workspace' }))
     await user.click(screen.getByRole('menuitemradio', { name: 'Second Project' }))
-    await screen.findByText('Getting Started')
-    expect(screen.queryByText('Private message for project one')).toBeNull()
-    expect(
-      screen.getByRole('textbox', { name: 'Describe the agent or workflow you want to build' }),
-    ).toHaveValue('')
+    await screen.findByText('Start with an idea')
+    expect(screen.getByRole('textbox', { name: 'Message to ARYN' })).toHaveValue('')
   })
-  it('does not confuse viewing access with conversational or draft creation authority', async () => {
+  it('does not confuse viewing access with conversational authority', async () => {
     const fetchMock = mockHome('new', false)
-    const { user } = renderHome()
-    await screen.findByText('Getting Started')
-    await user.type(
-      screen.getByRole('textbox', { name: 'Describe the agent or workflow you want to build' }),
-      'A private question',
-    )
-    await user.click(screen.getByRole('button', { name: 'Continue' }))
-    expect(screen.getByText('Not sent')).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
-    expect(screen.queryByRole('button', { name: /Create (Agent|Workflow) draft/ })).toBeNull()
+    renderHome()
+    await screen.findByText('Start with an idea')
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Create Agent' })).toBeDisabled()
     expect(
       fetchMock.mock.calls.filter(
-        ([url, options]) => url !== '/api/session' && options?.method && options.method !== 'GET',
+        ([url, options]) => url !== '/api/session' && options?.method === 'POST',
       ),
     ).toHaveLength(0)
   })
@@ -213,8 +194,8 @@ describe('Home overview interactions', () => {
     await screen.findByRole('button', { name: 'Inspect Agent definition created' })
     expect(screen.queryByText('factory.blueprint.created')).toBeNull()
     const agent = screen.getByRole('button', { name: 'Inspect Research assistant' })
-    expect(within(agent).getByText('Review sources and prepare a cited brief.')).toBeVisible()
-    expect(within(agent).getByText(/^Created /)).toBeVisible()
+    expect(within(agent).getByText(/^Agent ·/)).toBeVisible()
+    expect(within(agent).queryByText('Review sources and prepare a cited brief.')).toBeNull()
   })
   it('identifies agent descriptions that the backend leaves blank without inventing one', async () => {
     const fetchMock = mockHome('active')
@@ -228,7 +209,7 @@ describe('Home overview interactions', () => {
     })
     renderHome()
     const agent = await screen.findByRole('button', { name: 'Inspect Research assistant' })
-    expect(within(agent).getByText('Agent definition · description not provided')).toBeVisible()
+    expect(within(agent).getByText(/^Agent ·/)).toBeVisible()
     expect(within(agent).queryByText('Review sources and prepare a cited brief.')).toBeNull()
   })
   it('uses effective permissions to disable creation and suppress inaccessible attention', async () => {
@@ -237,7 +218,7 @@ describe('Home overview interactions', () => {
     await screen.findByText('Continue Working')
     expect(screen.getByRole('button', { name: 'Create Agent' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Build Workflow' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Start from Scratch' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Connect Apps' })).toBeEnabled()
     expect(screen.queryByRole('button', { name: 'Inspect Version 1.0.1' })).toBeNull()
     expect(
       screen.queryByRole('button', { name: 'Inspect Disposable service needs review' }),
@@ -253,11 +234,11 @@ describe('Home overview interactions', () => {
     )
     const { user } = renderHome()
     await screen.findByText('Some workspace data is unavailable')
-    expect(screen.queryByText('Getting Started')).toBeNull()
+    expect(screen.queryByText('Start with an idea')).toBeNull()
     fetchMock.mockImplementation(original)
     await user.click(screen.getByText('Some workspace data is unavailable'))
     await user.click(screen.getByRole('button', { name: 'Try again — Workflow definitions' }))
-    expect(await screen.findByText('Getting Started')).toBeVisible()
+    expect(await screen.findByText('Start with an idea')).toBeVisible()
   })
   it('shows unavailable services separately from an empty project', async () => {
     const fetchMock = mockHome()
@@ -269,7 +250,7 @@ describe('Home overview interactions', () => {
     )
     renderHome()
     await screen.findByText('Some workspace data is unavailable')
-    expect(screen.queryByText('Getting Started')).toBeNull()
+    expect(screen.queryByText('Start with an idea')).toBeNull()
   })
   it('preserves available work during partial service failures without inventing empty lists', async () => {
     const fetchMock = mockHome('active')
@@ -284,7 +265,7 @@ describe('Home overview interactions', () => {
     expect(screen.getByRole('button', { name: 'Inspect Research assistant' })).toBeVisible()
     expect(screen.getByRole('heading', { name: 'Recent Activity' })).toBeVisible()
     expect(screen.queryByText('No workflow definitions yet.')).toBeNull()
-    expect(screen.queryByText('Getting Started')).toBeNull()
+    expect(screen.queryByText('Start with an idea')).toBeNull()
   })
   it('cancels obsolete inventory requests on project change and never shows their data', async () => {
     const fetchMock = mockHome()
@@ -304,7 +285,7 @@ describe('Home overview interactions', () => {
     await screen.findByText('Loading Home overview')
     await user.click(screen.getByRole('button', { name: 'Switch workspace' }))
     await user.click(screen.getByRole('menuitemradio', { name: 'Second Project' }))
-    await screen.findByText('Getting Started')
+    await screen.findByText('Start with an idea')
     expect(aborted).toBe(true)
     expect(screen.queryByText('Research assistant')).toBeNull()
   })

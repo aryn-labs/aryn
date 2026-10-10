@@ -29,6 +29,8 @@ class PermissionEngine:
 
     ROLE_PERMISSIONS: Dict[str, Set[str]] = {
         "admin": {
+            "chat:read",
+            "chat:create",
             "division:manage",
             "run:create",
             "run:read",
@@ -45,6 +47,8 @@ class PermissionEngine:
             "agent:rollback",
         },
         "operator": {
+            "chat:read",
+            "chat:create",
             "run:create",
             "run:read",
             "run:cancel",
@@ -56,6 +60,7 @@ class PermissionEngine:
             "agent:assign",
         },
         "viewer": {
+            "chat:read",
             "run:read",
             "run:trace",
             "system:health",

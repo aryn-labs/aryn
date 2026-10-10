@@ -1,3 +1,5 @@
+import { translate as tr } from '@/i18n'
+import { useTranslation } from 'react-i18next'
 import { useState } from 'react'
 import { StandardLayout } from '@/app/shell/MainWorkspace'
 import { useWorkspace } from '@/app/providers/WorkspaceProvider'
@@ -19,14 +21,18 @@ import { HomeServiceStatus } from './components/HomeServiceStatus'
 import './home.css'
 
 export function HomePage() {
+  useTranslation()
+
   const { context, project } = useWorkspace()
   return (
-    <StandardLayout title="Home">
+    <StandardLayout title={tr('ui.home')}>
       <HomeContent key={`${context?.user.id}:${context?.organization.id}:${project?.id}`} />
     </StandardLayout>
   )
 }
 function HomeContent() {
+  useTranslation()
+
   const overview = useHomeOverview()
   const { workspace, data, condition, scope } = overview
   const [creation, setCreation] = useState<{
@@ -43,13 +49,15 @@ function HomeContent() {
       className="home-page"
       data-home-state={condition ?? (overview.error ? 'error' : 'loading')}
     >
-      <HomeHeader projectName={workspace.project?.name} />
+      <HomeHeader />
       {overview.error ? (
         overview.error instanceof ApiError && [404, 501].includes(overview.error.status) ? (
           <DataState
             kind="unavailable"
-            title="Home overview unavailable"
-            description="A required workspace service is unavailable. Your project has not been classified as empty."
+            title={tr('ui.home_overview_unavailable')}
+            description={tr(
+              'ui.a_required_workspace_service_is_unavailable_your_project_has_not_been_classified_as_empty',
+            )}
             retry={overview.retry}
           />
         ) : (
@@ -59,12 +67,12 @@ function HomeContent() {
         <>
           <DataState
             kind="unauthorized"
-            title="You are signed out"
-            description="Sign in to load your workspace."
+            title={tr('ui.you_are_signed_out')}
+            description={tr('ui.sign_in_to_load_your_workspace')}
           />
           <div className="text-center">
             <Button asChild>
-              <a href="/auth/login">Sign in to ARYN</a>
+              <a href="/auth/login">{tr('ui.sign_in_to_aryn')}</a>
             </Button>
           </div>
         </>
@@ -73,23 +81,20 @@ function HomeContent() {
       ) : !workspace.project ? (
         <DataState
           kind="empty"
-          title="No accessible projects"
-          description="No project is available to this account."
+          title={tr('ui.no_accessible_projects')}
+          description={tr('ui.no_project_is_available_to_this_account')}
         />
       ) : (
         data && (
           <>
-            <HomeAssistant
-              compact={condition !== 'new'}
-              canAgent={canAgent}
-              canWorkflow={canWorkflow}
-              onDraft={(kind, goal) => setCreation({ kind, goal, scratch: false })}
-            >
+            <HomeAssistant compact={condition !== 'new'}>
               {condition === 'unavailable' && !overview.services.length && (
                 <DataState
                   kind="unavailable"
-                  title="Workspace inventory unavailable"
-                  description="The backend has not reported enough inventory information to determine whether this project is new."
+                  title={tr('ui.workspace_inventory_unavailable')}
+                  description={tr(
+                    'ui.the_backend_has_not_reported_enough_inventory_information_to_determine_whether_this_project_is_new',
+                  )}
                 />
               )}
               <QuickActions
@@ -113,6 +118,7 @@ function HomeContent() {
                     }))}
                     onOpen={setSelection}
                     workflowsError={overview.workflowsError}
+                    conversations={data.conversations}
                   />
                   <RecentActivity items={data.activity} onOpen={setSelection} />
                   {condition === 'active' &&
@@ -121,8 +127,9 @@ function HomeContent() {
                     !data.workflows.length &&
                     !data.activity.length && (
                       <p className="home-section-note">
-                        Work is recorded in this project. No recent definitions or activity are
-                        available in this overview.
+                        {tr(
+                          'ui.work_is_recorded_in_this_project_no_recent_definitions_or_activity_are_available_in_this_overview',
+                        )}
                       </p>
                     )}
                 </>
@@ -152,9 +159,11 @@ function HomeContent() {
   )
 }
 function HomeSkeleton() {
+  useTranslation()
+
   return (
     <div className="home-skeleton" role="status" aria-busy="true">
-      <span className="sr-only">Loading Home overview</span>
+      <span className="sr-only">{tr('ui.loading_home_overview')}</span>
       <div className="home-skeleton-composer" />
       <div className="home-skeleton-actions">
         <span />

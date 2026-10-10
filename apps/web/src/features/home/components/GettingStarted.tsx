@@ -1,25 +1,11 @@
-import { Sparkles } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 export function GettingStarted() {
+  const { t } = useTranslation()
   return (
-    <section className="home-section" aria-labelledby="getting-started-heading">
-      <div className="home-section-heading">
-        <h2 id="getting-started-heading">Getting Started</h2>
-        <p>Your project is ready for its first definition.</p>
-      </div>
-      <div className="home-panel home-start">
-        <Sparkles size={23} aria-hidden="true" />
-        <div>
-          <h3>Start with one clear job</h3>
-          <p>
-            Describe the work, choose an agent or workflow, then review the expected output and any
-            integration needs.
-          </p>
-          <ol>
-            <li>Shape your starting brief.</li>
-            <li>Review the definition in its builder.</li>
-            <li>Evaluate and obtain required approvals before publishing or running.</li>
-          </ol>
-        </div>
+    <section className="home-section home-start" aria-labelledby="getting-started-heading">
+      <div>
+        <h2 id="getting-started-heading">{t('home.start')}</h2>
+        <p>{t('home.startHelp')}</p>
       </div>
     </section>
   )

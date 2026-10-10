@@ -6,6 +6,7 @@ import {
   type RouterHistory,
 } from '@tanstack/react-router'
 import { AppShell } from '@/app/shell/AppShell'
+import { ChatPage } from '@/features/chat/ChatPage'
 import { HomePage } from '@/features/home/HomePage'
 import { navigation } from '@/components/navigation/items'
 import { FeatureScaffold, NotFound } from './pages'
@@ -20,7 +21,12 @@ const routes = navigation
       component: () => <FeatureScaffold title={item.label} />,
     }),
   )
-const tree = root.addChildren([home, ...routes])
+const chat = createRoute({
+  getParentRoute: () => root,
+  path: '/chat/$conversationId',
+  component: ChatPage,
+})
+const tree = root.addChildren([home, chat, ...routes])
 export function createAppRouter(history: RouterHistory = createBrowserHistory()) {
   return createRouter({ routeTree: tree, history, defaultPreload: 'intent' })
 }

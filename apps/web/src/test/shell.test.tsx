@@ -23,6 +23,15 @@ function mockApi({
 } = {}) {
   const fetchMock = vi.fn(async (url: string, options?: RequestInit) => {
     if (options?.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+    if (url.endsWith('/chat/preferences'))
+      return Response.json({ organization_id: 'org-test', actor_id: 'user-test', locale: 'en-US' })
+    if (url.endsWith('/chat/conversations'))
+      return Response.json({
+        organization_id: 'org-test',
+        project_id: url.includes('project-two') ? 'project-two' : 'project-one',
+        items: [],
+        next_cursor: null,
+      })
     if (url === '/api/session') return Response.json({ csrf: 'test-csrf', mode: 'development' })
     if (url === '/api/workspace/context')
       return Response.json(
@@ -74,7 +83,7 @@ describe('Studio shell', () => {
   it('bootstraps server session without identity input and renders honest empty states', async () => {
     const fetchMock = mockApi()
     renderShell()
-    expect(await screen.findByText('Getting Started')).toBeVisible()
+    expect(await screen.findByText('Start with an idea')).toBeVisible()
     expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/session')
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
       method: 'POST',
@@ -86,7 +95,7 @@ describe('Studio shell', () => {
   it('changes project scope and keeps the validated selection on reload', async () => {
     const fetchMock = mockApi()
     const { user } = renderShell()
-    await screen.findByText('Getting Started')
+    await screen.findByText('Start with an idea')
     await user.click(screen.getByRole('button', { name: 'Switch workspace' }))
     await user.click(screen.getByRole('menuitemradio', { name: 'Second Project' }))
     await waitFor(() =>
@@ -98,13 +107,13 @@ describe('Studio shell', () => {
     localStorage.setItem('aryn.shell.project', 'outside-tenant')
     const fetchMock = mockApi()
     renderShell()
-    await screen.findByText('Getting Started')
+    await screen.findByText('Start with an idea')
     expect(fetchMock.mock.calls.some(([url]) => url.includes('outside-tenant'))).toBe(false)
   })
   it('supports navigation, sidebar collapse and expansion', async () => {
     mockApi()
     const { user, router } = renderShell()
-    await screen.findByText('Getting Started')
+    await screen.findByText('Start with an idea')
     await user.click(screen.getByRole('button', { name: 'Collapse sidebar' }))
     expect(screen.getByRole('complementary', { name: 'Workspace sidebar' })).toHaveClass(
       'is-collapsed',
@@ -128,7 +137,7 @@ describe('Studio shell', () => {
     localStorage.setItem('aryn.shell.inspector', 'true')
     mockApi()
     const { user } = renderShell()
-    await screen.findByText('Getting Started')
+    await screen.findByText('Start with an idea')
     expect(screen.queryByRole('complementary', { name: 'Context inspector' })).toBeNull()
     expect(screen.queryByRole('button', { name: /context inspector/i })).toBeNull()
     expect(screen.queryByRole('button', { name: 'View context' })).toBeNull()
@@ -138,7 +147,7 @@ describe('Studio shell', () => {
   it('opens global search using Ctrl+K, selects a route with keyboard, restores focus on Escape', async () => {
     mockApi()
     const { user, router } = renderShell()
-    await screen.findByText('Getting Started')
+    await screen.findByText('Start with an idea')
     await user.keyboard('{Control>}k{/Control}')
     await user.type(screen.getByRole('combobox', { name: 'Search workspace' }), 'Bench')
     await user.keyboard('{Enter}')
@@ -181,7 +190,7 @@ describe('Studio shell', () => {
   it('keeps the topbar minimal and loads runtime information only in Settings', async () => {
     const fetchMock = mockApi()
     const { user } = renderShell()
-    await screen.findByText('Getting Started')
+    await screen.findByText('Start with an idea')
     const header = screen.getByRole('banner')
     expect(within(header).getByRole('button', { name: 'Switch workspace' })).toBeVisible()
     expect(within(header).getByRole('button', { name: 'Global search' })).toBeVisible()
@@ -202,7 +211,7 @@ describe('Studio shell', () => {
   it('groups the current organization and authorized projects with a checked selection', async () => {
     mockApi()
     const { user } = renderShell()
-    await screen.findByText('Getting Started')
+    await screen.findByText('Start with an idea')
     const trigger = screen.getByRole('button', { name: 'Switch workspace' })
     expect(trigger).toHaveAccessibleDescription(/Test Studio.*First Project/)
     await user.click(trigger)

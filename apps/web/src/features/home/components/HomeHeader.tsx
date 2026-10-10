@@ -1,13 +1,21 @@
-import { Folder } from 'lucide-react'
-export function HomeHeader({ projectName }: { projectName?: string }) {
+import { greetingPeriod } from '../lib/home-state'
+import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+export function HomeHeader() {
+  const { t } = useTranslation()
+  const [period, setPeriod] = useState(() => greetingPeriod(new Date().getHours()))
+  useEffect(() => {
+    const update = () => setPeriod(greetingPeriod(new Date().getHours()))
+    const interval = window.setInterval(update, 60_000)
+    window.addEventListener('focus', update)
+    return () => {
+      window.clearInterval(interval)
+      window.removeEventListener('focus', update)
+    }
+  }, [])
   return (
     <div className="home-header">
-      <p className="home-kicker">
-        <Folder size={13} aria-hidden="true" />
-        <span>{projectName ?? 'Home'}</span>
-      </p>
-      <h1>Your workspace</h1>
-      <p>A clear place to build, continue, and manage your agent work.</p>
+      <h1>{t(`greeting.${period}`)}</h1>
     </div>
   )
 }

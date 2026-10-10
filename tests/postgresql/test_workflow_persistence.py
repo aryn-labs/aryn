@@ -71,7 +71,7 @@ def test_postgres_populated_downgrade_refused(postgres_db, workflow):
     with postgres_db.owner.connect() as c:
         assert (
             c.execute(text("SELECT version_num FROM alembic_version")).scalar()
-            == "020_core_automations"
+            == "022_chat_preferences"
         )
         assert c.execute(text("SELECT COUNT(*) FROM workflow_versions")).scalar() == 1
 

@@ -1,3 +1,5 @@
+import { translate as tr, labelText } from '@/i18n'
+import { useTranslation } from 'react-i18next'
 import { Outlet, useLocation } from '@tanstack/react-router'
 import { useEffect, useRef } from 'react'
 import { AppTopbar } from './AppTopbar'
@@ -9,11 +11,15 @@ import { useShell } from '@/app/providers/ShellProvider'
 import { useWorkspace } from '@/app/providers/WorkspaceProvider'
 import { navigation } from '@/components/navigation/items'
 export function AppShell() {
+  useTranslation()
+
   const { collapsed } = useShell()
   const { pathname } = useLocation()
   const previous = useRef(pathname)
   const { context, loading, error } = useWorkspace()
-  const label = navigation.find((item) => item.path === pathname)?.label ?? 'Page not found'
+  const label = pathname.startsWith('/chat/')
+    ? tr('chat.assistant')
+    : labelText(navigation.find((item) => item.path === pathname)?.label ?? 'Page not found')
   useEffect(() => {
     document.title = `${label} · ARYN Studio`
     if (previous.current !== pathname) {
@@ -27,7 +33,7 @@ export function AppShell() {
   return (
     <div className={`app-shell ${collapsed ? 'is-sidebar-collapsed' : ''}`}>
       <a className="skip-link" href="#main-content">
-        Skip to workspace
+        {tr('ui.skip_to_workspace')}
       </a>
       <AppTopbar />
       <div className="shell-panels">
@@ -35,18 +41,18 @@ export function AppShell() {
         <div className="main-column">
           <Outlet />
           <footer className="workspace-footer">
-            <span className="footer-brand">ARYN Studio</span>
+            <span className="footer-brand">{tr('ui.aryn_studio')}</span>
             <span>
               <span className={`status-dot ${context ? 'status-completed' : 'status-unknown'}`} />
               {error
-                ? 'Workspace unavailable'
+                ? tr('ui.workspace_unavailable')
                 : loading
-                  ? 'Loading workspace'
+                  ? tr('ui.loading_workspace')
                   : context
-                    ? 'Workspace loaded'
-                    : 'No session'}
+                    ? tr('ui.workspace_loaded')
+                    : tr('ui.no_session')}
               <span className="footer-divider" />
-              v1.0.0
+              {tr('ui.v1_0_0')}
             </span>
           </footer>
         </div>

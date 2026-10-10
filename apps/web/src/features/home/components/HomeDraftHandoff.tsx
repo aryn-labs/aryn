@@ -1,3 +1,5 @@
+import { translate as tr } from '@/i18n'
+import { useTranslation } from 'react-i18next'
 import { Link, useLocation } from '@tanstack/react-router'
 import { useWorkspace } from '@/app/providers/WorkspaceProvider'
 import { Button } from '@/components/ui/button'
@@ -10,6 +12,8 @@ export function HomeDraftHandoff({
   title: string
   children: React.ReactNode
 }) {
+  useTranslation()
+
   const { context, project } = useWorkspace()
   const location = useLocation()
   const brief =
@@ -23,19 +27,24 @@ export function HomeDraftHandoff({
   if (!brief || (brief.kind === 'agent' ? 'Agents' : 'Workflows') !== title) return children
   return (
     <section className="home-handoff" aria-labelledby="brief-handoff-heading">
-      <p className="home-kicker">STARTING BRIEF · NOT SAVED</p>
+      <p className="home-kicker">{tr('ui.starting_brief_not_saved')}</p>
       <h2 id="brief-handoff-heading">
-        {brief.kind === 'agent' ? 'Agent' : 'Workflow'} Builder unavailable
+        {brief.kind === 'agent' ? tr('common.agent') : tr('common.workflow')}{' '}
+        {tr('ui.builder_unavailable')}
       </h2>
       <p className="muted">
-        Your starting brief is ready for review. This release does not include the builder editor.
+        {tr(
+          'ui.your_starting_brief_is_ready_for_review_this_release_does_not_include_the_builder_editor',
+        )}
       </p>
       <BriefReview brief={brief} />
       <p className="home-note">
-        Nothing has been created, published, approved, or run. Reloading clears this unsaved brief.
+        {tr(
+          'ui.nothing_has_been_created_published_approved_or_run_reloading_clears_this_unsaved_brief',
+        )}
       </p>
       <Button variant="secondary" asChild>
-        <Link to="/">Back to Home</Link>
+        <Link to="/">{tr('ui.back_to_home')}</Link>
       </Button>
     </section>
   )

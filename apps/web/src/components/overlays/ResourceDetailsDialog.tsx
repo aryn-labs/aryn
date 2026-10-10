@@ -1,3 +1,5 @@
+import { translate as tr } from '@/i18n'
+import { useTranslation } from 'react-i18next'
 import { useRef } from 'react'
 import { useShell } from '@/app/providers/ShellProvider'
 import { useResourceDetail } from '@/hooks/use-workspace-queries'
@@ -6,6 +8,8 @@ import { DataState, QueryError } from '@/components/feedback/DataState'
 import { formatDate } from '@/lib/utils'
 
 export function ResourceDetailsDialog() {
+  useTranslation()
+
   const { selection, inspect } = useShell()
   const detail = useResourceDetail(selection?.resource, selection?.item.id)
   const returnFocus = useRef<HTMLElement | null>(null)
@@ -25,40 +29,42 @@ export function ResourceDetailsDialog() {
         onCloseAutoFocus={(event) => {
           event.preventDefault()
           if (returnFocus.current?.isConnected) returnFocus.current.focus()
-          else document.querySelector<HTMLButtonElement>('[aria-label="Global search"]')?.focus()
+          else document.querySelector<HTMLButtonElement>('.global-search-trigger')?.focus()
         }}
       >
-        <DialogTitle>Resource details</DialogTitle>
-        <DialogDescription>Details reported by ARYN for the selected resource.</DialogDescription>
+        <DialogTitle>{tr('ui.resource_details')}</DialogTitle>
+        <DialogDescription>
+          {tr('ui.details_reported_by_aryn_for_the_selected_resource')}
+        </DialogDescription>
         {detail.isLoading ? (
-          <DataState kind="loading" title="Loading resource" />
+          <DataState kind="loading" title={tr('ui.loading_resource')} />
         ) : detail.error ? (
           <QueryError error={detail.error} retry={() => void detail.refetch()} />
         ) : (
           selection &&
           detail.data && (
             <dl className="detail-list">
-              <dt>Name</dt>
+              <dt>{tr('ui.name')}</dt>
               <dd>{detail.data.name}</dd>
-              <dt>Resource</dt>
+              <dt>{tr('ui.resource')}</dt>
               <dd>{selection.resource}</dd>
-              <dt>Status</dt>
+              <dt>{tr('ui.status')}</dt>
               <dd>{detail.data.status ?? 'Unavailable'}</dd>
-              <dt>Recorded</dt>
+              <dt>{tr('ui.recorded')}</dt>
               <dd>{formatDate(detail.data.created_at)}</dd>
-              <dt>Verification</dt>
+              <dt>{tr('ui.verification')}</dt>
               <dd>
                 {detail.data.verified == null
                   ? 'Unavailable'
                   : detail.data.verified
-                    ? 'Verified by backend'
+                    ? tr('ui.verified_by_backend')
                     : 'Unverified'}
               </dd>
-              <dt>Resource ID</dt>
+              <dt>{tr('ui.resource_id')}</dt>
               <dd className="mono">{detail.data.id}</dd>
               {detail.data.description && (
                 <>
-                  <dt>Description</dt>
+                  <dt>{tr('ui.description')}</dt>
                   <dd>{detail.data.description}</dd>
                 </>
               )}

@@ -3,10 +3,10 @@ import AxeBuilder from '@axe-core/playwright'
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { homeFixture, type HomeScenario } from '../src/features/home/tests/fixtures'
-const evidence = resolve('../../.local/home-audit-v2')
+const evidence = resolve('../../.local/chat-finalization')
 async function mockHome(page: Page, scenario: HomeScenario = 'new', writable = true) {
   const writes: string[] = []
-  await page.route('http://127.0.0.1:5173/api/**', async (route) => {
+  await page.route('http://127.0.0.1:5175/api/**', async (route) => {
     const url = new URL(route.request().url()),
       path = url.pathname
     const data = homeFixture(
@@ -15,6 +15,19 @@ async function mockHome(page: Page, scenario: HomeScenario = 'new', writable = t
       writable,
     )
     if (route.request().method() !== 'GET' && path !== '/api/session') writes.push(path)
+    if (path.endsWith('/chat/preferences'))
+      return route.fulfill({
+        json: { organization_id: 'org-test', actor_id: 'user-test', locale: 'en-US' },
+      })
+    if (path.endsWith('/chat/conversations'))
+      return route.fulfill({
+        json: {
+          organization_id: 'org-test',
+          project_id: data.summary.project_id,
+          items: [],
+          next_cursor: null,
+        },
+      })
     if (path === '/api/session')
       return route.fulfill({ json: { csrf: 'test', mode: 'development' } })
     if (path === '/api/workspace/context') return route.fulfill({ json: data.context })
@@ -53,6 +66,7 @@ async function mockHome(page: Page, scenario: HomeScenario = 'new', writable = t
   return writes
 }
 async function assertAccessible(page: Page) {
+  await page.waitForLoadState('networkidle')
   const result = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21aa'])
     .analyze()
@@ -62,7 +76,7 @@ test.beforeAll(async () => {
   await mkdir(evidence, { recursive: true })
 })
 for (const scenario of ['new', 'active', 'issues'] as const)
-  for (const width of [1440, 768, 390])
+  for (const width of [1920, 1440, 1024, 768, 390])
     for (const theme of ['dark', 'light']) {
       test(`Home ${scenario} · ${width}px · ${theme}`, async ({ page }) => {
         const errors: string[] = []
@@ -73,14 +87,14 @@ for (const scenario of ['new', 'active', 'issues'] as const)
         await page.goto('/')
         await expect(page.locator('[data-home-state]')).toHaveAttribute('data-home-state', scenario)
         await page.evaluate(() => document.fonts.ready)
-        await expect(page.getByRole('heading', { name: 'Your workspace' })).toBeVisible()
+        await expect(page.locator('.home-header h1')).toBeVisible()
         if (scenario === 'new') {
-          await expect(page.getByRole('heading', { name: 'Getting Started' })).toBeVisible()
+          await expect(page.getByRole('heading', { name: 'Start with an idea' })).toBeVisible()
           await expect(page.getByRole('heading', { name: 'Continue Working' })).toHaveCount(0)
           await expect(page.getByRole('heading', { name: 'Recent Activity' })).toHaveCount(0)
         } else {
           await expect(page.getByRole('heading', { name: 'Continue Working' })).toBeVisible()
-          await expect(page.getByRole('heading', { name: 'Getting Started' })).toHaveCount(0)
+          await expect(page.getByRole('heading', { name: 'Start with an idea' })).toHaveCount(0)
           await expect(page.getByRole('heading', { name: 'Recent Activity' })).toHaveCount(1)
         }
         if (scenario === 'issues')
@@ -115,20 +129,20 @@ for (const scenario of ['new', 'active', 'issues'] as const)
         expect(errors).toEqual([])
       })
     }
-for (const width of [1440, 768, 390])
+for (const width of [1920, 1440, 1024, 768, 390])
   for (const theme of ['dark', 'light']) {
     test(`Home composer and blocked conversation at ${width}px ${theme}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 })
       const writes = await mockHome(page, 'active')
       const externalRequests: string[] = []
       page.on('request', (request) => {
-        if (new URL(request.url()).origin !== 'http://127.0.0.1:5173')
+        if (new URL(request.url()).origin !== 'http://127.0.0.1:5175')
           externalRequests.push(request.url())
       })
       await page.addInitScript((value) => localStorage.setItem('aryn.shell.theme', value), theme)
       await page.goto('/')
       const input = page.getByRole('textbox', {
-        name: 'Describe the agent or workflow you want to build',
+        name: 'Message to ARYN',
       })
       await expect(input).toBeVisible()
       const initialHeight = await input.evaluate((element) => element.clientHeight)
@@ -156,39 +170,20 @@ for (const width of [1440, 768, 390])
       expect(box.outline).toBe('none')
       const inputRect = await input.boundingBox()
       const buttonRect = await page
-        .getByRole('button', { name: 'Continue', exact: true })
+        .getByRole('button', { name: 'Send message', exact: true })
         .boundingBox()
       expect(inputRect!.y + inputRect!.height).toBeLessThanOrEqual(buttonRect!.y)
-      await input.fill('Review customer research without running tools.')
+      await input.fill('Review research.')
       await expect.poll(() => input.evaluate((element) => element.clientHeight)).toBe(initialHeight)
       await input.press('Control+Enter')
-      await expect(page.getByRole('heading', { name: 'Assistant', exact: true })).toBeFocused()
       await expect(page.getByRole('dialog')).toHaveCount(0)
-      await expect(page.getByText('Not sent', { exact: true })).toBeVisible()
-      await expect(page.getByRole('heading', { name: 'Assistant unavailable' })).toBeVisible()
-      const followUp = page.getByRole('textbox', { name: 'Follow-up message' })
-      await followUp.fill('Draft a cited report.')
-      await followUp.press('Control+Enter')
-      await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeDisabled()
-      await expect(
-        page.getByRole('list', { name: 'Conversation messages' }).getByRole('listitem'),
-      ).toHaveCount(1)
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
-        true,
-      )
-      expect(
-        await page
-          .locator('.main-workspace')
-          .evaluate((element) => element.scrollWidth <= element.clientWidth),
-      ).toBe(true)
-      await assertAccessible(page)
-      await page.locator('.main-workspace').evaluate((element) => {
-        element.scrollTop = 0
-      })
-      await page.screenshot({ path: resolve(evidence, `conversation-${width}-${theme}.png`) })
-      await page.getByRole('button', { name: 'Back to overview' }).click()
-      await expect(input).toHaveValue('Review customer research without running tools.')
+      await expect(page.getByRole('button', { name: 'Send message', exact: true })).toBeDisabled()
+      await expect(input).toHaveValue('Review research.')
       await expect(input).toBeFocused()
+      await assertAccessible(page)
+      await page.screenshot({
+        path: resolve(evidence, `unavailable-composer-${width}-${theme}.png`),
+      })
       expect(writes).toEqual([])
       expect(externalRequests).toEqual([])
     })
@@ -201,20 +196,20 @@ for (const width of [1440, 768, 390])
       await page.goto('/')
       await expect(page.locator('[data-home-state]')).toHaveAttribute('data-home-state', 'new')
       const composer = page.getByRole('textbox', {
-        name: 'Describe the agent or workflow you want to build',
+        name: 'Message to ARYN',
       })
       await composer.fill('Review customer research')
       await composer.press('Control+Enter')
-      await expect(page.getByRole('heading', { name: 'Assistant', exact: true })).toBeFocused()
-      await expect(page.getByText('Not sent', { exact: true })).toBeVisible()
-      await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeDisabled()
       await expect(page.getByRole('dialog')).toHaveCount(0)
-      await page.getByRole('button', { name: 'Create Workflow draft', exact: true }).click()
+      await page.getByRole('button', { name: 'Build Workflow', exact: true }).click()
       const drawer = page.getByRole('dialog')
       await expect(drawer).toBeVisible()
       await expect(
         drawer.getByRole('textbox', { name: 'Describe the work (required)' }),
       ).toBeFocused()
+      await drawer
+        .getByRole('textbox', { name: 'Describe the work (required)' })
+        .fill('Review customer research')
       await drawer.getByRole('radio', { name: /Workflow Tasks/ }).check()
       await drawer.getByRole('textbox', { name: 'Expected output' }).fill('A cited report')
       await drawer.getByRole('combobox').selectOption('external')
@@ -247,6 +242,7 @@ for (const width of [1440, 768, 390])
       ).toBe(false)
       await assertAccessible(page)
       await page.reload()
+      await expect(page.getByRole('button', { name: 'Switch workspace' })).toBeEnabled()
       await expect(page.getByText('Review customer research')).toHaveCount(0)
       expect(writes).toEqual([])
     })
@@ -278,13 +274,8 @@ for (const width of [1440, 768, 390])
 test('attention resources resolve to real, scoped detail contracts', async ({ page }) => {
   const writes = await mockHome(page, 'issues')
   await page.goto('/')
-  for (const name of [
-    'Version 1.0.1',
-    'Disposable service needs review',
-    'Recorded test run',
-    '1.1.0',
-    'Workflow output review',
-  ]) {
+  await expect(page.locator('.home-attention .home-resource-row')).toHaveCount(3)
+  for (const name of ['Version 1.0.1', 'Disposable service needs review', 'Recorded test run']) {
     await page
       .getByRole('button', { name: `Inspect ${name}`, exact: true })
       .first()
@@ -300,7 +291,7 @@ test('project switching clears unsaved handoff and home composer input', async (
   await mockHome(page)
   await page.goto('/')
   const composer = page.getByRole('textbox', {
-    name: 'Describe the agent or workflow you want to build',
+    name: 'Message to ARYN',
   })
   await composer.fill('Private project-one brief')
   await page.getByRole('button', { name: 'Switch workspace' }).click()
@@ -321,10 +312,10 @@ test('partial unavailable services keep real work usable and never imply an empt
   page,
 }) => {
   await mockHome(page, 'active')
-  await page.route('http://127.0.0.1:5173/api/projects/project-one/workflows?*', (route) =>
+  await page.route('http://127.0.0.1:5175/api/projects/project-one/workflows?*', (route) =>
     route.fulfill({ status: 404, json: {} }),
   )
-  await page.route('http://127.0.0.1:5173/api/projects/project-one/relay?*', (route) =>
+  await page.route('http://127.0.0.1:5175/api/projects/project-one/relay?*', (route) =>
     route.fulfill({ status: 404, json: {} }),
   )
   await page.goto('/')
@@ -344,7 +335,7 @@ test('partial unavailable services keep real work usable and never imply an empt
   ).toBeVisible()
   await expect(page.getByRole('button', { name: 'Inspect Research assistant' })).toBeVisible()
   await expect(page.getByText('No workflow definitions yet.')).toHaveCount(0)
-  await expect(page.getByText('Getting Started')).toHaveCount(0)
+  await expect(page.getByText('Start with an idea')).toHaveCount(0)
   await assertAccessible(page)
 })
 test('view permissions never expose unauthorized creation or fabricated success', async ({

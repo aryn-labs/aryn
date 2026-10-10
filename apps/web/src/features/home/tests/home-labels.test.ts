@@ -14,10 +14,8 @@ describe('customer-facing Home labels', () => {
   })
   it('keeps outcome uncertainty and blocked evidence explicit', () => {
     expect(statusLabel('outcome_unknown')).toBe('Outcome needs review')
-    expect(statusLabel('baseline_integrity_invalid')).toBe(
-      'Baseline evidence could not be verified',
-    )
-    expect(statusLabel('critical_regression')).toBe('Blocking regression detected')
-    expect(statusLabel('NEW_STATUS')).toBe('New status')
+    expect(statusLabel('baseline_integrity_invalid')).toBe('Baseline evidence unavailable')
+    expect(statusLabel('critical_regression')).toBe('Blocking regression')
+    expect(statusLabel('NEW_STATUS')).toBe('Unavailable')
   })
 })

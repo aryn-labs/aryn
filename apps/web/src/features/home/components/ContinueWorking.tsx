@@ -1,53 +1,78 @@
+import { Link } from '@tanstack/react-router'
+import { MessageSquare, ArrowUpRight } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { HomeResourceRow } from './HomeResourceRow'
 import type { HomeResource } from '../lib/home-state'
-import { ApiError } from '@/lib/api/client'
+export type RecentConversation = {
+  id: string
+  title: string
+  model: string
+  updated_at: string | number
+}
 export function ContinueWorking({
   agents,
   workflows,
+  conversations = [],
   onOpen,
-  workflowsError,
 }: {
   agents: HomeResource[]
   workflows: HomeResource[]
+  conversations?: RecentConversation[]
   onOpen: (item: HomeResource) => void
   workflowsError?: Error | null
 }) {
-  if (!agents.length && !workflows.length && !workflowsError) return null
+  const { t } = useTranslation()
+  const items = [
+    ...agents.map((item) => ({
+      kind: 'resource' as const,
+      item,
+      time: Date.parse(item.createdAt ?? '') || 0,
+    })),
+    ...workflows.map((item) => ({ kind: 'resource' as const, item, time: 0 })),
+    ...conversations.map((item) => ({
+      kind: 'conversation' as const,
+      item,
+      time: new Date(item.updated_at).getTime(),
+    })),
+  ]
+    .sort((a, b) => b.time - a.time)
+    .slice(0, 4)
+  if (!items.length) return null
   return (
     <section className="home-section" aria-labelledby="continue-heading">
       <div className="home-section-heading">
-        <h2 id="continue-heading">Continue Working</h2>
-        <p>Pick up a definition or inspect your recent work.</p>
+        <h2 id="continue-heading">{t('home.continue')}</h2>
       </div>
-      <div className="home-columns">
-        <section className="home-panel" aria-labelledby="agents-heading">
-          <div className="home-panel-heading">
-            <h3 id="agents-heading">Your Agents</h3>
-            <p>Recent agent definitions in this project</p>
-          </div>
-          {agents.length ? (
-            agents.map((item) => <HomeResourceRow key={item.id} item={item} onOpen={onOpen} />)
+      <div className="home-panel">
+        {items.map((entry) =>
+          entry.kind === 'resource' ? (
+            <HomeResourceRow
+              key={entry.item.kind + entry.item.id}
+              item={entry.item}
+              onOpen={onOpen}
+            />
           ) : (
-            <p className="home-list-empty">No agent definitions yet.</p>
-          )}
-        </section>
-        <section className="home-panel" aria-labelledby="workflows-heading">
-          <div className="home-panel-heading">
-            <h3 id="workflows-heading">Your Workflows</h3>
-            <p>Latest workflow definitions</p>
-          </div>
-          {workflowsError ? (
-            <p className="home-list-empty" role="status">
-              {workflowsError instanceof ApiError && [404, 501].includes(workflowsError.status)
-                ? 'Workflow definitions are unavailable on this server.'
-                : 'Workflow definitions could not be loaded.'}
-            </p>
-          ) : workflows.length ? (
-            workflows.map((item) => <HomeResourceRow key={item.id} item={item} onOpen={onOpen} />)
-          ) : (
-            <p className="home-list-empty">No workflow definitions yet.</p>
-          )}
-        </section>
+            <Link
+              key={entry.item.id}
+              to="/chat/$conversationId"
+              params={{ conversationId: entry.item.id }}
+              className="home-resource-row"
+            >
+              <span className="home-row-icon">
+                <MessageSquare size={17} aria-hidden="true" />
+              </span>
+              <span className="home-row-main">
+                <span className="home-row-name">
+                  {entry.item.title.length > 52
+                    ? entry.item.title.slice(0, 48) + '…'
+                    : entry.item.title}
+                </span>
+                <span className="home-row-description">{t('common.conversation')}</span>
+              </span>
+              <ArrowUpRight size={14} aria-hidden="true" />
+            </Link>
+          ),
+        )}
       </div>
     </section>
   )

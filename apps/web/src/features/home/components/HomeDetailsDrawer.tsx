@@ -1,3 +1,6 @@
+import { useWorkspace } from '@/app/providers/WorkspaceProvider'
+import { translate as tr } from '@/i18n'
+import { useTranslation } from 'react-i18next'
 import { useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
@@ -97,7 +100,12 @@ async function loadDetail(
   assertScope(data, scope)
   if (data.id !== item.id) throw new Error('Resource identity differs.')
   return {
-    name: item.kind === 'audit' ? activityLabel(data.name) : data.name,
+    name:
+      item.kind === 'audit'
+        ? activityLabel(data.name)
+        : item.kind === 'run' && data.name === data.id
+          ? 'Run activity'
+          : data.name,
     status: data.status,
     createdAt: data.created_at,
     description: data.description,
@@ -119,9 +127,20 @@ export function HomeDetailsDrawer({
   projectName: string
   onClose: () => void
 }) {
+  useTranslation()
+
+  const { context } = useWorkspace()
   const returnFocus = useRef<HTMLElement | null>(null)
   const query = useQuery({
-    queryKey: ['home', scope.organizationId, scope.projectId, 'detail', item.kind, item.id],
+    queryKey: [
+      'home',
+      context?.user.id,
+      scope.organizationId,
+      scope.projectId,
+      'detail',
+      item.kind,
+      item.id,
+    ],
     queryFn: ({ signal }) => loadDetail(scope, item, signal),
     staleTime: 0,
   })
@@ -146,14 +165,14 @@ export function HomeDetailsDrawer({
       >
         <div className="home-drawer-heading">
           <p className="home-kicker">{item.kind.replaceAll('-', ' ')}</p>
-          <DialogTitle>Resource details</DialogTitle>
+          <DialogTitle>{tr('ui.resource_details')}</DialogTitle>
           <DialogDescription>
-            {projectName} · Details reported by ARYN for the selected resource.
+            {projectName} {tr('ui.details_reported_by_aryn_for_the_selected_resource_177')}
           </DialogDescription>
         </div>
         <div className="home-drawer-scroll">
           {query.isPending ? (
-            <DataState kind="loading" title="Loading resource" />
+            <DataState kind="loading" title={tr('ui.loading_resource')} />
           ) : query.error ? (
             query.error instanceof ApiError && query.error.status === 404 ? (
               <DataState
@@ -169,69 +188,71 @@ export function HomeDetailsDrawer({
               <>
                 <h3 className="home-detail-name">{detail.name}</h3>
                 <dl className="home-recap">
-                  <dt>Resource ID</dt>
+                  <dt>{tr('ui.resource_id')}</dt>
                   <dd className="mono">{item.id}</dd>
-                  <dt>Project</dt>
+                  <dt>{tr('ui.project')}</dt>
                   <dd>{projectName}</dd>
                   {detail.status && (
                     <>
-                      <dt>Status</dt>
+                      <dt>{tr('ui.status')}</dt>
                       <dd>{statusLabel(detail.status)}</dd>
                     </>
                   )}
                   {detail.revision && (
                     <>
-                      <dt>Revision</dt>
+                      <dt>{tr('ui.revision')}</dt>
                       <dd>{detail.revision}</dd>
                     </>
                   )}
                   {detail.createdAt && (
                     <>
-                      <dt>Recorded</dt>
+                      <dt>{tr('ui.recorded')}</dt>
                       <dd>{formatDate(detail.createdAt)}</dd>
                     </>
                   )}
                   {detail.description && (
                     <>
-                      <dt>Description</dt>
+                      <dt>{tr('ui.description')}</dt>
                       <dd>{detail.description}</dd>
                     </>
                   )}
                   {detail.relatedId && (
                     <>
-                      <dt>Related resource</dt>
+                      <dt>{tr('ui.related_resource')}</dt>
                       <dd className="mono">{detail.relatedId}</dd>
                     </>
                   )}
                   {detail.reason && (
                     <>
-                      <dt>Reason</dt>
+                      <dt>{tr('ui.reason')}</dt>
                       <dd>{statusLabel(detail.reason)}</dd>
                     </>
                   )}
                   {detail.payloadHash && (
                     <>
-                      <dt>Payload hash</dt>
+                      <dt>{tr('ui.payload_hash')}</dt>
                       <dd className="mono">{detail.payloadHash}</dd>
                     </>
                   )}
                   {detail.verified != null && (
                     <>
-                      <dt>Verification</dt>
-                      <dd>{detail.verified ? 'Verified by backend' : 'Unverified'}</dd>
+                      <dt>{tr('ui.verification')}</dt>
+                      <dd>{detail.verified ? tr('ui.verified_by_backend') : 'Unverified'}</dd>
                     </>
                   )}
                 </dl>
                 {detail.demo && (
                   <p className="home-note">
-                    This is a recorded disposable test incident. It does not report production
-                    infrastructure health.
+                    {tr(
+                      'ui.this_is_a_recorded_disposable_test_incident_it_does_not_report_production_infrastructure_health',
+                    )}
                   </p>
                 )}
                 {['version', 'workflow-run', 'incident', 'bench', 'run'].includes(item.kind) && (
                   <p className="home-note">
-                    Review the recorded evidence. Decision and execution tools are unavailable in
-                    this Home release.
+                    {tr(
+                      'ui.review_the_recorded_evidence_decision_and_execution_tools_are_unavailable_in_this_home_release',
+                    )}
                   </p>
                 )}
               </>

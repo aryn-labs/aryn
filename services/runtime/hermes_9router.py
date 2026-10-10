@@ -9,9 +9,11 @@ import argparse
 import asyncio
 from contextvars import ContextVar
 import json
+import hashlib
 import math
 from pathlib import Path
 import sys
+import uuid
 
 from packages.model_adapters.gateway import MODEL_ID
 from services.runtime.gateway_transport import ExactGatewayTransport, ModelReceipt
@@ -120,6 +122,15 @@ def build_adapter(settings, runtime_key, port=None):
                             code = error.get("code", "runtime_request_rejected") if isinstance(error, dict) else "runtime_request_rejected"
                             # Raw provider/native message text is never a transport contract.
                             data = {"error": {"code": code if isinstance(code, str) and code.replace("_", "").isalnum() else "runtime_request_rejected"}}
+                            if code == "actual_model_mismatch" and isinstance(error, dict):
+                                reported = error.get("reported_model")
+                                if isinstance(reported, str) and MODEL_ID.fullmatch(reported):
+                                    data["error"]["reported_model"] = reported
+                                fields = error.get("response_fields", [])
+                                if isinstance(fields, list):
+                                    import re
+                                    data["error"]["response_fields"] = [name for name in fields
+                                        if isinstance(name, str) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,31}", name)][:16]
                         return web.json_response(data, status=response.status)
                     return response
                 except Exception:
@@ -199,7 +210,12 @@ def build_adapter(settings, runtime_key, port=None):
             # Hermes' executor does not propagate ContextVars. Carry the receipt
             # explicitly through its per-turn options; never accept it from HTTP input.
             options = dict(kwargs.get("model_options") or {})
-            options["_aryn_receipt"] = TURN.get()
+            receipt = TURN.get()
+            options["_aryn_receipt"] = receipt
+            if receipt and receipt.session_id:
+                # A private, single-turn native session; Core supplies the transcript.
+                # Never reuse Hermes' content-derived session across customer scopes.
+                kwargs["session_id"] = receipt.session_id
             kwargs["model_options"] = options
             return await super()._run_agent(**kwargs)
 
@@ -272,11 +288,13 @@ def build_adapter(settings, runtime_key, port=None):
                 return web.json_response({"error": {"code": "stream_provenance_unavailable"}}, status=409)
             receipt = ModelReceipt(body.get("model", ""), transport={"temperature": body.get("temperature", 0.3),
                                                                     "max_tokens": body.get("max_tokens", 2048)})
+            receipt.session_id = "aryn_" + hashlib.sha256((request.headers.get("Idempotency-Key") or uuid.uuid4().hex).encode()).hexdigest()
             token = TURN.set(receipt)
             try:
                 response = await super()._handle_chat_completions(request)
                 if receipt.failure:
-                    return web.json_response({"error": {"code": receipt.failure}}, status=409)
+                    return web.json_response({"error": {"code": receipt.failure,
+                        "reported_model": receipt.reported_model, "response_fields": receipt.response_fields}}, status=409)
                 if response.status != 200:
                     return response
                 proof = receipt.evidence()

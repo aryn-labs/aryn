@@ -1,5 +1,7 @@
+import { labelText, translate } from '@/i18n'
 // Presentation labels for audited event types; resource IDs and backend status remain intact.
 const events: Record<string, string> = {
+  'chat.turn.accepted': 'Assistant message received',
   'factory.blueprint.created': 'Agent definition created',
   'factory.version.created': 'Agent version created',
   'factory.version.approved': 'Agent version approved',
@@ -23,16 +25,32 @@ const events: Record<string, string> = {
   'core.run.recovered': 'Run recovery recorded',
 }
 export function activityLabel(event: string) {
-  return events[event] ?? 'Workspace activity recorded'
+  return labelText(events[event] ?? 'Workspace activity recorded')
 }
 export function statusLabel(status: string) {
-  const labels: Record<string, string> = {
-    outcome_unknown: 'Outcome needs review',
-    waiting_review: 'Awaiting review',
-    baseline_integrity_invalid: 'Baseline evidence could not be verified',
-    critical_regression: 'Blocking regression detected',
-  }
-  if (labels[status]) return labels[status]
-  const text = status.replaceAll('_', ' ').toLowerCase()
-  return text.charAt(0).toUpperCase() + text.slice(1)
+  const key = status.toLowerCase()
+  const known = [
+    'completed',
+    'processing',
+    'failed',
+    'cancelled',
+    'outcome_unknown',
+    'draft',
+    'approved',
+    'published',
+    'pending',
+    'waiting_review',
+    'running',
+    'queued',
+    'active',
+    'baseline_integrity_invalid',
+    'critical_regression',
+    'denied',
+    'allowed',
+  ]
+  return known.includes(key)
+    ? translate('status.' + key)
+    : labelText(status) !== status
+      ? labelText(status)
+      : translate('common.unknown')
 }

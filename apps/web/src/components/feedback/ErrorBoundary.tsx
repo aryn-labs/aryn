@@ -1,3 +1,4 @@
+import { translate as tr } from '@/i18n'
 import { Component, type ReactNode } from 'react'
 import { DataState } from './DataState'
 export class ErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
@@ -9,8 +10,8 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { failed: 
     return this.state.failed ? (
       <DataState
         kind="error"
-        title="Studio could not render this view"
-        description="Reload to recover your workspace."
+        title={tr('ui.studio_could_not_render_this_view')}
+        description={tr('ui.reload_to_recover_your_workspace')}
         retry={() => window.location.reload()}
       />
     ) : (

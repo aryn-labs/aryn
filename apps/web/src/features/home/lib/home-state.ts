@@ -1,3 +1,4 @@
+import { labelText } from '@/i18n'
 import type { ResourceItem } from '@/lib/types/workspace'
 import type {
   HomeIncident,
@@ -33,7 +34,7 @@ export function canCreate(permissions: Record<string, boolean>, kind: CreationKi
 export function resourceItem(item: ResourceItem, kind: HomeResource['kind']): HomeResource {
   return {
     id: item.id,
-    name: item.name,
+    name: kind === 'run' && item.name === item.id ? labelText('Run activity') : item.name,
     kind,
     status: item.status,
     description: item.description,
@@ -44,15 +45,16 @@ export function workActivity(summary: HomeSummary) {
   return [
     ...summary.latest_runs.map((item) => resourceItem(item, 'run')),
     ...summary.latest_audits
-      .filter((item) =>
-        /^(?:(?:core|studio|factory)\.)?(agent|blueprint|version|workflow|run|bench|relay|approval|assignment|brief)[.:_]/i.test(
-          item.name,
-        ),
+      .filter(
+        (item) =>
+          /^(?:(?:core|studio|factory)\.)?(agent|blueprint|version|workflow|run|bench|relay|approval|assignment|brief)[.:_]/i.test(
+            item.name,
+          ) || item.name === 'chat.turn.accepted',
       )
       .map((item) => resourceItem(item, 'audit')),
   ]
     .sort((a, b) => Date.parse(b.createdAt ?? '') - Date.parse(a.createdAt ?? ''))
-    .slice(0, 5)
+    .slice(0, 4)
 }
 export function attentionItems(
   summary: HomeSummary,
@@ -75,7 +77,12 @@ export function attentionItems(
     items.push({
       ...(run
         ? resourceItem(run, 'run')
-        : { id, name: 'Run requiring review', kind: 'run' as const, status: problem.code }),
+        : {
+            id,
+            name: labelText('Run requiring review'),
+            kind: 'run' as const,
+            status: problem.code,
+          }),
       reason: problem.description,
       label: 'Run review',
       priority: problem.code === 'outcome_unknown' ? 95 : 75,
@@ -93,7 +100,7 @@ export function attentionItems(
       items.push({
         id: version.id,
         kind: 'bench',
-        name: `Version ${version.version_number}`,
+        name: `${labelText('Version')} ${version.version_number}`,
         status: 'Promotion blocked',
         reason: version.regression.reason,
         createdAt: version.regression.compared_at,
@@ -158,7 +165,7 @@ export function attentionItems(
     for (const review of reviews.filter((item) => item.status === 'waiting_review'))
       items.push({
         id: review.id,
-        name: 'Workflow output review',
+        name: labelText('Workflow output review'),
         kind: 'workflow-run',
         status: review.status,
         relatedId: review.workflow_id,
@@ -172,7 +179,7 @@ export function attentionItems(
       (a, b) =>
         b.priority - a.priority || Date.parse(b.createdAt ?? '') - Date.parse(a.createdAt ?? ''),
     )
-    .slice(0, 6)
+    .slice(0, 3)
 }
 export function workspaceCondition(
   summary: HomeSummary,
@@ -226,4 +233,14 @@ export function readBrief(id: string | undefined, scope: HomeScope, userId: stri
     return undefined
   }
   return handoff.id === id ? handoff.brief : undefined
+}
+
+export function greetingPeriod(hour: number) {
+  return hour >= 5 && hour < 11
+    ? 'morning'
+    : hour < 15 && hour >= 11
+      ? 'noon'
+      : hour < 19 && hour >= 15
+        ? 'afternoon'
+        : 'night'
 }

@@ -1,3 +1,4 @@
+import { labelText, translate } from '@/i18n'
 import type { z } from '@/lib/types/validation'
 
 export class ApiError extends Error {
@@ -8,6 +9,10 @@ export class ApiError extends Error {
   ) {
     super(message)
     this.name = 'ApiError'
+    Object.defineProperty(this, 'message', {
+      configurable: true,
+      get: () => (message.startsWith('errors.') ? translate(message) : labelText(message)),
+    })
   }
 }
 export async function request<T>(

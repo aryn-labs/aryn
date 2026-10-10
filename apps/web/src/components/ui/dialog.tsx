@@ -1,3 +1,5 @@
+import { translate as tr } from '@/i18n'
+import { useTranslation } from 'react-i18next'
 import * as Primitive from '@radix-ui/react-dialog'
 import { X } from 'lucide-react'
 import type { ComponentProps } from 'react'
@@ -12,6 +14,8 @@ export function DialogContent({
   children,
   ...props
 }: ComponentProps<typeof Primitive.Content>) {
+  useTranslation()
+
   return (
     <Primitive.Portal>
       <Primitive.Overlay className="dialog-overlay" />
@@ -19,7 +23,7 @@ export function DialogContent({
         {children}
         <Primitive.Close
           className="button button-ghost button-icon dialog-close"
-          aria-label="Close dialog"
+          aria-label={tr('ui.close_dialog')}
         >
           <X size={18} />
         </Primitive.Close>

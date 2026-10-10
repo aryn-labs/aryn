@@ -5,7 +5,7 @@ import { useWorkspace } from '@/app/providers/WorkspaceProvider'
 export function useSummary() {
   const { project, context } = useWorkspace()
   return useQuery({
-    queryKey: ['summary', context?.organization.id, project?.id],
+    queryKey: ['summary', context?.user.id, context?.organization.id, project?.id],
     enabled: !!project,
     queryFn: async ({ signal }) => {
       const result = await request(
@@ -22,7 +22,7 @@ export function useSummary() {
 export function useWorkspaceStatus(enabled = true) {
   const { context } = useWorkspace()
   return useQuery({
-    queryKey: ['workspace-status', context?.organization.id],
+    queryKey: ['workspace-status', context?.user.id, context?.organization.id],
     enabled: !!context && enabled,
     staleTime: 30_000,
     queryFn: async ({ signal }) => {
@@ -36,7 +36,7 @@ export function useWorkspaceStatus(enabled = true) {
 export function useResources(resource: string, q: string, enabled: boolean) {
   const { project, context } = useWorkspace()
   return useQuery({
-    queryKey: ['resources', context?.organization.id, project?.id, resource, q],
+    queryKey: ['resources', context?.user.id, context?.organization.id, project?.id, resource, q],
     enabled: !!project && enabled,
     queryFn: async ({ signal }) => {
       const page = await request(
@@ -57,7 +57,7 @@ export function useResources(resource: string, q: string, enabled: boolean) {
 export function useResourceDetail(resource?: string, id?: string) {
   const { project, context } = useWorkspace()
   return useQuery({
-    queryKey: ['detail', context?.organization.id, project?.id, resource, id],
+    queryKey: ['detail', context?.user.id, context?.organization.id, project?.id, resource, id],
     enabled: !!project && !!resource && !!id,
     queryFn: async ({ signal }) => {
       const item = await request(

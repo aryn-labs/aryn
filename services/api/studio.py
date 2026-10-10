@@ -1248,6 +1248,8 @@ def create_app(
     register_intelligence(app, coordinator, context)
     from services.api.automations import register_automations
     register_automations(app, coordinator, context, require_runtime, testing=testing, local=local_development)
+    from services.api.conversations import register_conversations
+    register_conversations(app, coordinator, context, model_catalog, require_runtime)
 
     assets = ROOT / "apps/web/dist/assets"
     if assets.is_dir():

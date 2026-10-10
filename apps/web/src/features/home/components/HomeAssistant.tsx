@@ -1,107 +1,111 @@
-import { useRef, useState, type ReactNode } from 'react'
-import { ArrowLeft, Bot, MessageSquare, Workflow } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
+import { useNavigate } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
-import type { CreationKind } from '../lib/home-state'
+import { useChatCapability, useChatScope, useSendTurn } from '@/features/chat/hooks/useChat'
+import { useConsentGate } from '@/features/chat/hooks/useConsentGate'
+import { ProviderConsentDialog } from '@/features/chat/components/ProviderConsentDialog'
+import { ModelPicker } from '@/features/chat/components/ModelPicker'
 import { HomeComposer } from './HomeComposer'
+import '@/features/chat/chat.css'
 
-// There is no scoped conversational endpoint in the current ARYN API.
-// These are unsent user inputs, never assistant messages or an execution request.
-export function HomeAssistant({
-  compact,
-  canAgent,
-  canWorkflow,
-  onDraft,
-  children,
-}: {
-  compact: boolean
-  canAgent: boolean
-  canWorkflow: boolean
-  onDraft: (kind: CreationKind, goal: string) => void
-  children: ReactNode
-}) {
+export function HomeAssistant({ compact, children }: { compact: boolean; children: ReactNode }) {
+  const { t } = useTranslation()
+  const scope = useChatScope()
+  const capability = useChatCapability(scope)
+  const send = useSendTurn(scope)
+  const navigate = useNavigate()
   const [input, setInput] = useState('')
-  const [message, setMessage] = useState('')
-  const [followUp, setFollowUp] = useState('')
-  const heading = useRef<HTMLHeadingElement>(null)
-  function openConversation(value: string) {
-    setMessage(value)
-    requestAnimationFrame(() => heading.current?.focus())
+  const [selection, setSelection] = useState('')
+  const available =
+    capability.data?.models.filter((item) => item.available || item.verifiable) ?? []
+  const model = selection || (available.length === 1 ? (available[0]?.id ?? '') : '')
+  function accepted(conversation: { id: string }) {
+    void navigate({ to: '/chat/$conversationId', params: { conversationId: conversation.id } })
   }
-  function returnToOverview() {
-    setMessage('')
-    setFollowUp('')
-    requestAnimationFrame(() => document.getElementById('home-goal')?.focus())
-  }
-  if (!message)
-    return (
-      <>
-        <HomeComposer
-          compact={compact}
-          value={input}
-          onChange={setInput}
-          onContinue={openConversation}
-        />
-        {children}
-      </>
-    )
+  const gate = useConsentGate(scope, model, (message) => {
+    if (!send.isPending && !send.uncertain)
+      send.mutate(
+        { message, model, expected_revision: 0, allow_remote_model: false },
+        { onSuccess: accepted },
+      )
+  })
+  const ready = Boolean(
+    capability.data?.can_send &&
+    available.some((m) => m.id === model) &&
+    gate.consent.data?.models[model] &&
+    !gate.consent.isError,
+  )
+  const help = send.uncertain
+    ? t('composer.locked')
+    : capability.isPending || gate.consent.isPending
+      ? t('composer.checking')
+      : gate.consent.isError
+        ? t('consent.loadFailed')
+        : !capability.data?.permitted
+          ? t('composer.denied')
+          : !model && available.length > 0
+            ? t('composer.choose')
+            : !ready
+              ? t('composer.unavailable')
+              : undefined
   return (
-    <section className="home-conversation" aria-labelledby="conversation-heading">
-      <div className="home-conversation-heading">
-        <h2 id="conversation-heading" tabIndex={-1} ref={heading}>
-          <MessageSquare size={20} aria-hidden="true" />
-          Assistant
-        </h2>
-        <Button variant="ghost" size="sm" onClick={returnToOverview}>
-          <ArrowLeft size={15} aria-hidden="true" />
-          Back to overview
-        </Button>
-      </div>
-      <ol className="home-messages" aria-label="Conversation messages">
-        <li className="home-message">
-          <div className="home-message-heading">
-            <strong>You</strong>
-            <span>Not sent</span>
-          </div>
-          <p>{message}</p>
-        </li>
-      </ol>
-      <div className="home-assistant-unavailable" role="status">
-        <h3>Assistant unavailable</h3>
-        <p>
-          This server has no conversation API. Your message has not been sent and no AI response has
-          been generated.
-        </p>
-      </div>
-      {(canAgent || canWorkflow) && (
-        <div className="home-draft-actions">
-          <p>Use your message as a starting brief instead.</p>
-          <div>
-            <Button
-              variant="secondary"
-              disabled={!canAgent}
-              onClick={() => onDraft('agent', message)}
-            >
-              <Bot size={16} aria-hidden="true" />
-              Create Agent draft
-            </Button>
-            <Button
-              variant="secondary"
-              disabled={!canWorkflow}
-              onClick={() => onDraft('workflow', message)}
-            >
-              <Workflow size={16} aria-hidden="true" />
-              Create Workflow draft
-            </Button>
-          </div>
-        </div>
-      )}
+    <>
       <HomeComposer
-        compact
-        followUp
-        value={followUp}
-        onChange={setFollowUp}
-        onContinue={() => undefined}
+        compact={compact}
+        value={input}
+        onChange={setInput}
+        disabled={!ready || send.uncertain}
+        pending={send.isPending}
+        readOnly={send.uncertain}
+        help={help}
+        onContinue={gate.submit}
+        controls={
+          <ModelPicker
+            capability={capability.data}
+            model={model}
+            onModel={setSelection}
+            disabled={send.isPending || send.uncertain}
+          />
+        }
       />
-    </section>
+      {send.isError && (
+        <p role="alert" className="chat-error">
+          {send.error.message}
+          {send.uncertain && (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={send.isPending}
+              onClick={() => send.retryOriginal({ onSuccess: accepted })}
+            >
+              {t('chat.retry')}
+            </Button>
+          )}
+        </p>
+      )}
+      {(capability.isError ||
+        gate.consent.isError ||
+        (!capability.isPending && !capability.data?.can_send)) && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            void capability.refetch()
+            void gate.consent.refetch()
+          }}
+        >
+          {t('chat.check')}
+        </Button>
+      )}
+      {children}
+      <ProviderConsentDialog
+        provider={gate.provider}
+        pending={gate.consent.grant.isPending}
+        error={gate.consent.grant.isError}
+        onConfirm={gate.confirm}
+        onClose={gate.close}
+      />
+    </>
   )
 }

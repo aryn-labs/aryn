@@ -541,6 +541,40 @@ def install_governance_guards(metadata, connection, **kwargs):
     install_automation_protection(connection)
 
 
+class ConversationModel(Base):
+    __tablename__ = "chat_conversations"
+    id = Column(String(64), primary_key=True)
+    organization_id = Column(String(64), ForeignKey("organizations.id"), nullable=False)
+    project_id = Column(String(64), ForeignKey("projects.id"), nullable=False)
+    actor_id = Column(String(64), nullable=False)
+    model = Column(String(128), nullable=False)
+    title = Column(String(120), nullable=False)
+    revision = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    __table_args__ = (Index("ix_chat_conversation_scope", "organization_id", "project_id", "actor_id", "updated_at"),)
+
+
+class ConversationTurnModel(Base):
+    __tablename__ = "chat_turns"
+    id = Column(String(64), primary_key=True)
+    conversation_id = Column(String(64), ForeignKey("chat_conversations.id"), nullable=False)
+    organization_id = Column(String(64), nullable=False)
+    project_id = Column(String(64), nullable=False)
+    actor_id = Column(String(64), nullable=False)
+    sequence = Column(Integer, nullable=False)
+    idempotency_key = Column(String(128), nullable=False)
+    request_hash = Column(String(64), nullable=False)
+    input = Column(Text, nullable=False)
+    run_id = Column(String(64), ForeignKey("run_states.id"), nullable=False)
+    attestation = Column(String(64), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    __table_args__ = (
+        UniqueConstraint("organization_id", "project_id", "actor_id", "idempotency_key", name="uq_chat_turn_request"),
+        UniqueConstraint("conversation_id", "sequence", name="uq_chat_turn_sequence"),
+    )
+
+
 class WorkflowScope:
     id = Column(String(64), primary_key=True)
     organization_id = Column(String(64), ForeignKey("organizations.id"), nullable=False)
@@ -709,6 +743,27 @@ Index("ix_relay_active_execution", RelayExecutionModel.status)
 Index("ix_relay_incident_status", RelayIncidentModel.organization_id, RelayIncidentModel.project_id, RelayIncidentModel.status)
 Index("ix_demo_observation_target", DemoObservationModel.target_id, DemoObservationModel.created_at)
 Index("ix_relay_event_incident", RelayEventModel.incident_id, RelayEventModel.sequence)
+
+
+class ProviderConsentModel(Base):
+    __tablename__ = "chat_provider_consents"
+    id = Column(String(64), primary_key=True)
+    organization_id = Column(String(64), ForeignKey("organizations.id"), nullable=False)
+    project_id = Column(String(64), ForeignKey("projects.id"), nullable=False)
+    actor_id = Column(String(64), nullable=False)
+    provider_id = Column(String(64), nullable=False)
+    policy = Column(String(64), nullable=False)
+    granted_at = Column(String(40), nullable=False)
+    revoked_at = Column(String(40), nullable=True)
+    attestation = Column(String(64), nullable=False)
+    __table_args__ = (UniqueConstraint("organization_id", "project_id", "actor_id", "provider_id", name="uq_chat_provider_consent"),)
+
+
+class StudioPreferenceModel(Base):
+    __tablename__ = "studio_preferences"
+    organization_id = Column(String(64), ForeignKey("organizations.id"), primary_key=True)
+    actor_id = Column(String(64), primary_key=True)
+    locale = Column(String(8), nullable=False)
 
 
 class AutomationDefinitionModel(IntelligenceScope, Base):

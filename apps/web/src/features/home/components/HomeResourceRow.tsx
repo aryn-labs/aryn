@@ -11,6 +11,7 @@ import {
 import type { HomeResource } from '../lib/home-state'
 import { formatDate } from '@/lib/utils'
 import { statusLabel } from '../lib/home-labels'
+import { useTranslation } from 'react-i18next'
 const icons = {
   agent: Bot,
   workflow: Workflow,
@@ -32,11 +33,12 @@ export function HomeResourceRow({
   label?: string
   onOpen: (item: HomeResource) => void
 }) {
+  const { t } = useTranslation()
   const Icon = icons[item.kind]
   return (
     <button
       className={`home-resource-row ${item.kind === 'agent' ? 'home-agent-row' : ''}`}
-      aria-label={`Inspect ${item.name}`}
+      aria-label={t('common.inspect', { name: item.name })}
       onClick={() => onOpen(item)}
     >
       <span className="home-row-icon">
@@ -44,18 +46,19 @@ export function HomeResourceRow({
       </span>
       <span className="home-row-main">
         <span className="home-row-name">{item.name}</span>
-        <span className={`home-row-description ${item.kind === 'agent' ? 'line-clamp-2' : ''}`}>
+        <span className="home-row-description">
           {description ??
-            (item.description?.trim() ||
-              (item.kind === 'agent'
-                ? 'Agent definition · description not provided'
-                : item.revision
-                  ? `Revision ${item.revision}`
-                  : label))}
+            label ??
+            t(`common.${item.kind}`, {
+              defaultValue:
+                item.kind === 'bench'
+                  ? 'Bench'
+                  : item.kind === 'incident'
+                    ? 'Relay'
+                    : t('common.run'),
+            })}
+          {item.createdAt ? ` · ${formatDate(item.createdAt)}` : ''}
         </span>
-        {item.kind === 'agent' && item.createdAt && (
-          <span className="home-row-metadata">Created {formatDate(item.createdAt)}</span>
-        )}
       </span>
       <span className="home-row-end">
         {item.status && <span className="home-status">{statusLabel(item.status)}</span>}

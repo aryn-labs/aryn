@@ -4,6 +4,7 @@ import { ApiError } from '@/lib/api/client'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { WorkspaceProvider } from './WorkspaceProvider'
 import { ShellProvider } from './ShellProvider'
+import { LocalePreference } from '@/i18n/LocalePreference'
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -24,6 +25,7 @@ export function AppProviders({
   return (
     <QueryClientProvider client={client}>
       <WorkspaceProvider>
+        <LocalePreference />
         <ShellProvider>
           <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
         </ShellProvider>

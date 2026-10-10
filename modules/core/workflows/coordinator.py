@@ -269,10 +269,14 @@ class RunCoordinator:
                 return
             error = public_error(exc, correlation_id=context.correlation_id, run_id=run_id)
             row.error_code = error["error_code"]
+            session.flush()
             target = "failed" if isinstance(exc, ModelIdentityError) else "outcome_unknown"
             repo.transition_status(context, run_id, target, error_message=error["message"])
             self.audit_logger.record("core.run." + target, context, run_id, AuditStatus.FAILED,
-                                     {**error, "runtime_outcome": "identity_rejected" if target == "failed" else "unknown", "reservation_retained": True}, session=session)
+                                     {**error, "runtime_outcome": "identity_rejected" if target == "failed" else "unknown", "reservation_retained": True,
+                                      **({"reported_model": sanitize(getattr(exc, "reported_model", None), credentials=getattr(self.db_manager, "protected_credentials", ())),
+                                          "model_identity_stage": getattr(exc, "identity_stage", "core_settlement"),
+                                          "gateway_response_fields": getattr(exc, "response_fields", [])} if isinstance(exc, ModelIdentityError) else {})}, session=session)
 
     def _complete_dispatch(self, run_id, result, context):
         from database.repositories.budget_repo import BudgetRepository
@@ -330,7 +334,22 @@ class RunCoordinator:
                 stored.execution_evidence = sanitize({**result.execution_evidence, "run_id": run_id} if result.execution_evidence.get("run_id") == result.run_id else result.execution_evidence)
             return stored
 
-    async def execute_managed_direct_turn(self, request: RunRequest, context: SecurityContext, *, _claimed=None, _allowed_tools=(), _execution_mode="direct") -> RunResult:
+    async def verify_model(self, model, context, idempotency_key):
+        """Explicit, metered text-only readiness check; no user prompt is dispatched here."""
+        request = RunRequest(model=model, prompt="Reply with the word Ready.",
+            system_instructions="Verify text generation only. Do not use tools.",
+            max_tokens=128, timeout_seconds=60, temperature=0,
+            idempotency_key=idempotency_key)
+        return await self.execute_managed_direct_turn(request, context,
+            _execution_mode="model_probe", _model_verification=True)
+
+    async def execute_managed_direct_turn(self, request: RunRequest, context: SecurityContext, *, _claimed=None, _allowed_tools=(), _execution_mode="direct", _model_verification=False) -> RunResult:
+        if _model_verification and (_execution_mode != "model_probe" or _allowed_tools or _claimed is not None
+                or request.prompt != "Reply with the word Ready."
+                or request.system_instructions != "Verify text generation only. Do not use tools."
+                or request.max_tokens != 128 or request.timeout_seconds != 60
+                or request.temperature != 0 or request.session_id or request.metadata):
+            raise PermissionDeniedError("Only the fixed Core readiness probe may verify a model.")
         request = request.model_copy(deep=True)
         try:
             self.permission_engine.enforce("run:create", context, context.organization_id, context.project_id)
@@ -357,9 +376,12 @@ class RunCoordinator:
             caps = await self._bounded(self.runtime_adapter.capabilities(), self._remaining(claimed.run_id, context))
             if not caps.tools_confined or not set(caps.enabled_toolsets).issubset(_allowed_tools):
                 raise PermissionDeniedError("Managed text execution requires all runtime toolsets disabled.")
-            await self._bounded(self.runtime_adapter.require_model_available(request.model), self._remaining(claimed.run_id, context))
+            preflight = self.runtime_adapter.require_model_candidate if _model_verification else self.runtime_adapter.require_model_available
+            await self._bounded(preflight(request.model), self._remaining(claimed.run_id, context))
             self._authorize_dispatch(claimed.run_id, context)
-            if hasattr(self.runtime_adapter, "execute_direct_turn"):
+            if _model_verification:
+                result = await self._bounded(self.runtime_adapter.execute_model_verification(request, context), self._remaining(claimed.run_id, context))
+            elif hasattr(self.runtime_adapter, "execute_direct_turn"):
                 result = await self._bounded(self.runtime_adapter.execute_direct_turn(request, context), self._remaining(claimed.run_id, context))
             else:
                 runtime_id = await self._bounded(self.runtime_adapter.start_run(request, context), self._remaining(claimed.run_id, context))

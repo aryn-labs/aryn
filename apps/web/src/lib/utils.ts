@@ -1,3 +1,4 @@
+import i18n from '@/i18n'
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 export function cn(...inputs: ClassValue[]) {
@@ -20,6 +21,9 @@ export function savePreference(key: string, value: string) {
 export function formatDate(value: string) {
   const date = new Date(value)
   return Number.isNaN(date.getTime())
-    ? 'Timestamp unavailable'
-    : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date)
+    ? i18n.t('ui.timestamp_unavailable')
+    : new Intl.DateTimeFormat(i18n.resolvedLanguage, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }).format(date)
 }

@@ -1,3 +1,5 @@
+import { translate as tr } from '@/i18n'
+import { useTranslation } from 'react-i18next'
 import { useRef, useState } from 'react'
 import {
   Building2,
@@ -31,12 +33,14 @@ import { useWorkspace } from '@/app/providers/WorkspaceProvider'
 import { logout } from '@/lib/auth/session'
 type Panel = 'notifications' | 'account' | null
 export function AppTopbar() {
+  useTranslation()
+
   const shell = useShell()
   const workspace = useWorkspace()
   const { context, project } = workspace
   const [panel, setPanel] = useState<Panel>(null)
   const returnFocus = useRef<HTMLButtonElement | null>(null)
-  function openPanel(value: Exclude<Panel, null>, trigger = 'Account menu') {
+  function openPanel(value: Exclude<Panel, null>, trigger = tr('ui.account_menu')) {
     returnFocus.current = document.querySelector<HTMLButtonElement>(`[aria-label="${trigger}"]`)
     setPanel(value)
   }
@@ -70,7 +74,7 @@ export function AppTopbar() {
         size="icon"
         className="mobile-menu"
         onClick={() => shell.setMobileOpen(true)}
-        aria-label="Open navigation"
+        aria-label={tr('ui.open_navigation')}
       >
         <Menu size={20} />
       </Button>
@@ -83,28 +87,28 @@ export function AppTopbar() {
             variant="ghost"
             className="workspace-switcher"
             disabled={!context}
-            aria-label="Switch workspace"
+            aria-label={tr('ui.switch_workspace')}
             aria-describedby="workspace-current-selection"
             title={
               context
-                ? `${context.organization.name} / ${project?.name ?? 'No accessible projects'}`
+                ? `${context.organization.name} / ${project?.name ?? tr('ui.no_accessible_projects')}`
                 : undefined
             }
           >
             <Folder size={18} aria-hidden="true" />
             <span id="workspace-current-selection" className="workspace-switcher-text">
               <span className="workspace-organization">
-                {context?.organization.name ?? 'ARYN Studio'}
+                {context?.organization.name ?? tr('ui.aryn_studio')}
               </span>
               <strong className="workspace-project">
                 {project?.name ??
                   (context
-                    ? 'No accessible projects'
+                    ? tr('ui.no_accessible_projects')
                     : workspace.loading
-                      ? 'Loading workspace…'
+                      ? tr('ui.loading_workspace_59')
                       : workspace.signedOut
-                        ? 'Signed out'
-                        : 'Workspace unavailable')}
+                        ? tr('ui.signed_out')
+                        : tr('ui.workspace_unavailable'))}
               </strong>
             </span>
             <ChevronDown size={14} aria-hidden="true" />
@@ -114,17 +118,17 @@ export function AppTopbar() {
           <DropdownMenuLabel className="workspace-menu-organization">
             <Building2 size={19} aria-hidden="true" />
             <span>
-              <small>Organization</small>
+              <small>{tr('ui.organization')}</small>
               <strong>{context?.organization.name}</strong>
             </span>
           </DropdownMenuLabel>
-          <p className="menu-note">Organization switching unavailable.</p>
+          <p className="menu-note">{tr('ui.organization_switching_unavailable')}</p>
           <DropdownMenuSeparator className="menu-separator" />
-          <DropdownMenuLabel>Projects</DropdownMenuLabel>
+          <DropdownMenuLabel>{tr('ui.projects')}</DropdownMenuLabel>
           {context?.projects.length ? (
             <DropdownMenuRadioGroup
               value={project?.id ?? ''}
-              aria-label="Projects"
+              aria-label={tr('ui.projects')}
               onValueChange={(id) => {
                 workspace.selectProject(id)
                 shell.inspect(null)
@@ -138,26 +142,26 @@ export function AppTopbar() {
               ))}
             </DropdownMenuRadioGroup>
           ) : (
-            <p className="menu-note">No accessible projects.</p>
+            <p className="menu-note">{tr('ui.no_accessible_projects_70')}</p>
           )}
         </DropdownMenuContent>
       </DropdownMenu>
       <button
         className="global-search-trigger"
         onClick={() => shell.setSearchOpen(true)}
-        aria-label="Global search"
+        aria-label={tr('ui.global_search')}
         aria-keyshortcuts="Control+k Meta+k"
       >
         <Search size={17} />
-        <span>Search workspace…</span>
-        <kbd>Ctrl K</kbd>
+        <span>{tr('ui.search_workspace_124')}</span>
+        <kbd>{tr('ui.ctrl_k')}</kbd>
       </button>
       <div className="topbar-actions">
         <Button
           variant="ghost"
           size="icon"
-          onClick={() => openPanel('notifications', 'Notifications')}
-          aria-label="Notifications"
+          onClick={() => openPanel('notifications', tr('ui.notifications'))}
+          aria-label={tr('ui.notifications')}
         >
           <Bell size={19} />
         </Button>
@@ -167,8 +171,8 @@ export function AppTopbar() {
               variant="ghost"
               size="icon"
               className="account-trigger"
-              aria-label="Account menu"
-              title={context?.user.name ?? 'Account unavailable'}
+              aria-label={tr('ui.account_menu')}
+              title={context?.user.name ?? tr('ui.account_unavailable')}
             >
               <span className="avatar" aria-hidden="true">
                 {initials || <UserRound size={17} />}
@@ -176,21 +180,24 @@ export function AppTopbar() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuLabel>{context?.user.name ?? 'Account unavailable'}</DropdownMenuLabel>
+            <DropdownMenuLabel>
+              {context?.user.name ?? tr('ui.account_unavailable')}
+            </DropdownMenuLabel>
             <DropdownMenuItem onSelect={() => openPanel('account')}>
               <UserRound size={16} />
-              Account details
+              {tr('ui.account_details')}
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={shell.toggleTheme}>
-              {shell.theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}Use{' '}
-              {shell.theme === 'dark' ? 'light' : 'dark'} theme
+              {shell.theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+              {tr('ui.use')} {shell.theme === 'dark' ? tr('ui.light') : tr('ui.dark')}{' '}
+              {tr('ui.theme')}
             </DropdownMenuItem>
             {context?.mode === 'hosted' && (
               <>
                 <DropdownMenuSeparator className="menu-separator" />
                 <DropdownMenuItem onSelect={() => openPanel('account')}>
                   <LogOut size={16} />
-                  Sign out…
+                  {tr('ui.sign_out_134')}
                 </DropdownMenuItem>
               </>
             )}
@@ -209,47 +216,52 @@ export function AppTopbar() {
             returnFocus.current?.focus()
           }}
         >
-          <DialogTitle>{panel === 'notifications' ? 'Notifications' : 'Your account'}</DialogTitle>
+          <DialogTitle>
+            {panel === 'notifications' ? tr('ui.notifications') : tr('ui.your_account')}
+          </DialogTitle>
           <DialogDescription>
             {panel === 'notifications'
-              ? 'Notifications for your workspace.'
-              : 'Your identity is managed by ARYN.'}
+              ? tr('ui.notifications_for_your_workspace')
+              : tr('ui.your_identity_is_managed_by_aryn')}
           </DialogDescription>
           {panel === 'notifications' && (
             <DataState
               kind="unavailable"
-              title="Notifications unavailable"
-              description="The current API does not expose a notification feed or unread count."
+              title={tr('ui.notifications_unavailable')}
+              description={tr(
+                'ui.the_current_api_does_not_expose_a_notification_feed_or_unread_count',
+              )}
             />
           )}
           {panel === 'account' && (
             <>
               {context ? (
                 <dl className="detail-list">
-                  <dt>Name</dt>
+                  <dt>{tr('ui.name')}</dt>
                   <dd>{context.user.name}</dd>
-                  <dt>Role</dt>
+                  <dt>{tr('ui.role')}</dt>
                   <dd>{context.user.role}</dd>
-                  <dt>Organization</dt>
+                  <dt>{tr('ui.organization')}</dt>
                   <dd>{context.organization.name}</dd>
-                  <dt>Authentication</dt>
+                  <dt>{tr('ui.authentication')}</dt>
                   <dd>
                     {context.mode === 'hosted'
-                      ? 'Server session · OIDC'
+                      ? tr('ui.server_session_oidc')
                       : context.mode === 'development'
-                        ? 'Local development session'
-                        : 'Isolated test session'}
+                        ? tr('ui.local_development_session')
+                        : tr('ui.isolated_test_session')}
                   </dd>
                 </dl>
               ) : (
                 <DataState
                   kind="unavailable"
-                  description="Account details require an authenticated workspace."
+                  description={tr('ui.account_details_require_an_authenticated_workspace')}
                 />
               )}
               {context?.mode === 'hosted' && (
                 <Button variant="secondary" onClick={() => void signOut()} disabled={loggingOut}>
-                  {loggingOut && <LoaderCircle size={16} className="animate-spin" />}Sign out
+                  {loggingOut && <LoaderCircle size={16} className="animate-spin" />}
+                  {tr('ui.sign_out')}
                 </Button>
               )}
               {logoutError && <QueryError error={logoutError} retry={() => void signOut()} />}
