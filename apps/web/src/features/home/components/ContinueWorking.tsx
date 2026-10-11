@@ -8,6 +8,8 @@ export type RecentConversation = {
   title: string
   model: string
   updated_at: string | number
+  projectId?: string
+  projectName?: string
 }
 export function ContinueWorking({
   agents,
@@ -47,13 +49,13 @@ export function ContinueWorking({
         {items.map((entry) =>
           entry.kind === 'resource' ? (
             <HomeResourceRow
-              key={entry.item.kind + entry.item.id}
+              key={`${entry.item.projectId ?? ''}:${entry.item.kind}:${entry.item.id}`}
               item={entry.item}
               onOpen={onOpen}
             />
           ) : (
             <Link
-              key={entry.item.id}
+              key={`${entry.item.projectId ?? ''}:conv:${entry.item.id}`}
               to="/chat/$conversationId"
               params={{ conversationId: entry.item.id }}
               className="home-resource-row"
@@ -67,7 +69,12 @@ export function ContinueWorking({
                     ? entry.item.title.slice(0, 48) + '…'
                     : entry.item.title}
                 </span>
-                <span className="home-row-description">{t('common.conversation')}</span>
+                <span className="home-row-description">
+                  {t('common.conversation')}
+                  {entry.item.projectName && (
+                    <span className="home-row-project"> · {entry.item.projectName}</span>
+                  )}
+                </span>
               </span>
               <ArrowUpRight size={14} aria-hidden="true" />
             </Link>

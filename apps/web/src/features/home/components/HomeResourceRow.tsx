@@ -57,6 +57,7 @@ export function HomeResourceRow({
                     ? 'Relay'
                     : t('common.run'),
             })}
+          {item.projectName && <span className="home-row-project"> · {item.projectName}</span>}
           {item.createdAt ? ` · ${formatDate(item.createdAt)}` : ''}
         </span>
       </span>

@@ -12,6 +12,7 @@ import {
   type Scope,
   type CollectionOptions,
 } from '../lib/api'
+import { homeSummarySchema } from '@/features/home/lib/home-api'
 
 export function useProjectScope(project: string): Scope {
   const { context } = useWorkspace()
@@ -62,5 +63,22 @@ export function useProjectCollection(
     queryFn: ({ signal, pageParam }) =>
       collectionRequest(scope, collection, signal, { ...options, cursor: pageParam }),
     getNextPageParam: (page) => page.next_cursor,
+  })
+}
+
+export function useProjectSummary(scope: Scope) {
+  return useQuery({
+    queryKey: [...projectKey(scope), 'summary'],
+    enabled: !!scope.organization && !!scope.project,
+    retry: false,
+    queryFn: async ({ signal }) => {
+      const data = await request(
+        `/api/projects/${encodeURIComponent(scope.project)}/summary`,
+        homeSummarySchema,
+        { signal },
+      )
+      assertProjectScope(data, scope)
+      return data
+    },
   })
 }

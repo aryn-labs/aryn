@@ -289,3 +289,135 @@ class WorkspaceReads:
                     "tokens": budget.cumulative_tokens if budget else None, "cost_usd": None,
                     "cost_source": "unavailable", "entitlement": "unknown", "source": "Core usage ledger; no provider hard cap or billing claim"})
             return sanitize(result.model_dump(mode="json"), credentials=getattr(self.db, "protected_credentials", ()))
+
+    def home_summary(self, context):
+        with self.db.session() as session:
+            member = session.query(MembershipModel).filter_by(
+                organization_id=context.organization_id,
+                user_id=context.actor.actor_id,
+                status="active"
+            ).first()
+            if not member:
+                raise HTTPException(403, "Workspace access denied.")
+
+            project_query = self.query(session, context, "projects").order_by(ProjectModel.created_at.desc())
+            projects = project_query.all()
+            project_ids = [p.id for p in projects]
+            project_map = {p.id: p.name for p in projects}
+
+            if not project_ids:
+                return sanitize({
+                    "organization_id": context.organization_id,
+                    "projects": [],
+                    "attention": [],
+                    "latest_runs": [],
+                    "latest_audits": [],
+                    "review_candidates": [],
+                    "refreshed_at": timestamp(dt.datetime.now(dt.timezone.utc)),
+                    "total_accessible_projects": 0,
+                }, credentials=getattr(self.db, "protected_credentials", ()))
+
+            attention = []
+            for status, desc, priority in [
+                ("outcome_unknown", "Hasil tidak pasti; reservation dipertahankan, tinjau sebelum mengulang", 95),
+                ("failed", "Run gagal tersimpan; telusuri error dan evidence", 75)
+            ]:
+                problem_runs = session.query(RunStateModel).filter(
+                    RunStateModel.organization_id == context.organization_id,
+                    RunStateModel.project_id.in_(project_ids),
+                    RunStateModel.status == status,
+                    RunStateModel.execution_mode != "bench"
+                ).order_by(RunStateModel.created_at.desc(), RunStateModel.id.desc()).limit(3).all()
+                for pr in problem_runs:
+                    attention.append({
+                        "id": pr.id,
+                        "name": "Run requiring review" if pr.status == "outcome_unknown" else pr.id,
+                        "kind": "run",
+                        "status": pr.status,
+                        "reason": desc,
+                        "label": "Run review",
+                        "priority": priority,
+                        "created_at": timestamp(pr.created_at),
+                        "project_id": pr.project_id,
+                        "project_name": project_map.get(pr.project_id, ""),
+                        "route": "/runs/" + quote(pr.id, safe=""),
+                    })
+
+            reviews = session.query(AgentVersionModel).join(AgentBlueprintModel).filter(
+                AgentBlueprintModel.organization_id == context.organization_id,
+                AgentBlueprintModel.project_id.in_(project_ids),
+                AgentVersionModel.status == "draft",
+                AgentVersionModel.evaluation_id.is_not(None)
+            ).order_by(AgentVersionModel.created_at.desc(), AgentVersionModel.id.desc()).limit(3).all()
+            for rev in reviews:
+                bp = session.query(AgentBlueprintModel).filter_by(id=rev.blueprint_id).first()
+                p_id = bp.project_id if bp else ""
+                target_ctx = self.permissions.identity_binder.create_trusted_context(
+                    context.actor.actor_id, context.organization_id, p_id, auth_session_id=context.auth_session_id
+                )
+                if self.permissions.evaluate("version:approve", target_ctx, context.organization_id, p_id, session=session).allowed:
+                    attention.append({
+                        "id": rev.id,
+                        "name": f"Version {rev.version_number}",
+                        "kind": "version",
+                        "status": "draft",
+                        "reason": "Verified Bench candidate is ready for human review.",
+                        "label": "Approval review",
+                        "priority": 60,
+                        "created_at": timestamp(rev.created_at),
+                        "project_id": p_id,
+                        "project_name": project_map.get(p_id, ""),
+                        "route": "/approvals",
+                    })
+
+            attention.sort(key=lambda x: (-x["priority"], x["created_at"]))
+            attention = attention[:3]
+
+            latest_runs_records = session.query(RunStateModel).filter(
+                RunStateModel.organization_id == context.organization_id,
+                RunStateModel.project_id.in_(project_ids),
+                RunStateModel.execution_mode != "bench"
+            ).options(defer(RunStateModel.prompt), defer(RunStateModel.output)).order_by(
+                RunStateModel.created_at.desc(), RunStateModel.id.desc()
+            ).limit(4).all()
+            latest_runs = []
+            for r in latest_runs_records:
+                target_ctx = self.permissions.identity_binder.create_trusted_context(
+                    context.actor.actor_id, context.organization_id, r.project_id, auth_session_id=context.auth_session_id
+                )
+                item = self.item(session, target_ctx, "runs", r)
+                item_dict = item.model_dump(mode="json")
+                item_dict["project_name"] = project_map.get(r.project_id, "")
+                latest_runs.append(item_dict)
+
+            latest_audits_records = session.query(AuditEventModel).filter(
+                AuditEventModel.organization_id == context.organization_id,
+                AuditEventModel.project_id.in_(project_ids)
+            ).order_by(AuditEventModel.occurred_at.desc(), AuditEventModel.id.desc()).limit(4).all()
+            latest_audits = []
+            for a in latest_audits_records:
+                target_ctx = self.permissions.identity_binder.create_trusted_context(
+                    context.actor.actor_id, context.organization_id, a.project_id, auth_session_id=context.auth_session_id
+                )
+                item = self.item(session, target_ctx, "audits", a)
+                item_dict = item.model_dump(mode="json")
+                item_dict["project_name"] = project_map.get(a.project_id, "")
+                latest_audits.append(item_dict)
+
+            activity = sorted(
+                latest_runs + latest_audits,
+                key=lambda x: x.get("created_at") or "",
+                reverse=True
+            )[:4]
+
+            result = {
+                "organization_id": context.organization_id,
+                "projects": [{"id": p.id, "name": p.name} for p in projects],
+                "attention": attention,
+                "activity": activity,
+                "latest_runs": latest_runs,
+                "latest_audits": latest_audits,
+                "total_accessible_projects": len(projects),
+                "refreshed_at": timestamp(dt.datetime.now(dt.timezone.utc)),
+            }
+            return sanitize(result, credentials=getattr(self.db, "protected_credentials", ()))

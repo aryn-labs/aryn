@@ -118,11 +118,10 @@ export function AppTopbar() {
           <DropdownMenuLabel className="workspace-menu-organization">
             <Building2 size={19} aria-hidden="true" />
             <span>
-              <small>{tr('ui.organization')}</small>
+              <small>{tr('ui.workspace')}</small>
               <strong>{context?.organization.name}</strong>
             </span>
           </DropdownMenuLabel>
-          <p className="menu-note">{tr('ui.organization_switching_unavailable')}</p>
           <DropdownMenuSeparator className="menu-separator" />
           <DropdownMenuLabel>{tr('ui.projects')}</DropdownMenuLabel>
           {context?.projects.length ? (

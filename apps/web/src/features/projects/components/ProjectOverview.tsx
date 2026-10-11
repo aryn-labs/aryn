@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronRight, ShieldCheck } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { DataState } from '@/components/feedback/DataState'
-import { useHomeOverview } from '@/features/home/hooks/useHomeOverview'
 import { HomeDetailsDrawer } from '@/features/home/components/HomeDetailsDrawer'
-import type { HomeResource } from '@/features/home/lib/home-state'
+import { attentionItems, type HomeResource } from '@/features/home/lib/home-state'
+import { getHomeInventory, getHomeLifecycle, workflowRunSchema } from '@/features/home/lib/home-api'
 import { statusLabel } from '@/features/home/lib/home-labels'
-import { useProjectCollection } from '../hooks/useProjects'
+import { useProject, useProjectCollection, useProjectSummary } from '../hooks/useProjects'
 import type { ProjectResource, Scope } from '../lib/api'
 import { ProjectsSkeleton } from '../ProjectsPage'
 import { ResourceRows } from './ResourceRows'
@@ -23,18 +24,47 @@ export function ProjectOverview({
   const work = useProjectCollection(scope, 'work', { limit: 4, active_only: true })
   const team = useProjectCollection(scope, 'team', { limit: 3, kind: 'assignment' })
   const results = useProjectCollection(scope, 'results', { limit: 3 })
-  const home = useHomeOverview()
+  const summary = useProjectSummary(scope)
+  const project = useProject(scope.project)
   const [attentionDetail, setAttentionDetail] = useState<HomeResource | null>(null)
-  const queries = [work, team, results]
-  // The current Relay contract contains disposable demonstration incidents only.
-  const problems =
-    home.data?.attention
-      .filter((item) => item.kind !== 'incident')
-      .filter(
-        (item) =>
-          item.kind !== 'run' ||
-          home.data?.summary.latest_runs.find((run) => run.id === item.id)?.verified === true,
-      ) ?? []
+
+  const homeScope = { organizationId: scope.organization, projectId: scope.project }
+  const canReview = !!summary.data?.permissions['version:approve']
+  const reviewQueue = useQuery({
+    queryKey: ['project', scope.organization, scope.project, 'reviews'],
+    enabled: !!scope.project && canReview,
+    queryFn: ({ signal }) =>
+      getHomeInventory(homeScope, 'review-queue?limit=6', workflowRunSchema, signal),
+  })
+  const checkBench =
+    (summary.data?.metrics.blueprints?.value ?? 0) > 0 &&
+    ['version:create', 'version:approve', 'version:publish'].some(
+      (permission) => summary.data?.permissions[permission] === true,
+    )
+  const lifecycle = useQuery({
+    queryKey: ['project', scope.organization, scope.project, 'bench'],
+    enabled: !!scope.project && checkBench,
+    queryFn: ({ signal }) => getHomeLifecycle(homeScope, signal),
+  })
+
+  const queries = [
+    work,
+    team,
+    results,
+    summary,
+    ...(canReview ? [reviewQueue] : []),
+    ...(checkBench ? [lifecycle] : []),
+  ]
+  const attention = summary.data
+    ? attentionItems(summary.data, [], reviewQueue.data ?? [], lifecycle.data, project.data?.name)
+    : []
+  const problems = attention
+    .filter((item) => item.kind !== 'incident')
+    .filter(
+      (item) =>
+        item.kind !== 'run' ||
+        summary.data?.latest_runs.find((run) => run.id === item.id)?.verified === true,
+    )
   const busy =
     work.data?.pages
       .flatMap((page) => page.items)
@@ -46,11 +76,13 @@ export function ProjectOverview({
     []
   const outputs = results.data?.pages.flatMap((page) => page.items) ?? []
   const empty = !busy.length && !agents.length && !outputs.length && !problems.length
-  if (queries.some((query) => query.isPending) || home.loading) return <ProjectsSkeleton />
+  if (queries.some((query) => query.isPending)) return <ProjectsSkeleton />
   return (
     <div className="project-overview">
       <h2 className="sr-only">{t('projects.overview')}</h2>
-      {home.error && <ProjectQueryError error={home.error} retry={home.retry} />}
+      {summary.error && (
+        <ProjectQueryError error={summary.error} retry={() => void summary.refetch()} />
+      )}
       {problems.length > 0 && (
         <section>
           <h2>{t('projects.decisions')}</h2>
@@ -108,16 +140,13 @@ export function ProjectOverview({
         .map((query, index) => (
           <ProjectQueryError key={index} error={query.error!} retry={() => void query.refetch()} />
         ))}
-      {empty && !home.error && !home.services.length && !queries.some((query) => query.error) && (
+      {empty && !summary.error && !queries.some((query) => query.error) && (
         <DataState title={t('projects.startTitle')} description={t('projects.startDescription')} />
-      )}
-      {home.services.length > 0 && (
-        <p className="project-service-note">{t('projects.errorUnavailable')}</p>
       )}
       {attentionDetail && (
         <HomeDetailsDrawer
           scope={{ organizationId: scope.organization, projectId: scope.project }}
-          projectName={home.workspace.project?.name ?? ''}
+          projectName={project.data?.name ?? ''}
           item={attentionDetail}
           onClose={() => setAttentionDetail(null)}
         />

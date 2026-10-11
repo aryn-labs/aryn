@@ -26,12 +26,18 @@ export type HomeResource = {
   createdAt?: string
   revision?: number
   relatedId?: string
+  projectId?: string
+  projectName?: string
 }
 export type AttentionItem = HomeResource & { reason: string; priority: number; label: string }
 export function canCreate(permissions: Record<string, boolean>, kind: CreationKind) {
   return permissions[kind === 'agent' ? 'blueprint:create' : 'version:create'] === true
 }
-export function resourceItem(item: ResourceItem, kind: HomeResource['kind']): HomeResource {
+export function resourceItem(
+  item: ResourceItem,
+  kind: HomeResource['kind'],
+  projectName?: string,
+): HomeResource {
   return {
     id: item.id,
     name: kind === 'run' && item.name === item.id ? labelText('Run activity') : item.name,
@@ -39,11 +45,13 @@ export function resourceItem(item: ResourceItem, kind: HomeResource['kind']): Ho
     status: item.status,
     description: item.description,
     createdAt: item.created_at,
+    projectId: item.project_id,
+    projectName,
   }
 }
-export function workActivity(summary: HomeSummary) {
+export function workActivity(summary: HomeSummary, projectName?: string) {
   return [
-    ...summary.latest_runs.map((item) => resourceItem(item, 'run')),
+    ...summary.latest_runs.map((item) => resourceItem(item, 'run', projectName)),
     ...summary.latest_audits
       .filter(
         (item) =>
@@ -51,7 +59,7 @@ export function workActivity(summary: HomeSummary) {
             item.name,
           ) || item.name === 'chat.turn.accepted',
       )
-      .map((item) => resourceItem(item, 'audit')),
+      .map((item) => resourceItem(item, 'audit', projectName)),
   ]
     .sort((a, b) => Date.parse(b.createdAt ?? '') - Date.parse(a.createdAt ?? ''))
     .slice(0, 4)
@@ -61,6 +69,7 @@ export function attentionItems(
   incidents: HomeIncident[],
   reviews: HomeWorkflowRun[],
   lifecycle?: HomeLifecycle,
+  projectName?: string,
 ): AttentionItem[] {
   const items: AttentionItem[] = []
   for (const problem of summary.attention) {
@@ -76,16 +85,20 @@ export function attentionItems(
     const run = summary.latest_runs.find((item) => item.id === id && item.status === problem.code)
     items.push({
       ...(run
-        ? resourceItem(run, 'run')
+        ? resourceItem(run, 'run', projectName)
         : {
             id,
             name: labelText('Run requiring review'),
             kind: 'run' as const,
             status: problem.code,
+            projectId: summary.project_id,
+            projectName,
           }),
       reason: problem.description,
       label: 'Run review',
       priority: problem.code === 'outcome_unknown' ? 95 : 75,
+      projectId: summary.project_id,
+      projectName,
     })
   }
   for (const version of lifecycle?.versions ?? []) {
@@ -110,6 +123,8 @@ export function attentionItems(
             ? 'Bench regression'
             : 'Bench gate review',
         priority: 90,
+        projectId: summary.project_id,
+        projectName,
       })
   }
   for (const incident of incidents) {
@@ -135,6 +150,8 @@ export function attentionItems(
       relatedId: incident.target_id,
       label: 'Relay incident',
       priority: incident.severity === 'high' ? 85 : 65,
+      projectId: summary.project_id,
+      projectName,
     })
   }
   if (summary.permissions['version:approve']) {
@@ -151,7 +168,7 @@ export function attentionItems(
       )
         continue
       items.push({
-        ...resourceItem(version, 'version'),
+        ...resourceItem(version, 'version', projectName),
         relatedId:
           typeof version.references.blueprint_id === 'string'
             ? version.references.blueprint_id
@@ -160,6 +177,8 @@ export function attentionItems(
           'Verified Bench candidate is ready for human review. Inspect the exact version before any decision.',
         label: 'Approval review',
         priority: 60,
+        projectId: summary.project_id,
+        projectName,
       })
     }
     for (const review of reviews.filter((item) => item.status === 'waiting_review'))
@@ -172,6 +191,8 @@ export function attentionItems(
         reason: 'The workflow is waiting for a human decision on its output.',
         label: 'Output review',
         priority: 60,
+        projectId: summary.project_id,
+        projectName,
       })
   }
   return items

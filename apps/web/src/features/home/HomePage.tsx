@@ -18,15 +18,16 @@ import { GettingStarted } from './components/GettingStarted'
 import { GuidedCreation } from './components/GuidedCreation'
 import { HomeDetailsDrawer } from './components/HomeDetailsDrawer'
 import { HomeServiceStatus } from './components/HomeServiceStatus'
+import { ProjectDialog } from '@/features/projects/components/ProjectDialog'
 import './home.css'
 
 export function HomePage() {
   useTranslation()
 
-  const { context, project } = useWorkspace()
+  const { context } = useWorkspace()
   return (
     <StandardLayout title={tr('ui.home')}>
-      <HomeContent key={`${context?.user.id}:${context?.organization.id}:${project?.id}`} />
+      <HomeContent key={`${context?.user.id}:${context?.organization.id}`} />
     </StandardLayout>
   )
 }
@@ -40,6 +41,7 @@ function HomeContent() {
     goal: string
     scratch: boolean
   } | null>(null)
+  const [creatingProject, setCreatingProject] = useState(false)
   const [selection, setSelection] = useState<HomeResource | null>(null)
   const permissions = data?.summary.permissions ?? {}
   const canAgent = canCreate(permissions, 'agent'),
@@ -79,11 +81,23 @@ function HomeContent() {
       ) : overview.loading ? (
         <HomeSkeleton />
       ) : !workspace.project ? (
-        <DataState
-          kind="empty"
-          title={tr('ui.no_accessible_projects')}
-          description={tr('ui.no_project_is_available_to_this_account')}
-        />
+        workspace.context?.user.role === 'admin' ? (
+          <div className="home-zero-projects">
+            <DataState
+              kind="empty"
+              title={tr('projects.emptyTitle')}
+              description={tr('projects.emptyDescription')}
+            />
+            <Button onClick={() => setCreatingProject(true)}>{tr('projects.create')}</Button>
+            {creatingProject && <ProjectDialog onClose={() => setCreatingProject(false)} />}
+          </div>
+        ) : (
+          <DataState
+            kind="empty"
+            title={tr('ui.no_accessible_projects')}
+            description={tr('ui.no_project_is_available_to_this_account')}
+          />
+        )
       ) : (
         data && (
           <>
@@ -109,7 +123,9 @@ function HomeContent() {
                 <>
                   <NeedsAttention items={data.attention} onOpen={setSelection} />
                   <ContinueWorking
-                    agents={data.agents.map((item) => resourceItem(item, 'agent'))}
+                    agents={data.agents.map((item) =>
+                      resourceItem(item, 'agent', workspace.project?.name),
+                    )}
                     workflows={data.workflows.map((item) => ({
                       id: item.id,
                       name: item.name,
@@ -144,11 +160,14 @@ function HomeContent() {
                 onClose={() => setCreation(null)}
               />
             )}
-            {selection && workspace.project && (
+            {selection && (
               <HomeDetailsDrawer
                 item={selection}
-                scope={scope}
-                projectName={workspace.project.name}
+                scope={{
+                  organizationId: scope.organizationId,
+                  projectId: selection.projectId ?? scope.projectId,
+                }}
+                projectName={selection.projectName ?? workspace.project?.name ?? ''}
                 onClose={() => setSelection(null)}
               />
             )}

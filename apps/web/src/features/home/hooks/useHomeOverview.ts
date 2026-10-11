@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueries } from '@tanstack/react-query'
 import { useWorkspace } from '@/app/providers/WorkspaceProvider'
 import {
   getHomeAgents,
@@ -9,7 +9,13 @@ import {
   workflowRunSchema,
   workflowSchema,
 } from '../lib/home-api'
-import { attentionItems, workActivity, workspaceCondition } from '../lib/home-state'
+import {
+  attentionItems,
+  workActivity,
+  workspaceCondition,
+  type AttentionItem,
+  type HomeResource,
+} from '../lib/home-state'
 import { chatKey, chatPath, historySchema, scoped } from '@/features/chat/lib/chat-api'
 import { request } from '@/lib/api/client'
 
@@ -76,6 +82,19 @@ export function useHomeOverview() {
     enabled: checkBench,
     queryFn: ({ signal }) => getHomeLifecycle(scope, signal),
   })
+
+  const accessibleProjects = workspace.context?.projects ?? []
+  const otherProjects = accessibleProjects.filter((p) => p.id !== scope.projectId)
+  const otherSummaries = useQueries({
+    queries: otherProjects.map((p) => ({
+      queryKey: ['summary', workspace.context?.user.id, scope.organizationId, p.id, 'home'],
+      queryFn: ({ signal }: { signal: AbortSignal }) =>
+        getHomeSummary({ organizationId: scope.organizationId, projectId: p.id }, signal),
+      enabled: !!workspace.context && !workspace.signedOut,
+      retry: false,
+    })),
+  })
+
   const queries = [
     summary,
     agents,
@@ -87,6 +106,62 @@ export function useHomeOverview() {
   ]
   const error = workspace.error ?? [summary, agents].find((query) => query.isError)?.error ?? null
   const loading = workspace.loading || (enabled && queries.some((query) => query.isPending))
+
+  const targetProjectName =
+    workspace.project?.name ?? accessibleProjects.find((p) => p.id === scope.projectId)?.name
+
+  const otherAttention: AttentionItem[] = []
+  const otherActivity: HomeResource[] = []
+  otherProjects.forEach((p, index) => {
+    const sData = otherSummaries[index]?.data
+    if (sData) {
+      otherAttention.push(...attentionItems(sData, [], [], undefined, p.name))
+      otherActivity.push(...workActivity(sData, p.name))
+    }
+  })
+
+  const targetAttention = summary.data
+    ? attentionItems(
+        summary.data,
+        incidents.isError ? [] : (incidents.data ?? []),
+        reviewQueue.isError ? [] : (reviewQueue.data ?? []),
+        lifecycle.isError ? undefined : lifecycle.data,
+        targetProjectName,
+      )
+    : []
+  const targetActivity = summary.data ? workActivity(summary.data, targetProjectName) : []
+
+  const seenAttn = new Set<string>()
+  const combinedAttention = [...targetAttention, ...otherAttention]
+    .filter((item) => {
+      if (seenAttn.has(item.id)) return false
+      seenAttn.add(item.id)
+      return true
+    })
+    .sort(
+      (a, b) =>
+        b.priority - a.priority || Date.parse(b.createdAt ?? '') - Date.parse(a.createdAt ?? ''),
+    )
+    .slice(0, 3)
+
+  const seenAct = new Set<string>()
+  const combinedActivity = [...targetActivity, ...otherActivity]
+    .filter((item) => {
+      if (seenAct.has(item.id)) return false
+      seenAct.add(item.id)
+      return true
+    })
+    .sort((a, b) => Date.parse(b.createdAt ?? '') - Date.parse(a.createdAt ?? ''))
+    .slice(0, 4)
+
+  const conversationsList = (conversations.isError ? [] : (conversations.data?.items ?? [])).map(
+    (item) => ({
+      ...item,
+      projectId: scope.projectId,
+      projectName: targetProjectName,
+    }),
+  )
+
   const data =
     !error && !loading && enabled && summary.data && agents.data
       ? {
@@ -94,29 +169,27 @@ export function useHomeOverview() {
           agents: agents.data,
           workflows: workflows.isError ? [] : (workflows.data ?? []),
           incidents: incidents.isError ? [] : (incidents.data ?? []),
-          attention: attentionItems(
-            summary.data,
-            incidents.isError ? [] : (incidents.data ?? []),
-            reviewQueue.isError ? [] : (reviewQueue.data ?? []),
-            lifecycle.isError ? undefined : lifecycle.data,
-          ),
-          activity: workActivity(summary.data),
-          conversations: conversations.isError ? [] : (conversations.data?.items ?? []),
+          attention: combinedAttention,
+          activity: combinedActivity,
+          conversations: conversationsList,
         }
       : undefined
-  const measuredCondition = data
-    ? data.attention.length
-      ? 'issues'
-      : data.conversations.length
-        ? 'active'
-        : workspaceCondition(
-            data.summary,
-            data.agents,
-            data.workflows,
-            data.incidents,
-            data.attention,
-          )
+
+  const targetCondition = data
+    ? workspaceCondition(data.summary, data.agents, data.workflows, data.incidents, targetAttention)
     : undefined
+
+  const hasCrossWork = combinedAttention.length > 0 || combinedActivity.length > 0
+  const measuredCondition = data
+    ? combinedAttention.length
+      ? 'issues'
+      : conversationsList.length ||
+          (targetCondition !== 'new' && targetCondition !== 'unavailable') ||
+          hasCrossWork
+        ? 'active'
+        : targetCondition
+    : undefined
+
   const incomplete = queries.some((query) => query.isError)
   const condition = measuredCondition === 'new' && incomplete ? 'unavailable' : measuredCondition
   const services = [

@@ -215,7 +215,9 @@ describe('Studio shell', () => {
     const trigger = screen.getByRole('button', { name: 'Switch workspace' })
     expect(trigger).toHaveAccessibleDescription(/Test Studio.*First Project/)
     await user.click(trigger)
-    expect(screen.getByText('Organization switching unavailable.')).toBeVisible()
+    const menu = screen.getByRole('menu')
+    expect(within(menu).getByText('Workspace')).toBeVisible()
+    expect(within(menu).getByText('Projects')).toBeVisible()
     expect(screen.getByRole('menuitemradio', { name: 'First Project' })).toHaveAttribute(
       'aria-checked',
       'true',

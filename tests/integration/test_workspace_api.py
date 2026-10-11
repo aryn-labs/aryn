@@ -164,3 +164,40 @@ def test_summary_verification_uses_actual_evidence_and_captured_claim(studio):
     detail = client.get(PREFIX + f"/resources/runs/{run_id}").json()
     assert "result" not in detail["references"]
     assert detail["references"]["total_tokens"] is None
+
+
+def test_workspace_home_cross_project_summary(studio):
+    client, db, _, app = studio
+    res = client.get("/api/workspace/home")
+    assert res.status_code == 200, res.text
+    data = res.json()
+    assert data["organization_id"] == DEV_ORG
+    assert data["total_accessible_projects"] >= 1
+    assert any(p["id"] == DEV_PROJECT for p in data["projects"])
+
+    other_project(db, app)
+    home_after = client.get("/api/workspace/home").json()
+    assert any(p["id"] == "other-project" for p in home_after["projects"])
+    assert home_after["total_accessible_projects"] >= 2
+
+    with db.session(write=True) as session:
+        failed_run = RunStateModel(
+            id="run-failed-other",
+            organization_id=DEV_ORG,
+            project_id="other-project",
+            prompt="Test failed prompt",
+            output="Error in run",
+            model="test/model",
+            provider="test",
+            status="failed",
+            execution_mode="workflow",
+            created_at=dt.datetime.now(dt.timezone.utc),
+            updated_at=dt.datetime.now(dt.timezone.utc),
+        )
+        session.add(failed_run)
+
+    home_with_run = client.get("/api/workspace/home").json()
+    assert any(item["id"] == "run-failed-other" and item["project_id"] == "other-project" for item in home_with_run["attention"])
+
+    dev_summary = client.get(PREFIX + "/summary").json()
+    assert not any(item["id"] == "run-failed-other" for item in dev_summary["latest_runs"])

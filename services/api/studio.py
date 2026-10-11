@@ -718,6 +718,10 @@ def create_app(
             "gateway": {"name": "9Router", "connected": discovery.connected, "discovery_valid": discovery.discovery_valid,
                 "reason": discovery.reason, "runtime_binding_verified": binding}, "runtime": runtime}
 
+    @app.get("/api/workspace/home")
+    async def workspace_home():
+        return workspace_reads.home_summary(context(""))
+
     @app.get("/api/projects/{project_id}/summary", response_model=WorkspaceSummary)
     async def summary(project_id: str):
         return workspace_reads.summary(context(project_id))

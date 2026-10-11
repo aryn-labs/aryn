@@ -23,7 +23,7 @@ export function RecentActivity({
           const name = item.kind === 'audit' ? activityLabel(item.name) : item.name
           return (
             <button
-              key={`${item.kind}:${item.id}`}
+              key={`${item.projectId ?? ''}:${item.kind}:${item.id}`}
               className="home-activity-row"
               aria-label={t('common.inspect', { name })}
               onClick={() => onOpen(item)}
@@ -33,6 +33,9 @@ export function RecentActivity({
                 <span className="home-row-name">{name}</span>
                 <span className="home-row-description">
                   {t(item.kind === 'run' ? 'common.run' : 'common.activity')}
+                  {item.projectName && (
+                    <span className="home-row-project"> · {item.projectName}</span>
+                  )}
                   {item.status ? ` · ${statusLabel(item.status)}` : ''}
                 </span>
               </span>

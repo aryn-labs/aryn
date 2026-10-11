@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useState, useEffect, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
@@ -16,6 +16,9 @@ export function HomeAssistant({ compact, children }: { compact: boolean; childre
   const send = useSendTurn(scope)
   const navigate = useNavigate()
   const [input, setInput] = useState('')
+  useEffect(() => {
+    setInput('')
+  }, [scope.project])
   const [selection, setSelection] = useState('')
   const available =
     capability.data?.models.filter((item) => item.available || item.verifiable) ?? []

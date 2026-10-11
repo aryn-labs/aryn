@@ -100,6 +100,7 @@ export const uiIds: Record<string, string> = {
   Open: 'open',
   'Open navigation': 'open_navigation',
   Organization: 'organization',
+  'Ruang Kerja': 'workspace',
   'Organization switching unavailable.': 'organization_switching_unavailable',
   'Overview availability': 'overview_availability',
   'Page not found': 'page_not_found',

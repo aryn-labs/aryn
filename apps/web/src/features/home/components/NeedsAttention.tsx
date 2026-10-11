@@ -17,7 +17,11 @@ export function NeedsAttention({
       </div>
       <div className="home-panel">
         {items.slice(0, 3).map((item) => (
-          <HomeResourceRow key={item.kind + item.id} item={item} onOpen={onOpen} />
+          <HomeResourceRow
+            key={`${item.projectId ?? ''}:${item.kind}:${item.id}`}
+            item={item}
+            onOpen={onOpen}
+          />
         ))}
       </div>
     </section>

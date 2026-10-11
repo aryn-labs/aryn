@@ -305,6 +305,70 @@ describe('Home overview interactions', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(screen.queryByDisplayValue('Private idea')).toBeNull()
   })
+  it('shows work from other permitted projects on Home when active project is empty, while Project Workspace stays empty', async () => {
+    const fetchMock = mockHome('new')
+    const original = fetchMock.getMockImplementation()!
+    fetchMock.mockImplementation((url, options) => {
+      if (url.includes('/project-one/summary') || url.includes('/project-one/resources/')) {
+        const data = homeFixture('active', 'project-one', true)
+        if (url.endsWith('/summary')) return Promise.resolve(Response.json(data.summary))
+        if (url.includes('resources/blueprints?'))
+          return Promise.resolve(
+            Response.json({
+              organization_id: 'org-test',
+              project_id: 'project-one',
+              resource: 'blueprints',
+              items: data.agents,
+              next_cursor: null,
+              limit: 4,
+              refreshed_at: data.summary.refreshed_at,
+            }),
+          )
+      }
+      if (url === '/api/projects/project-two') {
+        return Promise.resolve(
+          Response.json({
+            id: 'project-two',
+            organization_id: 'org-test',
+            name: 'Second Project',
+            slug: 'second-project',
+            description: 'Newly created project',
+            generation: 1,
+            created_at: '2026-10-10T10:00:00Z',
+            updated_at: '2026-10-10T10:00:00Z',
+            can_edit: true,
+          }),
+        )
+      }
+      if (url.includes('/project-resources/')) {
+        return Promise.resolve(
+          Response.json({
+            organization_id: 'org-test',
+            project_id: 'project-two',
+            items: [],
+            next_cursor: null,
+            formats: [],
+          }),
+        )
+      }
+      return original(url, options)
+    })
+
+    const { user, router } = renderHome()
+    await user.click(await screen.findByRole('button', { name: 'Switch workspace' }))
+    await user.click(screen.getByRole('menuitemradio', { name: 'Second Project' }))
+
+    await screen.findByRole('heading', { name: 'Recent Activity' })
+    expect(screen.queryByText('Start with an idea')).toBeNull()
+
+    await act(async () => {
+      await router.navigate({ to: '/projects/$projectId', params: { projectId: 'project-two' } })
+    })
+
+    await screen.findByRole('heading', { name: 'Second Project' })
+    expect(await screen.findByText('Your project is ready')).toBeVisible()
+    expect(screen.queryByRole('heading', { name: 'Recent Activity' })).toBeNull()
+  })
 })
 describe('Home collection boundaries', () => {
   it('rejects a foreign item inside an otherwise correct agent envelope', async () => {
