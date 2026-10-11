@@ -53,13 +53,16 @@ function ChatContent({ id }: { id: string }) {
     refetchInterval: (query) => (query.state.data?.status === 'processing' ? 1000 : false),
   })
   const data = conversation.data
-  const gate = useConsentGate(scope, data?.model ?? '', (message) => {
+  const [selectedModel, setSelectedModel] = useState('')
+  const currentModel = selectedModel || data?.model || ''
+  const gate = useConsentGate(scope, currentModel, (message) => {
     if (!data || send.isPending || send.uncertain) return
     send.mutate(
-      { message, model: data.model, expected_revision: data.revision, allow_remote_model: false },
+      { message, model: currentModel, expected_revision: data.revision, allow_remote_model: false },
       {
-        onSuccess: () => {
+        onSuccess: (updated) => {
           setInput('')
+          setSelectedModel(updated.model)
           requestAnimationFrame(() => document.getElementById('chat-message')?.focus())
         },
       },
@@ -107,9 +110,9 @@ function ChatContent({ id }: { id: string }) {
   const ready =
     data.can_send &&
     Boolean(capability.data?.can_send) &&
-    Boolean(gate.consent.data?.models[data.model]) &&
+    Boolean(gate.consent.data?.models[currentModel]) &&
     !gate.consent.isError &&
-    capability.data?.models.some((m) => m.id === data.model && (m.available || m.verifiable))
+    capability.data?.models.some((m) => m.id === currentModel && (m.available || m.verifiable))
   return (
     <>
       <header className="chat-header">
@@ -207,11 +210,10 @@ function ChatContent({ id }: { id: string }) {
             onContinue={gate.submit}
             controls={
               <ModelPicker
-                fixed
                 capability={capability.data}
-                model={data.model}
-                onModel={() => undefined}
-                disabled={send.isPending || send.uncertain}
+                model={currentModel}
+                onModel={setSelectedModel}
+                disabled={send.isPending || send.uncertain || data.status === 'processing'}
               />
             }
           />

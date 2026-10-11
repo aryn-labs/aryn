@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import Query
 from fastapi.responses import JSONResponse
 from modules.core.conversations import ChatError, Conversations
-from packages.contracts.chat import ChatInput, ConsentInput, PreferenceInput
+from packages.contracts.chat import ChatInput, ConsentInput, PreferenceInput, ConversationRenameInput, ConversationDeleteInput
 
 
 def register_conversations(app, coordinator, context, model_catalog, require_runtime):
@@ -46,6 +46,14 @@ def register_conversations(app, coordinator, context, model_catalog, require_run
     @app.get(prefix + "/conversations/{conversation_id}")
     def conversation(project_id: str, conversation_id: str):
         return service.read(context(project_id, "chat:read"), conversation_id)
+
+    @app.patch(prefix + "/conversations/{conversation_id}")
+    def rename(project_id: str, conversation_id: str, body: ConversationRenameInput):
+        return service.metadata.mutate(context(project_id, "chat:update"), conversation_id, body)
+
+    @app.delete(prefix + "/conversations/{conversation_id}")
+    def delete(project_id: str, conversation_id: str, body: ConversationDeleteInput):
+        return service.metadata.mutate(context(project_id, "chat:delete"), conversation_id, body, delete=True)
 
     @app.post(prefix + "/conversations", status_code=202)
     async def start(project_id: str, body: ChatInput):

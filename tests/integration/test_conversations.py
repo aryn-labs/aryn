@@ -21,8 +21,10 @@ CHAT = PREFIX + "/chat/conversations"
 
 
 def payload(**values):
-    return dict(message="Explain a simple concept", model="test/model-a",
-        idempotency_key="chat-contract-request-001", allow_remote_model=True, **values)
+    base = dict(message="Explain a simple concept", model="test/model-a",
+        idempotency_key="chat-contract-request-001", allow_remote_model=True)
+    base.update(values)
+    return base
 
 
 def complete(client, identifier):
@@ -66,6 +68,29 @@ def test_persistent_multiturn_and_idempotency(chat_studio):
     ctx = app.state.binder.create_trusted_context(DEV_ACTOR, DEV_ORG, DEV_PROJECT)
     from fastapi.encoders import jsonable_encoder
     assert jsonable_encoder(service.read(ctx, identifier)["messages"]) == final["messages"]
+
+
+def test_conversation_model_can_be_changed_between_turns(chat_studio):
+    client, db, runtime, app = chat_studio
+    policy_b = client.get(PREFIX + "/chat/provider-consent").json()["models"]["test/model-b"]
+    assert client.post(PREFIX + "/chat/provider-consent", json={"model": "test/model-b", "policy": policy_b["policy"]}).status_code == 200
+
+    first = client.post(CHAT, json=payload(model="test/model-a"))
+    assert first.status_code == 202
+    identifier = first.json()["id"]
+    res1 = complete(client, identifier)
+    assert res1["model"] == "test/model-a"
+    assert res1["messages"][1]["model"] == "test/model-a"
+
+    follow = payload(model="test/model-b", message="Explain further with second model",
+                     idempotency_key="chat-contract-request-switch", expected_revision=1)
+    response = client.post(CHAT + "/" + identifier + "/messages", json=follow)
+    assert response.status_code == 202
+    res2 = complete(client, identifier)
+    assert res2["model"] == "test/model-b"
+    assert len(res2["messages"]) == 4
+    assert res2["messages"][1]["model"] == "test/model-a"
+    assert res2["messages"][3]["model"] == "test/model-b"
 
 
 @pytest.mark.parametrize("extra", [{"system_instructions": "forged"}, {"tools": ["host"]}, {"role": "system"}, {"actor_id": "owner"}, {"message": " "}])
@@ -205,7 +230,7 @@ def test_chat_migration_is_additive_and_empty_roundtrip(tmp_path):
         command.upgrade(config, "020_core_automations")
         before = set(inspect(connection).get_table_names())
         command.upgrade(config, "head")
-        assert set(inspect(connection).get_table_names()) - before == {"chat_conversations", "chat_turns", "chat_provider_consents", "studio_preferences"}
+        assert set(inspect(connection).get_table_names()) - before == {"chat_conversations", "chat_turns", "chat_provider_consents", "studio_preferences", "chat_conversation_changes"}
         command.downgrade(config, "020_core_automations")
         assert set(inspect(connection).get_table_names()) == before
         command.upgrade(config, "head")

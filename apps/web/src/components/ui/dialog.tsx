@@ -12,8 +12,9 @@ export const DialogDescription = Primitive.Description
 export function DialogContent({
   className,
   children,
+  closeDisabled = false,
   ...props
-}: ComponentProps<typeof Primitive.Content>) {
+}: ComponentProps<typeof Primitive.Content> & { closeDisabled?: boolean }) {
   useTranslation()
 
   return (
@@ -22,6 +23,7 @@ export function DialogContent({
       <Primitive.Content className={cn('dialog-content', className)} {...props}>
         {children}
         <Primitive.Close
+          disabled={closeDisabled}
           className="button button-ghost button-icon dialog-close"
           aria-label={tr('ui.close_dialog')}
         >

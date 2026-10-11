@@ -12,7 +12,7 @@ import uuid
 
 from database.repositories.budget_repo import BudgetRepository
 from database.repositories.run_state_repo import RunStateRepository
-from database.schema import ConversationModel, ConversationTurnModel, RunStateModel, utc_now
+from database.schema import ConversationChangeModel, ConversationModel, ConversationTurnModel, RunStateModel, utc_now
 from modules.core.permissions.engine import PermissionDeniedError
 from packages.contracts.core import ActorType, AuditStatus
 from packages.contracts.runtime import RunRequest, ModelIdentityError
@@ -45,6 +45,8 @@ class Conversations:
         self.tasks = set()
         from modules.core.chat_settings import ChatSettings
         self.settings = ChatSettings(self)
+        from modules.core.conversation_metadata import ConversationMetadata
+        self.metadata = ConversationMetadata(self)
 
     def authorize(self, ctx, write=False, session=None):
         if ctx.actor.actor_type != ActorType.USER:
@@ -58,10 +60,13 @@ class Conversations:
     def scope(ctx):
         return dict(organization_id=ctx.organization_id, project_id=ctx.project_id, actor_id=ctx.actor.actor_id)
 
-    def conversation(self, session, ctx, identifier, lock=False):
+    def conversation(self, session, ctx, identifier, lock=False, include_deleted=False):
         query = session.query(ConversationModel).filter_by(id=identifier, **self.scope(ctx))
         item = (query.with_for_update() if lock else query).first()
         if item is None:
+            raise ChatError("conversation_not_found", 404)
+        item._chat_metadata = self.metadata.state(session, ctx, item)
+        if item._chat_metadata and item._chat_metadata.deleted_at and not include_deleted:
             raise ChatError("conversation_not_found", 404)
         return item
 
@@ -80,7 +85,7 @@ class Conversations:
             if not self.db.evidence_signer.verify("chat_turn", self.evidence(row), row.attestation):
                 raise ChatError("history_unavailable", 503)
             run = RunStateRepository(session).get_run(ctx, row.run_id)
-            if not run or (run.organization_id, run.project_id, run.model) != (ctx.organization_id, ctx.project_id, item.model):
+            if not run or (run.organization_id, run.project_id) != (ctx.organization_id, ctx.project_id):
                 raise ChatError("history_unavailable", 503)
             stored = self.core.stored_result(run)
             if not stored.execution_claim_verified:
@@ -101,7 +106,9 @@ class Conversations:
                         created_at=result.completed_at, model=result.actual_model))
             status = turns[-1][1].status.value if turns else "empty"
             return dict(id=item.id, organization_id=item.organization_id, project_id=item.project_id,
-                title=item.title, model=item.model, revision=item.revision,
+                title=item._chat_metadata.title if item._chat_metadata else item.title,
+                metadata_revision=item._chat_metadata.generation if item._chat_metadata else 0,
+                **self.metadata.permissions(session, ctx), model=item.model, revision=item.revision,
                 created_at=item.created_at, updated_at=item.updated_at, messages=messages,
                 status=status if status in TERMINAL else "processing", can_send=status == "completed",
                 error_code=turns[-1][1].error_code if turns else None,
@@ -111,14 +118,24 @@ class Conversations:
         with self.db.session() as session:
             self.authorize(ctx, session=session)
             query = session.query(ConversationModel).filter_by(**self.scope(ctx))
+            query = query.filter(~session.query(ConversationChangeModel.id).filter(
+                ConversationChangeModel.conversation_id == ConversationModel.id,
+                ConversationChangeModel.deleted_at.is_not(None)).exists())
             if before:
-                anchor = self.conversation(session, ctx, before)
+                # A deleted page anchor still defines a valid scoped cursor, never a readable resource.
+                anchor = self.conversation(session, ctx, before, include_deleted=True)
                 # Stable creation ordering prevents duplicates while a turn completes.
                 from sqlalchemy import or_, and_
                 query = query.filter(or_(ConversationModel.created_at < anchor.created_at,
                     and_(ConversationModel.created_at == anchor.created_at, ConversationModel.id < anchor.id)))
             rows = query.order_by(ConversationModel.created_at.desc(), ConversationModel.id.desc()).limit(31).all()
-            return dict(items=[dict(id=r.id, title=r.title, model=r.model, updated_at=r.updated_at) for r in rows[:30]],
+            items = []
+            permissions = self.metadata.permissions(session, ctx)
+            for row in rows[:30]:
+                state = self.metadata.state(session, ctx, row)
+                items.append(dict(id=row.id, title=state.title if state else row.title, model=row.model,
+                    updated_at=row.updated_at, metadata_revision=state.generation if state else 0, **permissions))
+            return dict(items=items,
                 next_cursor=rows[29].id if len(rows) > 30 else None,
                 organization_id=ctx.organization_id, project_id=ctx.project_id)
 
@@ -158,6 +175,8 @@ class Conversations:
         self.authorize(ctx, write=True)
         fingerprint = self.fingerprint(body, identifier)
         with self.db.session() as session:
+            if identifier:
+                self.conversation(session, ctx, identifier)
             existing = self.duplicate(session, ctx, body, fingerprint)
             if existing:
                 return self.read(ctx, existing)
@@ -174,7 +193,7 @@ class Conversations:
                 self.settings.require(ctx, body.model, session)
                 if identifier:
                     item = self.conversation(session, ctx, identifier)
-                    if item.model != body.model or item.revision != body.expected_revision:
+                    if item.revision != body.expected_revision:
                         raise ChatError("conversation_changed")
                     if any(result.status.value != "completed" for _, result in self.turns(session, ctx, item)):
                         raise ChatError("previous_outcome_unresolved")
@@ -221,8 +240,9 @@ class Conversations:
                 item = self.conversation(session, ctx, identifier, lock=True) if identifier else ConversationModel(
                     id="chat_" + uuid.uuid4().hex, **self.scope(ctx), model=body.model,
                     title=" ".join(body.message.split()[:5])[:48] + "…", revision=0)
-                if item.model != body.model or item.revision != body.expected_revision:
+                if item.revision != body.expected_revision:
                     raise ChatError("conversation_changed")
+                item.model = body.model
                 transcript = []
                 for turn, result in self.turns(session, ctx, item):
                     if result.status.value != "completed":

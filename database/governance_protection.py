@@ -68,7 +68,8 @@ def verify_hosted_writer(engine):
         from database.workflow_protection import TABLES, MUTABLE_TABLES
         from database.intelligence_protection import TABLES as INTELLIGENCE_TABLES, MUTABLE_TABLES as INTELLIGENCE_MUTABLE
         from database.automation_protection import TABLES as AUTOMATION_TABLES, MUTABLE_TABLES as AUTOMATION_MUTABLE
-        TABLES = TABLES + INTELLIGENCE_TABLES + AUTOMATION_TABLES
+        from database.chat_protection import TABLES as CHAT_TABLES
+        TABLES = TABLES + INTELLIGENCE_TABLES + AUTOMATION_TABLES + CHAT_TABLES
         MUTABLE_TABLES = MUTABLE_TABLES + INTELLIGENCE_MUTABLE + AUTOMATION_MUTABLE
         protected = HISTORY_TABLES + tuple(table for table in TABLES + MUTABLE_TABLES if table in inspect(connection).get_table_names())
         for table in protected:

@@ -19,7 +19,7 @@ export function HomeAssistant({ compact, children }: { compact: boolean; childre
   const [selection, setSelection] = useState('')
   const available =
     capability.data?.models.filter((item) => item.available || item.verifiable) ?? []
-  const model = selection || (available.length === 1 ? (available[0]?.id ?? '') : '')
+  const model = selection || (available.length > 0 ? (available[0]?.id ?? '') : '')
   function accepted(conversation: { id: string }) {
     void navigate({ to: '/chat/$conversationId', params: { conversationId: conversation.id } })
   }

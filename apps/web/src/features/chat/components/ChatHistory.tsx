@@ -2,13 +2,15 @@ import { formatDate } from '@/lib/utils'
 import { translate as tr } from '@/i18n'
 import { useTranslation } from 'react-i18next'
 import { useInfiniteQuery } from '@tanstack/react-query'
-import { useRef } from 'react'
-import { Link } from '@tanstack/react-router'
+import { useRef, useState } from 'react'
+import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { QueryError } from '@/components/feedback/DataState'
 import { request } from '@/lib/api/client'
 import { chatKey, chatPath, historySchema, scoped, type ChatScope } from '../lib/chat-api'
+import { ConversationMenu, type ConversationAction } from './ConversationMenu'
+import { ConversationActionDialog } from './ConversationActionDialog'
 
 export function ChatHistory({
   scope,
@@ -22,6 +24,10 @@ export function ChatHistory({
   useTranslation()
 
   const returnFocus = useRef<HTMLElement | null>(null)
+  const heading = useRef<HTMLHeadingElement>(null)
+  const [action, setAction] = useState<ConversationAction | null>(null)
+  const navigate = useNavigate()
+  const { conversationId } = useParams({ strict: false })
   const history = useInfiniteQuery({
     queryKey: [...chatKey(scope), 'history'],
     initialPageParam: '',
@@ -58,7 +64,9 @@ export function ChatHistory({
           returnFocus.current?.focus()
         }}
       >
-        <DialogTitle>{tr('ui.conversation_history')}</DialogTitle>
+        <DialogTitle ref={heading} tabIndex={-1}>
+          {tr('ui.conversation_history')}
+        </DialogTitle>
         <DialogDescription>
           {tr('ui.saved_conversations_in_this_project_for_your_account')}
         </DialogDescription>
@@ -86,6 +94,7 @@ export function ChatHistory({
                         {formatDate(new Date(item.updated_at).toISOString())} · {item.model}
                       </span>
                     </Link>
+                    <ConversationMenu item={item} onAction={setAction} />
                   </li>
                 ))}
             </ul>
@@ -101,6 +110,21 @@ export function ChatHistory({
           </>
         )}
       </DialogContent>
+      {action && (
+        <ConversationActionDialog
+          key={`${scope.user}:${scope.organization}:${scope.project}:${action.item.id}:${action.mode}`}
+          action={action}
+          scope={scope}
+          onClose={() => setAction(null)}
+          fallbackFocus={() => heading.current?.focus()}
+          onDeleted={(id) => {
+            if (id === conversationId) {
+              onClose()
+              void navigate({ to: '/' })
+            }
+          }}
+        />
+      )}
     </Dialog>
   )
 }

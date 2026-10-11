@@ -31,9 +31,14 @@ export function ModelPicker({
           <option value={model}>{model}</option>
         ) : (
           <>
-            <option value="">
-              {t(capability?.can_send ? 'composer.choose' : 'composer.noModel')}
-            </option>
+            {!model && (
+              <option value="">
+                {t(capability?.can_send ? 'composer.choose' : 'composer.noModel')}
+              </option>
+            )}
+            {model && !capability?.models.some((item) => item.id === model) && (
+              <option value={model}>{model}</option>
+            )}
             {capability?.models
               .filter((item) => item.available || item.verifiable)
               .map((item) => (

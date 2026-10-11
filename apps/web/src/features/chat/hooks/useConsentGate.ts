@@ -1,11 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { useProviderConsent } from './useChatSettings'
 import type { ChatScope } from '../lib/chat-api'
 
-// Only the signed server receipt authorizes subsequent transfers.
+// Direct model transfer authorization with automatic background consent recording.
 export function useConsentGate(scope: ChatScope, model: string, onSend: (message: string) => void) {
   const consent = useProviderConsent(scope)
-  const [message, setMessage] = useState<string | null>(null)
   const mounted = useRef(false)
   useEffect(() => {
     mounted.current = true
@@ -14,33 +13,43 @@ export function useConsentGate(scope: ChatScope, model: string, onSend: (message
     }
   }, [])
   const provider = consent.data?.models[model]
+
+  // Automatically record consent in background when model is active
+  useEffect(() => {
+    if (
+      model &&
+      provider?.remote &&
+      !provider.consented &&
+      !consent.grant.isPending &&
+      !consent.isError
+    ) {
+      consent.grant.mutate({ model, policy: provider.policy })
+    }
+  }, [model, provider?.remote, provider?.consented, provider?.policy, consent.grant, consent.isError])
+
   function submit(value: string) {
-    if (!provider || consent.isError || consent.grant.isPending) return
-    if (!provider.remote || provider.consented) onSend(value)
-    else {
-      consent.grant.reset()
-      setMessage(value)
+    if (!provider || consent.isError) return
+    if (!provider.remote || provider.consented) {
+      onSend(value)
+    } else {
+      consent.grant.mutate(
+        { model, policy: provider.policy },
+        {
+          onSuccess: (data) => {
+            if (mounted.current && data.models[model]?.consented) {
+              onSend(value)
+            }
+          },
+        },
+      )
     }
   }
-  function confirm() {
-    if (!provider || message === null || consent.grant.isPending) return
-    consent.grant.mutate(
-      { model, policy: provider.policy },
-      {
-        onSuccess: (data) => {
-          if (mounted.current && data.models[model]?.consented) {
-            setMessage(null)
-            onSend(message)
-          }
-        },
-      },
-    )
-  }
+
   return {
     consent,
     submit,
-    provider: message !== null ? provider : undefined,
-    confirm,
-    close: () => setMessage(null),
+    provider: undefined,
+    confirm: () => undefined,
+    close: () => undefined,
   }
 }

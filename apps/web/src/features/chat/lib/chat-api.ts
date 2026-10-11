@@ -27,6 +27,9 @@ export const conversationSchema = z.object({
   title: z.string(),
   model: z.string(),
   revision: z.number().int(),
+  metadata_revision: z.number().int().nonnegative().default(0),
+  can_rename: z.boolean().default(false),
+  can_delete: z.boolean().default(false),
   created_at: timestamp,
   updated_at: timestamp,
   status: z.enum(['processing', 'completed', 'failed', 'cancelled', 'outcome_unknown', 'empty']),
@@ -47,13 +50,89 @@ export const conversationSchema = z.object({
 export const historySchema = z.object({
   ...scope,
   items: z.array(
-    z.object({ id: z.string(), title: z.string(), model: z.string(), updated_at: timestamp }),
+    z.object({
+      id: z.string(),
+      title: z.string(),
+      model: z.string(),
+      updated_at: timestamp,
+      metadata_revision: z.number().int().nonnegative().default(0),
+      can_rename: z.boolean().default(false),
+      can_delete: z.boolean().default(false),
+    }),
   ),
   next_cursor: z.string().nullable(),
 })
 export type Conversation = z.infer<typeof conversationSchema>
 export type ChatCapability = z.infer<typeof capabilitySchema>
 export type ChatScope = { organization: string; project: string; user: string }
+export type HistoryItem = z.infer<typeof historySchema>['items'][number]
+export type ConversationChange = {
+  idempotency_key: string
+  expected_metadata_revision: number
+  title?: string
+}
+const metadataSchema = z.object({
+  ...scope,
+  id: z.string(),
+  title: z.string(),
+  metadata_revision: z.number().int().positive(),
+  deleted: z.boolean(),
+})
+export type ConversationMetadata = z.infer<typeof metadataSchema>
+export class MetadataUnknownError extends ApiError {
+  constructor() {
+    super(0, 'errors.metadata_unknown')
+  }
+}
+export async function changeConversation(
+  selected: ChatScope,
+  csrf: string,
+  id: string,
+  method: 'PATCH' | 'DELETE',
+  input: ConversationChange,
+  signal: AbortSignal,
+) {
+  let response: Response
+  try {
+    response = await fetch(`${chatPath(selected)}/conversations/${encodeURIComponent(id)}`, {
+      method,
+      credentials: 'same-origin',
+      signal,
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': csrf,
+      },
+      body: JSON.stringify(input),
+    })
+  } catch {
+    throw new MetadataUnknownError()
+  }
+  const body: unknown = await response.json().catch(() => null)
+  if (!response.ok) {
+    const code = body && typeof body === 'object' && 'error_code' in body ? body.error_code : ''
+    if (response.status >= 500 && code !== 'conversation_metadata_unavailable')
+      throw new MetadataUnknownError()
+    throw new ApiError(
+      response.status,
+      code === 'conversation_changed' || code === 'idempotency_conflict'
+        ? `errors.${code}`
+        : response.status === 403
+          ? 'errors.denied'
+          : response.status === 401
+            ? 'errors.session'
+            : 'errors.metadata_failed',
+    )
+  }
+  const parsed = metadataSchema.safeParse(body)
+  if (!parsed.success || parsed.data.id !== id || parsed.data.deleted !== (method === 'DELETE'))
+    throw new MetadataUnknownError()
+  try {
+    return scoped(parsed.data, selected)
+  } catch {
+    throw new MetadataUnknownError()
+  }
+}
 export type TurnInput = {
   message: string
   model: string

@@ -31,6 +31,8 @@ class PermissionEngine:
         "admin": {
             "chat:read",
             "chat:create",
+            "chat:update",
+            "chat:delete",
             "division:manage",
             "run:create",
             "run:read",
@@ -49,6 +51,8 @@ class PermissionEngine:
         "operator": {
             "chat:read",
             "chat:create",
+            "chat:update",
+            "chat:delete",
             "run:create",
             "run:read",
             "run:cancel",

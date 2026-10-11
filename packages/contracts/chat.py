@@ -1,5 +1,6 @@
 """Browser inputs never supply system instructions, roles, grants or runtime IDs."""
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+import unicodedata
 from typing import Literal
 
 
@@ -22,3 +23,22 @@ class ConsentInput(BaseModel):
 class PreferenceInput(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
     locale: Literal["id-ID", "en-US"]
+
+
+class ConversationDeleteInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+    idempotency_key: str = Field(min_length=16, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+    expected_metadata_revision: int = Field(ge=0, strict=True)
+
+
+class ConversationRenameInput(ConversationDeleteInput):
+    title: str = Field(min_length=1, max_length=120, strict=True)
+
+    @field_validator("title", mode="before")
+    @classmethod
+    def plain_title(cls, value):
+        if isinstance(value, str):
+            if any(unicodedata.category(char) in {"Cc", "Cf"} for char in value):
+                raise ValueError("Title must be a single line without control characters.")
+            return value.strip()
+        return value

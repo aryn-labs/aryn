@@ -27,7 +27,7 @@ class IsolatedTestRuntime(RuntimeAdapter):
         return GatewayDiscovery(connected=self.online, discovery_valid=self.online, reason="isolated-test",
             models=[{"model_id": m, "display_name": m, "provider": "9router", "gateway": "9Router",
                      "availability": "available", "availability_reason": "isolated-test",
-                     "availability_source": "isolated-test"} for m in ("test/model-a",)] if self.online else [])
+                     "availability_source": "isolated-test"} for m in ("test/model-a", "test/model-b")] if self.online else [])
 
     async def gateway_binding(self):
         return self.online

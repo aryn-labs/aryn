@@ -63,6 +63,15 @@ export const en = {
     title: 'Conversation',
     unavailable: 'Conversation unavailable',
     restore: 'Restoring saved messages…',
+    manage: 'Manage conversation: {{title}}',
+    rename: 'Rename',
+    delete: 'Delete conversation',
+    saveTitle: 'Save title',
+    deleteConfirm: 'Delete conversation',
+    renameHelp: 'Change the conversation title. Messages stay unchanged.',
+    titleLimit: 'Up to 120 characters, on one line.',
+    deleteDisclosure:
+      'Remove this conversation from your history? It cannot be reopened. Messages and execution evidence remain retained for governance. A response already in progress may finish and incur charges.',
   },
   consent: {
     title: 'Use this model provider?',
@@ -128,11 +137,15 @@ export const en = {
     allowed: 'Recorded',
   },
   errors: {
+    metadata_unknown:
+      'The change could not be confirmed. Check history or retry the original request.',
+    metadata_failed:
+      'The conversation could not be changed. Refresh history and check your access.',
     consent_history_unavailable:
       'Consent could not be verified. Review provider settings before sending.',
     consent_policy_changed: 'Privacy policy changed. Review consent again.',
     remote_consent_required: 'Review provider consent before sending.',
-    conversation_changed: 'This conversation changed. Refresh before sending.',
+    conversation_changed: 'This conversation changed. Refresh before trying again.',
     idempotency_conflict: 'Check history before sending this request again.',
     previous_outcome_unresolved:
       'The previous response could not be confirmed. It will not be repeated automatically.',
@@ -215,6 +228,15 @@ export const id: typeof en = {
     title: 'Percakapan',
     unavailable: 'Percakapan tidak tersedia',
     restore: 'Memuat pesan tersimpan…',
+    manage: 'Kelola percakapan: {{title}}',
+    rename: 'Ubah Nama',
+    delete: 'Hapus Percakapan',
+    saveTitle: 'Simpan Nama',
+    deleteConfirm: 'Hapus Percakapan',
+    renameHelp: 'Ubah judul percakapan. Pesan tetap tersimpan tanpa perubahan.',
+    titleLimit: 'Maksimal 120 karakter dalam satu baris.',
+    deleteDisclosure:
+      'Hapus percakapan dari riwayat Anda? Percakapan tidak dapat dibuka lagi. Pesan dan bukti eksekusi tetap disimpan untuk tata kelola. Respons yang sedang diproses dapat selesai dan dikenakan biaya.',
   },
   consent: {
     title: 'Gunakan provider model ini?',
@@ -284,7 +306,10 @@ export const id: typeof en = {
       'Persetujuan belum dapat diverifikasi. Periksa pengaturan provider sebelum mengirim.',
     consent_policy_changed: 'Kebijakan privasi berubah. Tinjau kembali persetujuan.',
     remote_consent_required: 'Tinjau persetujuan provider sebelum mengirim.',
-    conversation_changed: 'Percakapan berubah. Muat ulang sebelum mengirim.',
+    conversation_changed: 'Percakapan berubah. Muat ulang sebelum mencoba kembali.',
+    metadata_unknown:
+      'Perubahan belum dapat dipastikan. Periksa riwayat atau coba ulang permintaan semula.',
+    metadata_failed: 'Percakapan belum dapat diubah. Muat ulang riwayat dan periksa akses Anda.',
     idempotency_conflict: 'Periksa riwayat sebelum mengirim ulang permintaan ini.',
     previous_outcome_unresolved:
       'Respons sebelumnya belum dapat dipastikan. Permintaan tidak akan diulang otomatis.',

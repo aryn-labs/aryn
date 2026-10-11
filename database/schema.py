@@ -539,6 +539,8 @@ def install_governance_guards(metadata, connection, **kwargs):
     install_intelligence_protection(connection)
     from database.automation_protection import install_automation_protection
     install_automation_protection(connection)
+    from database.chat_protection import install_chat_protection
+    install_chat_protection(connection)
 
 
 class ConversationModel(Base):
@@ -764,6 +766,28 @@ class StudioPreferenceModel(Base):
     organization_id = Column(String(64), ForeignKey("organizations.id"), primary_key=True)
     actor_id = Column(String(64), primary_key=True)
     locale = Column(String(8), nullable=False)
+
+
+class ConversationChangeModel(Base):
+    """Append-only metadata receipts. Message and execution evidence is retained."""
+    __tablename__ = "chat_conversation_changes"
+    id = Column(String(64), primary_key=True)
+    conversation_id = Column(String(64), ForeignKey("chat_conversations.id"), nullable=False)
+    organization_id = Column(String(64), nullable=False)
+    project_id = Column(String(64), nullable=False)
+    actor_id = Column(String(64), nullable=False)
+    generation = Column(Integer, nullable=False)
+    title = Column(String(120), nullable=False)
+    deleted_at = Column(String(40), nullable=True)
+    idempotency_key = Column(String(128), nullable=False)
+    request_hash = Column(String(64), nullable=False)
+    attestation = Column(String(64), nullable=False)
+    created_at = Column(String(40), nullable=False)
+    __table_args__ = (
+        UniqueConstraint("conversation_id", "generation", name="uq_chat_metadata_generation"),
+        UniqueConstraint("organization_id", "project_id", "actor_id", "idempotency_key", name="uq_chat_metadata_request"),
+        Index("ix_chat_metadata_scope", "organization_id", "project_id", "actor_id", "conversation_id"),
+    )
 
 
 class AutomationDefinitionModel(IntelligenceScope, Base):

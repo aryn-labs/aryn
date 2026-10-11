@@ -4,6 +4,7 @@ import pytest
 from tests.postgresql.test_workflow_persistence import studio as studio_fixture
 from tests.integration import test_conversations as acceptance
 from tests.integration import test_chat_settings as settings_acceptance
+from tests.integration import test_conversation_crud as crud
 from tests.postgresql.conftest import migrate_to
 
 pytestmark = pytest.mark.postgresql
@@ -67,3 +68,54 @@ def test_chat_populated_downgrade_refused(postgres_db, chat_studio):
     assert client.post(acceptance.CHAT, json=acceptance.payload()).status_code == 202
     with pytest.raises(RuntimeError, match="personal settings"):
         migrate_to(postgres_db.owner, "020_core_automations", downgrade=True)
+
+
+def test_chat_rename_and_duplicate_requests(chat_studio):
+    crud.test_rename_read_refresh_multiturn_and_duplicates(chat_studio)
+
+
+def test_chat_delete_retention_and_old_id(chat_studio):
+    crud.test_delete_retains_governance_and_permanently_denies_old_id(chat_studio)
+
+
+def test_chat_inflight_delete_settles_usage(chat_studio):
+    crud.test_inflight_delete_settles_usage_without_resurrection(chat_studio)
+
+
+def test_chat_unknown_usage_retained_after_delete(chat_studio):
+    crud.test_unknown_run_retains_reservation_after_delete(chat_studio)
+
+
+def test_chat_concurrent_metadata_duplicate(chat_studio):
+    crud.test_concurrent_duplicate_rename_has_one_receipt(chat_studio)
+
+
+@pytest.mark.parametrize("method", ["PATCH", "DELETE"])
+def test_chat_metadata_scope_and_permission(chat_studio, method):
+    crud.test_csrf_origin_permissions_and_ownership(chat_studio, method)
+
+
+@pytest.mark.parametrize("extra", [{"title": " "}, {"title": "x" * 121}, {"title": "Two\nlines"},
+    {"actor_id": "forged"}, {"expected_metadata_revision": True}])
+def test_chat_metadata_strict_validation(chat_studio, extra):
+    crud.test_patch_strict_validation_does_not_mutate(chat_studio, extra)
+
+
+def test_chat_metadata_guards_and_signed_head(postgres_db, chat_studio):
+    from sqlalchemy import text
+    from sqlalchemy.exc import DBAPIError
+    client, db, _, _ = chat_studio
+    identifier, _ = crud.start(chat_studio)
+    assert client.request("DELETE", crud.CHAT + "/" + identifier, json=crud.intent()).status_code == 200
+    for sql in ("UPDATE chat_conversation_changes SET title='forged'", "DELETE FROM chat_conversation_changes", "TRUNCATE chat_conversation_changes"):
+        with pytest.raises(DBAPIError), db.engine.begin() as connection:
+            connection.execute(text(sql))
+    with pytest.raises(RuntimeError, match="tombstones"):
+        migrate_to(postgres_db.owner, "022_chat_preferences", downgrade=True)
+    # Deliberate owner-level rollback cannot roll back the independent Core head.
+    with postgres_db.owner.begin() as connection:
+        connection.execute(text("ALTER TABLE chat_conversation_changes DISABLE TRIGGER USER"))
+        connection.execute(text("DELETE FROM chat_conversation_changes"))
+        connection.execute(text("ALTER TABLE chat_conversation_changes ENABLE TRIGGER USER"))
+    assert client.get(crud.CHAT + "/" + identifier).status_code == 503
+    assert client.get(crud.CHAT).status_code == 503

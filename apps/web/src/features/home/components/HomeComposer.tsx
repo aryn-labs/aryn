@@ -1,5 +1,5 @@
 import { useId, useLayoutEffect, useRef, type ReactNode } from 'react'
-import { ArrowRight, LoaderCircle, Info } from 'lucide-react'
+import { ArrowRight, LoaderCircle } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 export function HomeComposer({
@@ -98,12 +98,9 @@ export function HomeComposer({
       <div className="home-composer-footer">
         <div className="composer-controls">{controls}</div>
         {help && (
-          <details className="composer-reason">
-            <summary aria-label={t('composer.reason')}>
-              <Info size={17} aria-hidden="true" />
-            </summary>
-            <p id={helpId}>{help}</p>
-          </details>
+          <span id={helpId} className="sr-only">
+            {help}
+          </span>
         )}
         <Button
           type="submit"

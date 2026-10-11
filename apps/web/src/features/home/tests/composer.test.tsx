@@ -1,5 +1,4 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { expect, it, vi } from 'vitest'
 import i18n, { labelText } from '@/i18n'
 import { HomeComposer } from '../components/HomeComposer'
@@ -37,9 +36,7 @@ it('does not send blank input and exposes a concise disabled reason', async () =
     />,
   )
   expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled()
-  const details = screen.getByLabelText('Why is Send unavailable?')
-  await userEvent.setup().click(details)
-  expect(screen.getByText('Model unavailable')).toBeVisible()
+  expect(screen.getByText('Model unavailable')).toBeInTheDocument()
   fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
   expect(send).not.toHaveBeenCalled()
 })
