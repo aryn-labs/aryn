@@ -64,7 +64,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             ? new ApiError(403, 'ARYN Core denied access. Refresh your session to continue.')
             : null),
         selectProject(id) {
-          if (context?.projects.some((item) => item.id === id)) {
+          const latest = queryClient.getQueryData<WorkspaceContext>(['workspace-context'])
+          if (context && latest?.projects.some((item) => item.id === id)) {
+            if (project?.id && project.id !== id) {
+              void queryClient.cancelQueries({
+                predicate: (query) => query.queryKey.includes(project.id),
+              })
+            }
             setProjectId(id)
             savePreference('project', id)
           }

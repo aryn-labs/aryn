@@ -203,6 +203,12 @@ def test_upgrade_existing_conversation_does_not_rewrite_evidence(chat_studio):
         # Represent a populated 022 store: metadata was never changed.
         assert connection.execute(text("SELECT COUNT(*) FROM chat_conversation_changes")).scalar() == 0
         connection.execute(text("DROP TABLE chat_conversation_changes"))
+        # Metadata-built fixtures also contain later Project columns/receipts.
+        # Remove those empty additions to faithfully represent a 022 database.
+        assert connection.execute(text("SELECT COUNT(*) FROM project_mutations")).scalar() == 0
+        connection.execute(text("DROP TABLE project_mutations"))
+        connection.execute(text("ALTER TABLE projects DROP COLUMN description"))
+        connection.execute(text("ALTER TABLE projects DROP COLUMN generation"))
         config = Config("alembic.ini")
         config.attributes["connection"] = connection
         command.stamp(config, "022_chat_preferences")

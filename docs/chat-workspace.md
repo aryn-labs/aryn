@@ -141,7 +141,7 @@ Main backend changes: `modules/core/conversations.py`, `modules/core/chat_settin
 boundary refinements in this working tree are preserved. No domain UI is rebuilt.
 
 Tests: Home/component/send/locale tests, shell/home browser contracts,
-`integration-e2e/chat.spec.ts`, `tests/chat_browser_server.py`, conversation/model/
+`e2e/chat.spec.ts`, `tests/chat_browser_server.py`, conversation/model/
 settings integration negatives and `tests/postgresql/test_chat_conversation_persistence.py`.
 Existing PostgreSQL tests only update the expected additive migration head to 022.
 The chat PostgreSQL filename differs from integration to avoid pytest collection

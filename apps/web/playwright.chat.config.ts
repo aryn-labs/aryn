@@ -6,7 +6,8 @@ const python =
     process.platform === 'win32' ? '../../.venv/Scripts/python.exe' : '../../.venv/bin/python',
   )
 export default defineConfig({
-  testDir: './integration-e2e',
+  testDir: './e2e',
+  testMatch: ['**/chat.spec.ts', '**/conversation-crud.spec.ts'],
   outputDir: 'test-results/chat',
   workers: 1,
   timeout: 45_000,

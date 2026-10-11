@@ -19,7 +19,9 @@ export function AppShell() {
   const { context, loading, error } = useWorkspace()
   const label = pathname.startsWith('/chat/')
     ? tr('chat.assistant')
-    : labelText(navigation.find((item) => item.path === pathname)?.label ?? 'Page not found')
+    : pathname.startsWith('/projects/')
+      ? tr('projects.title')
+      : labelText(navigation.find((item) => item.path === pathname)?.label ?? 'Page not found')
   useEffect(() => {
     document.title = `${label} · ARYN Studio`
     if (previous.current !== pathname) {

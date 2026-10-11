@@ -29,6 +29,8 @@ class PermissionEngine:
 
     ROLE_PERMISSIONS: Dict[str, Set[str]] = {
         "admin": {
+            "project:create",
+            "project:update",
             "chat:read",
             "chat:create",
             "chat:update",
@@ -73,6 +75,8 @@ class PermissionEngine:
 
     # Actions strictly reserved for human actors; autonomous agents are forbidden
     HUMAN_ONLY_ACTIONS: Set[str] = {
+        "project:create",
+        "project:update",
         "division:manage",
         "agent:rollback",
         "bench:accept_baseline",
@@ -262,7 +266,7 @@ class PermissionEngine:
             else:
                 effective_role = org_role
 
-        if action in {"division:manage", "version:approve", "bench:accept_baseline", "agent:rollback"} and org_role != "admin":
+        if action in {"project:create", "project:update", "division:manage", "version:approve", "bench:accept_baseline", "agent:rollback"} and org_role != "admin":
             return PolicyDecision(allowed=False, reason="Active organization admin authority is required.", matched_rules=["RULE_ORG_ADMIN_REQUIRED"])
 
         if action == "version:publish" and org_role not in {"admin", "operator"}:

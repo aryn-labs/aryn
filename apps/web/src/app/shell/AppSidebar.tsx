@@ -23,7 +23,7 @@ export function SidebarNavigation({
         const link = (
           <Link
             to={item.path}
-            activeOptions={{ exact: true }}
+            activeOptions={{ exact: item.path !== '/projects' }}
             activeProps={{ className: 'nav-link active', 'aria-current': 'page' }}
             className="nav-link"
             onClick={onNavigate}

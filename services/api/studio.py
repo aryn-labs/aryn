@@ -1244,6 +1244,8 @@ def create_app(
 
     from services.api.workflows import register_workflows
     register_workflows(app, coordinator, context, require_runtime)
+    from services.api.projects import register_projects
+    register_projects(app, db, permissions, context, workspace_reads)
     from services.api.intelligence import register_intelligence
     register_intelligence(app, coordinator, context)
     from services.api.automations import register_automations

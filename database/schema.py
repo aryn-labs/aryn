@@ -52,6 +52,8 @@ class ProjectModel(Base):
     organization_id = Column(String(64), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     slug = Column(String(255), nullable=False)
+    description = Column(Text, nullable=False, default="", server_default="")
+    generation = Column(Integer, nullable=False, default=1, server_default="1")
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
 
@@ -63,6 +65,25 @@ class ProjectModel(Base):
     __table_args__ = (
         UniqueConstraint("organization_id", "slug", name="uq_project_org_slug"),
     )
+
+
+class ProjectMutationModel(Base):
+    __tablename__ = "project_mutations"
+    id = Column(String(64), primary_key=True)
+    organization_id = Column(String(64), ForeignKey("organizations.id"), nullable=False)
+    project_id = Column(String(64), ForeignKey("projects.id"), nullable=False)
+    actor_id = Column(String(64), nullable=False)
+    idempotency_key = Column(String(100), nullable=False)
+    request_hash = Column(String(64), nullable=False)
+    response_json = Column(Text, nullable=False)
+    attestation = Column(String(64), nullable=False)
+    __table_args__ = (UniqueConstraint("organization_id", "actor_id", "idempotency_key", name="uq_project_mutation_request"),)
+
+
+@event.listens_for(ProjectMutationModel, "before_update")
+@event.listens_for(ProjectMutationModel, "before_delete")
+def protect_project_receipt(mapper, connection, target):
+    raise ValueError("Project mutation receipts are append-only.")
 
 
 class DivisionModel(Base):
@@ -531,6 +552,8 @@ def protect_bench_governance_history(mapper, connection, target):
 
 @event.listens_for(Base.metadata, "after_create")
 def install_governance_guards(metadata, connection, **kwargs):
+    from database.project_protection import install_project_protection
+    install_project_protection(connection)
     from database.governance_protection import install_history_protection
     install_history_protection(connection)
     from database.workflow_protection import install_workflow_protection
