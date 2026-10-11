@@ -29,13 +29,43 @@ def request(**changes):
     return RunRequest(prompt="Research", model="mock-fast", **changes)
 
 
+def freeze_admission_clock(monkeypatch):
+    from modules.core.workflows import coordinator
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    dispatched_at = None
+
+    class ControlledDateTime(datetime.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            elapsed = (datetime.datetime.now(datetime.timezone.utc) - dispatched_at
+                       if dispatched_at is not None else datetime.timedelta(0))
+            current = now + elapsed
+            return current.astimezone(tz) if tz else current.replace(tzinfo=None)
+
+    # Admission/SQLite signing can exceed the test deadline on a loaded runner. Freeze
+    # only this coordinator's clock until the runtime enters; the signed
+    # deadline, real asyncio timeout and all accounting assertions stay intact.
+    monkeypatch.setattr(coordinator, "datetime", SimpleNamespace(
+        datetime=ControlledDateTime, timedelta=datetime.timedelta, timezone=datetime.timezone,
+    ))
+
+    def resume():
+        nonlocal dispatched_at
+        dispatched_at = datetime.datetime.now(datetime.timezone.utc)
+
+    return resume
+
+
 @pytest.mark.asyncio
-async def test_deadline_unknown_retains_reservation_and_retry_is_not_dispatched(lifecycle):
+async def test_deadline_unknown_retains_reservation_and_retry_is_not_dispatched(lifecycle, monkeypatch):
     db, ctx, runtime, *_ = lifecycle
+    resume_clock = freeze_admission_clock(monkeypatch)
     calls = 0
     async def blocked(req, context):
         nonlocal calls
         calls += 1
+        resume_clock()
         await asyncio.sleep(10)
     runtime.execute_direct_turn = blocked
     core = RunCoordinator(runtime, db_manager=db)
@@ -399,9 +429,10 @@ async def test_legacy_unknown_consumption_blocks_new_budget_claim(lifecycle):
 
 
 @pytest.mark.asyncio
-async def test_immutable_agent_deadline_and_tokens_override_runtime_default(lifecycle):
+async def test_immutable_agent_deadline_and_tokens_override_runtime_default(lifecycle, monkeypatch):
     from packages.contracts.agent import AgentBudgetPolicy, AgentConstraints
     db, ctx, runtime, factory, bp, _ = lifecycle
+    resume_clock = freeze_admission_clock(monkeypatch)
     version = factory.create_version(ctx, bp.id, "2.0.0", "Follow research safety guidelines.", "mock-fast",
         budget_policy=AgentBudgetPolicy(timeout_seconds=1, max_tokens_per_run=512),
         constraints=AgentConstraints(max_execution_time_seconds=2))
@@ -412,6 +443,7 @@ async def test_immutable_agent_deadline_and_tokens_override_runtime_default(life
     captured = []
     async def slow(req, context):
         captured.append(req)
+        resume_clock()
         await asyncio.sleep(10)
     runtime.execute_direct_turn = slow
     with pytest.raises(TimeoutError):
