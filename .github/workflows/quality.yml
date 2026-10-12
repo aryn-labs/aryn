@@ -27,12 +27,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {os: ubuntu-24.04, label: ubuntu-24.04, shard: 1/1, index: 0}
-          - {os: windows-2025, label: 'windows-2025, 1/4', shard: 1/4, index: 1}
-          - {os: windows-2025, label: 'windows-2025, 2/4', shard: 2/4, index: 2}
-          - {os: windows-2025, label: 'windows-2025, 3/4', shard: 3/4, index: 3}
-          - {os: windows-2025, label: 'windows-2025, 4/4', shard: 4/4, index: 4}
-    timeout-minutes: 20
+          - {os: ubuntu-24.04, label: ubuntu-24.04, shard: 1/1, index: 0, timeout: 20}
+          - {os: windows-2025, label: 'windows-2025, 1/4', shard: 1/4, index: 1, timeout: 30}
+          - {os: windows-2025, label: 'windows-2025, 2/4', shard: 2/4, index: 2, timeout: 30}
+          - {os: windows-2025, label: 'windows-2025, 3/4', shard: 3/4, index: 3, timeout: 30}
+          - {os: windows-2025, label: 'windows-2025, 4/4', shard: 4/4, index: 4, timeout: 30}
+    # Windows durable SQLite/signing fixtures need more headroom as coverage grows.
+    # Keep every test and the cross-platform completeness gate unchanged.
+    timeout-minutes: ${{ matrix.timeout }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
