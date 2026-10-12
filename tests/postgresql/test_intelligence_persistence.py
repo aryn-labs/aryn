@@ -6,11 +6,20 @@ from sqlalchemy.exc import DBAPIError
 from tests.postgresql.test_workflow_persistence import studio as studio
 from tests.integration.test_workflow_execution import workflow as workflow
 from tests.integration import test_intelligence_recovery as acceptance
+from tests.integration import test_intelligence_workspace as workspace
 from tests.postgresql.conftest import migrate_to
 from database.intelligence_protection import TABLES, MUTABLE_TABLES
 from tests.integration.test_studio_api import PREFIX
 
 pytestmark = pytest.mark.postgresql
+
+
+def test_bench_workspace_projection_with_restricted_writer(studio):
+    workspace.test_bench_catalog_exact_identity_and_server_suite(studio)
+
+
+def test_brief_source_and_links_projection_with_restricted_writer(studio):
+    workspace.test_source_catalog_and_bundle_links_are_authorized_and_bounded(studio)
 
 
 def test_recovery_capsule_and_isolated_replay(studio, monkeypatch):

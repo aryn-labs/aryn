@@ -233,6 +233,19 @@ export function RunDrawer({
             </>
           )}
           <div className="op-actions">
+            <Button variant="secondary" asChild>
+              <Link
+                to="/brief"
+                search={{
+                  project,
+                  tab: 'linked',
+                  kind: kind === 'workflow' ? 'workflow_run' : 'run',
+                  ref: id,
+                }}
+              >
+                {t('intelligence.linked')} · Brief
+              </Link>
+            </Button>
             {ref('workflow_id') && (
               <Button variant="secondary" asChild>
                 <Link

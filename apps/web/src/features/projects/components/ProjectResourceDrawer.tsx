@@ -190,6 +190,31 @@ export function ProjectResourceDrawer({
           )}
         </div>
         <footer>
+          {item?.kind === 'evaluation' && (
+            <Button variant="secondary" asChild>
+              <Link
+                to="/bench/$projectId/evaluations/$evaluationId"
+                params={{ projectId: scope.project, evaluationId: item.id }}
+              >
+                Bench · {t('intelligence.evaluations')}
+              </Link>
+            </Button>
+          )}
+          {item && ['run', 'workflow-run', 'artifact'].includes(item.kind) && (
+            <Button variant="secondary" asChild>
+              <Link
+                to="/brief"
+                search={{
+                  project: scope.project,
+                  tab: 'linked',
+                  kind: item.kind === 'workflow-run' ? 'workflow_run' : item.kind,
+                  ref: item.id,
+                }}
+              >
+                Brief · {t('intelligence.linked')}
+              </Link>
+            </Button>
+          )}
           {item && ['run', 'workflow-run'].includes(item.kind) && (
             <Button variant="secondary" asChild>
               <Link

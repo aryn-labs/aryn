@@ -19,6 +19,14 @@ import { WorkflowEditor } from '@/features/workflows/WorkflowEditor'
 import { RunsPage } from '@/features/runs/RunsPage'
 import { AutomationsPage } from '@/features/automations/AutomationsPage'
 import { AutomationBuilder } from '@/features/automations/AutomationBuilder'
+import { BriefPage, BundleDetailPage, SourceDetailPage } from '@/features/brief/BriefPage'
+import { RelayPage, IncidentDetailPage } from '@/features/relay/RelayPage'
+import {
+  BenchPage,
+  EvaluationDetailPage,
+  ReplayDetailPage,
+  CapsuleDetailPage,
+} from '@/features/bench/BenchPage'
 import { navigation } from '@/components/navigation/items'
 import { FeatureScaffold, NotFound } from './pages'
 const root = createRootRoute({
@@ -35,7 +43,17 @@ const home = createRoute({ getParentRoute: () => dashboard, path: '/', component
 const routes = navigation
   .filter(
     (item) =>
-      !['/', '/projects', '/agents', '/workflows', '/runs', '/automations'].includes(item.path),
+      ![
+        '/',
+        '/projects',
+        '/agents',
+        '/workflows',
+        '/runs',
+        '/automations',
+        '/brief',
+        '/relay',
+        '/bench',
+      ].includes(item.path),
   )
   .map((item) =>
     createRoute({
@@ -63,6 +81,12 @@ const agentEditor = createRoute({
   getParentRoute: () => studio,
   path: '/agents/$projectId/$blueprintId',
   component: AgentEditor,
+  validateSearch: (value: Record<string, unknown>): { version?: string } => ({
+    version:
+      typeof value.version === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(value.version)
+        ? value.version
+        : undefined,
+  }),
 })
 const workflows = createRoute({
   getParentRoute: () => dashboard,
@@ -82,6 +106,72 @@ const workflowEditor = createRoute({
 })
 const identifier = (value: unknown) =>
   typeof value === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(value) ? value : undefined
+const intelligenceSearch = (
+  value: Record<string, unknown>,
+): { project?: string; tab?: string; kind?: string; ref?: string } => ({
+  project: identifier(value.project),
+  tab:
+    typeof value.tab === 'string' &&
+    ['sources', 'linked', 'suites', 'baselines', 'replays'].includes(value.tab)
+      ? value.tab
+      : undefined,
+  kind:
+    typeof value.kind === 'string' &&
+    ['run', 'artifact', 'workflow_run', 'incident', 'capsule', 'replay'].includes(value.kind)
+      ? value.kind
+      : undefined,
+  ref: identifier(value.ref),
+})
+const intelligenceRoutes = [
+  createRoute({
+    getParentRoute: () => dashboard,
+    path: '/brief',
+    component: BriefPage,
+    validateSearch: intelligenceSearch,
+  }),
+  createRoute({
+    getParentRoute: () => dashboard,
+    path: '/brief/$projectId/$bundleId',
+    component: BundleDetailPage,
+  }),
+  createRoute({
+    getParentRoute: () => dashboard,
+    path: '/brief/$projectId/sources/$sourceId',
+    component: SourceDetailPage,
+  }),
+  createRoute({
+    getParentRoute: () => dashboard,
+    path: '/relay',
+    component: RelayPage,
+    validateSearch: intelligenceSearch,
+  }),
+  createRoute({
+    getParentRoute: () => dashboard,
+    path: '/relay/$projectId/$incidentId',
+    component: IncidentDetailPage,
+  }),
+  createRoute({
+    getParentRoute: () => dashboard,
+    path: '/bench',
+    component: BenchPage,
+    validateSearch: intelligenceSearch,
+  }),
+  createRoute({
+    getParentRoute: () => dashboard,
+    path: '/bench/$projectId/evaluations/$evaluationId',
+    component: EvaluationDetailPage,
+  }),
+  createRoute({
+    getParentRoute: () => dashboard,
+    path: '/bench/$projectId/replays/$replayId',
+    component: ReplayDetailPage,
+  }),
+  createRoute({
+    getParentRoute: () => dashboard,
+    path: '/bench/$projectId/capsules/$capsuleId',
+    component: CapsuleDetailPage,
+  }),
+]
 const runs = createRoute({
   getParentRoute: () => dashboard,
   path: '/runs',
@@ -166,6 +256,7 @@ const tree = root.addChildren([
     runs,
     automations,
     automationBuilder,
+    ...intelligenceRoutes,
     ...projectRoutes,
     ...routes,
   ]),

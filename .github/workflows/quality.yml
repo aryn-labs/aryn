@@ -278,6 +278,20 @@ jobs:
         env:
           ARYN_TEST_PYTHON: ${{ github.workspace }}/.venv/bin/python
         run: npm run test:workflows:e2e
+      - name: Bench Relay Brief through API and Core (isolated runtime and disposable fixtures)
+        if: matrix.shard == 3
+        working-directory: apps/web
+        env:
+          ARYN_TEST_PYTHON: ${{ github.workspace }}/.venv/bin/python
+        run: npm run test:intelligence:e2e
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always() && matrix.shard == 3
+        with:
+          name: intelligence-browser-evidence-${{ github.sha }}
+          path: .local/intelligence-evidence
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:

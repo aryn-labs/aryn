@@ -137,6 +137,17 @@ function ScopedProjectWorkspace({ projectId }: { projectId: string }) {
                   </Button>
                 </div>
               )}
+              {['work', 'results', 'activity'].includes(tab) && (
+                <nav className="project-agent-factory-link" aria-label={t('intelligence.linked')}>
+                  {(['brief', 'relay', 'bench'] as const).map((module) => (
+                    <Button key={module} variant="secondary" asChild>
+                      <Link to={'/' + module} search={{ project: projectId }}>
+                        {t('intelligence.' + module)}
+                      </Link>
+                    </Button>
+                  ))}
+                </nav>
+              )}
               {workspace.project?.id === projectId &&
                 (tab === 'overview' ? (
                   <ProjectOverview key={projectId} scope={scope} onOpen={open} />

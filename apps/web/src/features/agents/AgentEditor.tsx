@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useBlocker, useNavigate, useParams } from '@tanstack/react-router'
+import { Link, useBlocker, useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import {
   ArrowLeft,
@@ -51,6 +51,8 @@ import './agents.css'
 
 export function AgentEditor() {
   const { projectId = '', blueprintId = '' } = useParams({ strict: false })
+  const search = useSearch({ strict: false }),
+    requestedVersion = 'version' in search ? search.version : undefined
   const workspace = useWorkspace(),
     { t } = useTranslation(),
     navigate = useNavigate()
@@ -63,6 +65,7 @@ export function AgentEditor() {
       workspace.context?.organization.id,
       projectId,
       blueprintId,
+      requestedVersion,
       revision,
     ],
     enabled:
@@ -76,7 +79,12 @@ export function AgentEditor() {
         request(base + '/working-copy', workingSchema, { signal }),
         request(base + '/editor-layout', layoutSchema, { signal }),
         request(
-          basePath(projectId) + '/lifecycle?' + new URLSearchParams({ blueprint_id: blueprintId }),
+          basePath(projectId) +
+            '/lifecycle?' +
+            new URLSearchParams({
+              blueprint_id: blueprintId,
+              ...(requestedVersion ? { version_id: requestedVersion } : {}),
+            }),
           lifecycleSchema,
           { signal },
         ),
@@ -134,6 +142,7 @@ export function AgentEditor() {
           initial={query.data}
           projectId={projectId}
           blueprintId={blueprintId}
+          requestedVersion={requestedVersion}
           onReload={() => setRevision((value) => value + 1)}
         />
       )}
@@ -152,11 +161,13 @@ function LoadedEditor({
   projectId,
   blueprintId,
   onReload,
+  requestedVersion,
 }: {
   initial: Initial
   projectId: string
   blueprintId: string
   onReload: () => void
+  requestedVersion?: string
 }) {
   const workspace = useWorkspace(),
     { t } = useTranslation(),
@@ -187,14 +198,18 @@ function LoadedEditor({
   const [selected, setSelected] = useState<NodeType | null>('agent'),
     [libraryAnchor, setLibraryAnchor] = useState<HTMLElement | null>(null),
     [inspector, setInspector] = useState(!drawer)
-  const [tab, setTab] = useState<'blueprint' | 'versions'>('blueprint'),
+  const [tab, setTab] = useState<'blueprint' | 'versions'>(
+      requestedVersion ? 'versions' : 'blueprint',
+    ),
     [panel, setPanel] = useState<'configure' | 'preview'>('configure')
   const [busy, setBusy] = useState(false),
     [message, setMessage] = useState(''),
     [conflict, setConflict] = useState(false),
     [invalid, setInvalid] = useState(false)
   const [preview, setPreview] = useState<Preview>(),
-    [versionId, setVersionId] = useState(initial.lifecycle.versions[0]?.id ?? '')
+    [versionId, setVersionId] = useState(
+      requestedVersion ?? initial.lifecycle.versions[0]?.id ?? '',
+    )
   const lock = useRef(false)
   const lifecycleRequest = useRef(0)
   const canEdit = lifecycle.permissions['version:create'] === true && !!workspace.csrf

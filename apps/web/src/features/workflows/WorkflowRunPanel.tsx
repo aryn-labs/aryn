@@ -294,6 +294,14 @@ export function WorkflowRunPanel({
           <p className="af-note">{t('workflows.checkpointHelp')}</p>
           <code>{run.id}</code>
           <Button variant="secondary" asChild>
+            <Link
+              to="/brief"
+              search={{ project, tab: 'linked', kind: 'workflow_run', ref: run.id }}
+            >
+              Brief · {t('intelligence.linked')}
+            </Link>
+          </Button>
+          <Button variant="secondary" asChild>
             <Link to="/runs" search={{ project, run: run.id, runKind: 'workflow' }}>
               {t('operations.runLink')}
             </Link>

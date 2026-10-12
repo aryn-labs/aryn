@@ -5,8 +5,9 @@ from fastapi.responses import Response
 from modules.brief.service import BriefService
 from modules.relay.service import RelayService
 from modules.bench.replay import CapsuleReplayService
+from modules.bench.workspace import BenchWorkspace
 from modules.core.records import encoded
-from database.schema import EvidenceSourceModel, DemoFixtureModel, RelayEventModel
+from database.schema import EvidenceSourceModel, DemoFixtureModel, RelayEventModel, EvidenceLinkModel
 from packages.contracts.intelligence import (
     CreateDocument,
     IngestReference,
@@ -27,6 +28,7 @@ def register_intelligence(app, coordinator, context):
     brief = BriefService(coordinator)
     relay = RelayService(coordinator, brief)
     replay = CapsuleReplayService(coordinator, relay)
+    bench = BenchWorkspace(coordinator)
     relay.recover()
     app.state.brief, app.state.relay, app.state.capsule_replay = brief, relay, replay
     prefix = "/api/projects/{project_id}"
@@ -50,6 +52,34 @@ def register_intelligence(app, coordinator, context):
             },
         )
 
+    @app.get(prefix + "/intelligence/context")
+    def intelligence_context(project_id: str):
+        ctx = context(project_id)
+        with brief.db.session() as session:
+            brief.authorize(session, ctx)
+            return {"organization_id": ctx.organization_id, "project_id": ctx.project_id,
+                    "permissions": {action: brief.permissions.evaluate(action, ctx, ctx.organization_id,
+                        ctx.project_id, session=session).allowed for action in
+                        ("version:create", "version:approve", "run:create", "bench:accept_baseline")}}
+
+    @app.get(prefix + "/bench/suites")
+    def bench_suites(project_id: str):
+        return bench.suites(context(project_id))
+
+    @app.get(prefix + "/bench/evaluations")
+    def evaluations(project_id: str, request: Request, after: str = Query("", max_length=64),
+                    limit: int = Query(25, ge=1, le=100), q: str = Query("", max_length=100),
+                    blueprint_id: str = Query("", pattern="^[A-Za-z0-9_-]{0,64}$"),
+                    version_id: str = Query("", pattern="^[A-Za-z0-9_-]{0,64}$"),
+                    suite_id: str = Query("", pattern="^[A-Za-z0-9_.-]{0,100}$"),
+                    status: str = Query("", pattern="^(|passed|failed)$")):
+        queries(request, {"after", "limit", "q", "blueprint_id", "version_id", "suite_id", "status"})
+        return bench.inventory(context(project_id), after, limit, q, blueprint_id, version_id, suite_id, status)
+
+    @app.get(prefix + "/bench/evaluations/{evaluation_id}")
+    def evaluation_detail(project_id: str, evaluation_id: str):
+        return bench.detail(context(project_id), evaluation_id)
+
     @app.post(prefix + "/brief/documents", status_code=201)
     def document(project_id: str, body: CreateDocument):
         return brief.document(context(project_id), body)
@@ -70,7 +100,19 @@ def register_intelligence(app, coordinator, context):
             items, cursor = brief.page(
                 session, context(project_id), EvidenceSourceModel, after, limit
             )
-            return {"items": items, "next": cursor}
+            from modules.core.history import HistoryUnverifiedError
+            from database.repositories.exceptions import EntityNotFoundError
+            ctx = context(project_id)
+            enriched = []
+            for item in items:
+                try:
+                    _, _, freshness = brief.source(session, ctx, item["id"])
+                    integrity = "VERIFIED"
+                except (HistoryUnverifiedError, EntityNotFoundError, ValueError, TypeError, KeyError):
+                    integrity, freshness = "UNVERIFIED", "unavailable"
+                enriched.append({**item, "integrity": integrity, "freshness": freshness})
+            brief.authorize(session, ctx)
+            return {"items": enriched, "next": cursor}
 
     @app.get(prefix + "/brief/sources/{source_id}")
     def source_detail(project_id: str, source_id: str):
@@ -127,6 +169,16 @@ def register_intelligence(app, coordinator, context):
     @app.get(prefix + "/brief/{bundle_id}/download")
     def bundle_download(project_id: str, bundle_id: str):
         return attachment(brief.detail(context(project_id), bundle_id), bundle_id)
+
+    @app.get(prefix + "/brief/{bundle_id}/links")
+    def bundle_links(project_id: str, bundle_id: str, request: Request,
+                     after: str = Query("", max_length=64), limit: int = Query(25, ge=1, le=100)):
+        queries(request, {"after", "limit"})
+        ctx = context(project_id)
+        brief.detail(ctx, bundle_id)
+        with brief.db.session() as session:
+            items, cursor = brief.page(session, ctx, EvidenceLinkModel, after, limit, bundle_id=bundle_id)
+            return {"items": items, "next": cursor}
 
     @app.get(prefix + "/relay/demo-fixtures")
     def fixtures(

@@ -16,7 +16,8 @@
     "test:chat:e2e": "playwright test --config playwright.chat.config.ts",
     "test:agents:e2e": "playwright test --config playwright.agents.config.ts",
     "test:workflows:e2e": "playwright test --config playwright.workflows.config.ts",
-    "test:operations:e2e": "playwright test --config playwright.operations.config.ts"
+    "test:operations:e2e": "playwright test --config playwright.operations.config.ts",
+    "test:intelligence:e2e": "playwright test --config playwright.intelligence.config.ts"
   },
   "dependencies": {
     "@fontsource/inter": "^5.2.8",

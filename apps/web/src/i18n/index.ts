@@ -8,6 +8,7 @@ import { agentsId, agentsEn } from './agents'
 import { studioId, studioEn } from './studio'
 import { workflowsId, workflowsEn } from './workflows'
 import { operationsId, operationsEn } from './operations'
+import { intelligenceId, intelligenceEn } from './intelligence'
 
 void i18n.use(initReactI18next).init({
   resources: {
@@ -19,6 +20,7 @@ void i18n.use(initReactI18next).init({
         studio: studioId,
         workflows: workflowsId,
         operations: operationsId,
+        intelligence: intelligenceId,
       },
     },
     'en-US': {
@@ -29,6 +31,7 @@ void i18n.use(initReactI18next).init({
         studio: studioEn,
         workflows: workflowsEn,
         operations: operationsEn,
+        intelligence: intelligenceEn,
       },
     },
   },
