@@ -26,7 +26,7 @@ class Predicate(Strict):
         )
 
 
-class Node(Strict):
+class DraftNode(Strict):
     id: str = Field(pattern=r"^[a-zA-Z][a-zA-Z0-9_-]{0,47}$")
     label: str = Field(min_length=1, max_length=120)
     kind: Kind
@@ -36,6 +36,9 @@ class Node(Strict):
     agent_version_id: str | None = Field(default=None, max_length=64)
     renderer: Literal["static-document-v1"] | None = None
     predicate: Predicate | None = None
+
+
+class Node(DraftNode):
 
     @model_validator(mode="after")
     def capabilities(self):
@@ -74,6 +77,12 @@ class Edge(Strict):
     target_port: Literal["value"] = "value"
 
 
+class DraftGraph(Strict):
+    """Bounded, non-executable design state; admission always reparses Graph."""
+    nodes: list[DraftNode] = Field(default_factory=list, max_length=24)
+    edges: list[Edge] = Field(default_factory=list, max_length=32)
+
+
 class Graph(Strict):
     nodes: list[Node] = Field(min_length=3, max_length=24)
     edges: list[Edge] = Field(min_length=2, max_length=32)
@@ -87,7 +96,7 @@ class Position(Strict):
 
 class WorkflowDefinition(Strict):
     name: str = Field(min_length=1, max_length=120)
-    graph: Graph
+    graph: DraftGraph
     positions: list[Position] = Field(default_factory=list, max_length=24)
 
 
@@ -162,6 +171,7 @@ class WorkflowRun(Strict):
     tasks: list[TaskExecution]
     artifact_id: str | None = None
     error_code: str | None = None
+    traversed_edges: list[str] = Field(default_factory=list, max_length=32)
 
     automation_reference: dict[str, str] | None = None
     max_task_tokens: int | None = Field(default=None, ge=128, le=32768)

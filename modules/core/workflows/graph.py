@@ -40,6 +40,8 @@ def validate_graph(graph):
         outgoing[edge.source].append(edge)
         incoming[edge.target].append(edge)
     for node in graph.nodes:
+        if node.input_schema == "website" and (node.kind == "condition" or node.kind == "agent" and not node.renderer):
+            reject(node.id, "text_envelope_required")
         ports = [e.source_port for e in outgoing[node.id]]
         expected = (
             []

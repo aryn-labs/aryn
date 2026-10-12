@@ -32,6 +32,7 @@ from modules.core.workflows.graph import validate_graph, reject
 from modules.core.errors import sanitize
 from packages.contracts.core import AuditStatus
 from packages.contracts.workflow import (
+    Graph,
     WorkflowDefinition,
     WorkflowVersion,
     WorkflowRun,
@@ -201,30 +202,76 @@ class WorkflowExecutor:
             return payload
 
     def pinned(self, s, ctx, graph):
+        from pydantic import ValidationError
+        try:
+            graph = Graph.model_validate(graph.model_dump(mode="json"))
+        except ValidationError as exc:
+            location = exc.errors()[0]["loc"]
+            subject = (graph.nodes[location[1]].id if len(location) > 1
+                       and location[0] == "nodes" and isinstance(location[1], int)
+                       and location[1] < len(graph.nodes) else "graph")
+            reject(subject, "invalid_node_configuration")
         validate_graph(graph)
-        repo = AgentRepository(s)
-        activation = AgentActivationRepository(
-            s, self.db.evidence_signer, self.permissions
-        )
         for node in graph.nodes:
-            if node.kind != "agent" or node.renderer:
-                continue
-            try:
-                assignment = activation.lock_assignment(ctx, node.assignment_id)
-                if (
-                    assignment.status != "active"
-                    or assignment.version_id != node.agent_version_id
-                ):
-                    reject(node.id, "assignment_pin_changed")
-                version = repo.get_version(ctx, node.agent_version_id)
-                if json.loads(version.tool_grants_json):
-                    reject(node.id, "tools_forbidden")
-                history = activation.history(ctx, assignment)
-                reference = activation.known_good(ctx, version.id)
-                if not history or history[-1].publication_reference != reference:
-                    reject(node.id, "unverified_assignment")
-            except EntityNotFoundError:
-                reject(node.id, "pinned_resource_unavailable")
+            if node.kind == "agent" and not node.renderer:
+                self.target(s, ctx, node.assignment_id, node.agent_version_id, node.id)
+        return graph
+
+    def target(self, s, ctx, assignment_id, version_id, subject):
+        repo = AgentRepository(s)
+        activation = AgentActivationRepository(s, self.db.evidence_signer, self.permissions)
+        try:
+            assignment = activation.lock_assignment(ctx, assignment_id)
+            if assignment.status != "active" or assignment.version_id != version_id:
+                reject(subject, "assignment_pin_changed")
+            version = repo.get_version(ctx, version_id)
+            if json.loads(version.tool_grants_json):
+                reject(subject, "tools_forbidden")
+            history = activation.history(ctx, assignment)
+            reference = activation.known_good(ctx, version.id)
+            if not history or history[-1].publication_reference != reference:
+                reject(subject, "unverified_assignment")
+            return assignment, version
+        except EntityNotFoundError:
+            reject(subject, "pinned_resource_unavailable")
+
+    def targets(self, ctx, after="", limit=25, assignment_id=None):
+        from database.schema import AgentAssignmentModel
+        from modules.core.workflows.graph import GraphRejected
+        from packages.contracts.agent import VersionIntegrityError
+        from modules.core.approvals.engine import ApprovalRequiredError, PayloadHashMismatchError
+        from modules.bench.quality_gate import QualityGateFailedError
+        from sqlalchemy import or_, and_
+        with self.db.session(write=True) as s:
+            self.authorize(s, ctx)
+            repo = AgentRepository(s)
+            query = s.query(AgentAssignmentModel).filter_by(organization_id=ctx.organization_id, project_id=ctx.project_id)
+            if assignment_id:
+                repo.get_assignment(ctx, assignment_id)
+                query = query.filter_by(id=assignment_id)
+            if after:
+                cursor = repo.get_assignment(ctx, after)
+                query = query.filter(or_(AgentAssignmentModel.created_at < cursor.created_at,
+                    and_(AgentAssignmentModel.created_at == cursor.created_at, AgentAssignmentModel.id < cursor.id)))
+            rows = query.order_by(AgentAssignmentModel.created_at.desc(), AgentAssignmentModel.id.desc()).limit(limit + 1).all()
+            items = []
+            for row in rows[:limit]:
+                reason = None
+                try:
+                    self.target(s, ctx, row.id, row.version_id, row.id)
+                except GraphRejected as exc:
+                    reason = exc.issues[0]["code"]
+                except (VersionIntegrityError, ApprovalRequiredError, PayloadHashMismatchError, QualityGateFailedError, PermissionDeniedError, InvalidStateTransitionError):
+                    reason = "unverified_assignment"
+                blueprint, version = repo.get_blueprint(ctx, row.blueprint_id), repo.get_version(ctx, row.version_id)
+                items.append(dict(id=row.id, blueprint_id=row.blueprint_id, version_id=row.version_id,
+                    name=blueprint.name, role_name=row.role_name, version_number=version.version_number,
+                    model=version.model, eligible=reason is None, reason=reason))
+            permissions = {action: self.permissions.evaluate(action, ctx, ctx.organization_id, ctx.project_id, session=s).allowed
+                for action in ("version:create", "version:publish", "version:approve", "run:create", "run:cancel")}
+            self.authorize(s, ctx)
+            return dict(organization_id=ctx.organization_id, project_id=ctx.project_id, items=items,
+                next=rows[limit - 1].id if len(rows) > limit else None, permissions=permissions)
 
     def validate(self, ctx, id):
         with self.db.session(write=True) as s:
@@ -233,7 +280,7 @@ class WorkflowExecutor:
             graph = WorkflowDefinition.model_validate(
                 {k: draft[k] for k in ("name", "graph", "positions")}
             ).graph
-            self.pinned(s, ctx, graph)
+            graph = self.pinned(s, ctx, graph)
             return {
                 "valid": True,
                 "digest": digest(graph.model_dump(mode="json")),
@@ -254,7 +301,7 @@ class WorkflowExecutor:
             graph = WorkflowDefinition.model_validate(
                 {k: draft[k] for k in ("name", "graph", "positions")}
             ).graph
-            self.pinned(s, ctx, graph)
+            graph = self.pinned(s, ctx, graph)
             old = (
                 s.query(VersionRow)
                 .filter_by(workflow_id=id, revision=row.revision)
@@ -298,7 +345,7 @@ class WorkflowExecutor:
         if run.owner_id != self.core.authority.owner_id:
             raise ExecutionOwnershipError("Stale workflow owner is fenced.")
 
-    async def start(self, ctx, workflow_id, body, *, claim_callback=None, automation_reference=None, max_task_tokens=None):
+    async def start(self, ctx, workflow_id, body, *, claim_callback=None, automation_reference=None, max_task_tokens=None, defer=False):
         self.core._fence()
         with self.db.session(write=True) as s:
             self.authorize(s, ctx, "run:create")
@@ -368,7 +415,7 @@ class WorkflowExecutor:
             self.audit(s, ctx, "run.started", run.id, version_id=version.id)
             if claim_callback is not None:
                 claim_callback(s, run)
-        return await self.execute(ctx, run.id)
+        return run.model_dump(mode="json") if defer else await self.execute(ctx, run.id)
 
     def artifact(self, s, ctx, id):
         row, payload = self.get(s, ArtifactRow, ctx, id)
@@ -579,9 +626,9 @@ class WorkflowExecutor:
                         if node.kind == "condition"
                         else "value"
                     )
-                    run.cursor = next(
-                        e.target for e in outgoing[node.id] if e.source_port == port
-                    )
+                    selected_edge = next(e for e in outgoing[node.id] if e.source_port == port)
+                    run.cursor = selected_edge.target
+                    run.traversed_edges.append(selected_edge.id)
                     self.put(s, ctx, row, run.model_dump(mode="json"))
                     self.audit(
                         s,
@@ -681,6 +728,10 @@ class WorkflowExecutor:
             )
             run.owner_id = self.core.authority.owner_id
             run.status = "completed" if body.decision == "accepted" else "rejected"
+            if body.decision == "accepted":
+                version = self.version(s, ctx, run.version_id)
+                review_id = next(n.id for n in version.graph.nodes if n.kind == "review")
+                run.traversed_edges.append(next(e.id for e in version.graph.edges if e.source == review_id))
             for task in run.tasks:
                 if task.status == "waiting_review":
                     task.status = "completed"
@@ -791,12 +842,18 @@ class WorkflowExecutor:
             self.authorize(s, ctx)
             return payload
 
-    def inventory(self, ctx, cls, after="", limit=25, workflow_id=None, waiting=False):
+    def inventory(self, ctx, cls, after="", limit=25, workflow_id=None, waiting=False, q=""):
         with self.db.session() as s:
             self.authorize(s, ctx)
             query = s.query(cls).filter_by(
                 organization_id=ctx.organization_id, project_id=ctx.project_id
             )
+            if q and cls is DefinitionRow:
+                from sqlalchemy import JSON, cast, type_coerce
+                escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+                document = (cast(cls.details_json, JSON) if self.db.engine.dialect.name == "postgresql"
+                            else type_coerce(cls.details_json, JSON))
+                query = query.filter(document["name"].as_string().ilike("%" + escaped + "%", escape="\\"))
             if workflow_id:
                 self.get(s, DefinitionRow, ctx, workflow_id)
                 query = query.filter_by(workflow_id=workflow_id)
@@ -834,6 +891,17 @@ class WorkflowExecutor:
                 "items": items,
                 "next": rows[limit - 1].id if len(rows) > limit else None,
             }
+
+    def decision(self, ctx, id):
+        with self.db.session() as s:
+            self.authorize(s, ctx)
+            self.get(s, RunRow, ctx, id)
+            row = s.query(DeliverableRow).filter_by(workflow_run_id=id, organization_id=ctx.organization_id, project_id=ctx.project_id).first()
+            if row is None:
+                raise EntityNotFoundError("Review receipt unavailable.")
+            payload = self.get(s, DeliverableRow, ctx, row.id)[1]
+            self.authorize(s, ctx)
+            return payload
 
     def download(self, ctx, id):
         with self.db.session() as s:

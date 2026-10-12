@@ -1,0 +1,164 @@
+.wf-catalog .af-catalog-card {
+  min-height: 190px;
+}
+.wf-editor {
+  height: 100%;
+  min-width: 0;
+}
+.wf-title-input {
+  background: transparent;
+  color: var(--foreground);
+  border: 0;
+  font-size: 16px;
+  font-weight: 600;
+  width: 100%;
+  max-width: 420px;
+  padding: 0;
+}
+.wf-title-input:focus {
+  outline: 1px solid var(--accent);
+  outline-offset: 4px;
+}
+.wf-issues {
+  margin: 0;
+  padding: 9px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 11px;
+  max-height: 110px;
+  overflow: auto;
+}
+.wf-issues summary {
+  color: var(--foreground);
+  cursor: pointer;
+}
+.wf-issues ul {
+  padding-left: 18px;
+}
+.wf-issues {
+  border-left: 3px solid var(--warning);
+}
+.wf-editor .af-error {
+  color: var(--foreground);
+  border-left: 2px solid var(--warning);
+  padding-left: 8px;
+}
+.af-node[data-invalid='true'] {
+  border-color: var(--warning);
+}
+.af-node[data-state='skipped'] {
+  opacity: 0.52;
+}
+.af-node[data-state='waiting_review'] .af-node-footer {
+  color: var(--foreground);
+}
+.wf-connections > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+.wf-panel {
+  padding: 18px;
+  min-width: 0;
+}
+.wf-panel h2 {
+  font-size: 16px;
+  margin: 0 0 10px;
+}
+.wf-panel h3 {
+  font-size: 12px;
+  margin: 20px 0 10px;
+}
+.wf-panel .af-field {
+  margin: 12px 0;
+}
+.wf-panel pre,
+.wf-panel code,
+.wf-inspector-result code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 10px;
+}
+.wf-panel iframe {
+  color-scheme: light;
+  width: 100%;
+  min-height: 260px;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+.wf-panel textarea {
+  min-height: 90px;
+}
+.wf-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
+.wf-version-list,
+.wf-run-list {
+  display: grid;
+  gap: 8px;
+}
+.wf-version-list button,
+.wf-run-list button {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  padding: 10px;
+  border-radius: 7px;
+  color: var(--foreground);
+  text-align: left;
+  font-size: 11px;
+}
+.wf-version-list button[aria-pressed='true'],
+.wf-run-list button[aria-pressed='true'] {
+  border-color: var(--accent);
+}
+.wf-version-list code {
+  display: block;
+  color: var(--muted);
+  margin-top: 6px;
+}
+.wf-timeline {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 7px;
+}
+.wf-timeline button {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--foreground);
+  font-size: 11px;
+}
+.wf-timeline button[data-state='running'] {
+  border-color: var(--accent);
+}
+.wf-timeline button[data-state='waiting_review'] {
+  border-color: var(--warning);
+}
+.wf-timeline button[data-state='skipped'] {
+  color: var(--muted);
+}
+@media (max-width: 650px) {
+  .wf-title-input {
+    font-size: 13px;
+  }
+  .wf-editor .studio-header {
+    gap: 8px;
+  }
+  .wf-editor .studio-header-actions .button {
+    padding: 7px;
+  }
+}

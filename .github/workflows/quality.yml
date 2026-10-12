@@ -258,6 +258,18 @@ jobs:
         env:
           ARYN_TEST_PYTHON: ${{ github.workspace }}/.venv/bin/python
         run: npm run test:projects:e2e
+      - name: Agent Factory Studio through API and Core (isolated runtime)
+        if: matrix.shard == 2
+        working-directory: apps/web
+        env:
+          ARYN_TEST_PYTHON: ${{ github.workspace }}/.venv/bin/python
+        run: npm run test:agents:e2e
+      - name: Workflow Studio through API and Core (isolated runtime)
+        if: matrix.shard == 3
+        working-directory: apps/web
+        env:
+          ARYN_TEST_PYTHON: ${{ github.workspace }}/.venv/bin/python
+        run: npm run test:workflows:e2e
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:

@@ -75,6 +75,11 @@ export const agentsId = {
   owner: 'Pemilik',
   instructions: 'Instruksi sistem',
   model: 'Model',
+  modelUnverified: 'Belum terverifikasi',
+  modelUnavailable: 'Tidak tersedia',
+  modelNotListed: 'Tidak ada di katalog saat ini',
+  modelCatalogOnly:
+    'Model tercantum di gateway, tetapi kesiapan inferensinya belum terverifikasi. Preview agen memerlukan bukti kesiapan dari Core; verifikasi saat kirim saat ini tersedia melalui Chat.',
   provider: 'Provider',
   temperature: 'Temperature',
   maxTokens: 'Token output maksimum',
@@ -277,6 +282,11 @@ export const agentsEn: Record<keyof typeof agentsId, string> = {
   owner: 'Owner',
   instructions: 'System instructions',
   model: 'Model',
+  modelUnverified: 'Unverified',
+  modelUnavailable: 'Unavailable',
+  modelNotListed: 'Not in the current catalog',
+  modelCatalogOnly:
+    'The gateway lists this model, but inference readiness is unverified. Agent preview requires readiness evidence from Core; verification on send is currently available through Chat.',
   provider: 'Provider',
   temperature: 'Temperature',
   maxTokens: 'Maximum output tokens',

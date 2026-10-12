@@ -6,8 +6,8 @@ import {
   initialGraph,
   nodeRegistry,
   nodeState,
-} from '../registry'
-import { draftSchema, lifecycleSchema, type Preview } from '../api'
+} from '@/features/agents/registry'
+import { draftSchema, lifecycleSchema, type Preview } from '@/features/agents/api'
 
 const preview = (
   status: Preview['result']['status'],

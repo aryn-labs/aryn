@@ -19,6 +19,7 @@ from tests.integration.test_workflow_execution import (
 from tests.postgresql.conftest import migrate_to
 from tests.integration.test_workflow_execution import start
 from sqlalchemy.exc import DBAPIError
+from tests.integration import test_workflow_builder as builder
 
 pytestmark = pytest.mark.postgresql
 
@@ -39,6 +40,32 @@ def studio(postgres_db):
 @pytest.mark.parametrize("decision", ["accepted", "rejected"])
 def test_postgres_three_tasks_and_review(workflow, decision):
     golden(workflow, decision)
+
+
+def test_postgres_builder_search_and_revision(workflow):
+    builder.test_search_literal_scope_and_revision_conflict(workflow)
+
+
+def test_postgres_workflow_target_scope_and_pagination(workflow):
+    builder.test_governed_targets_are_scoped_paginated_and_do_not_disclose_agent_configuration(workflow)
+
+
+def test_postgres_builder_async_checkpoint(workflow):
+    builder.test_async_admission_real_checkpoint_and_idempotent_start(workflow)
+
+
+@pytest.mark.parametrize("decision", ["accepted", "rejected"])
+def test_postgres_builder_review_receipt(workflow, decision):
+    builder.test_scoped_review_receipt_exact_digest_and_recorded_terminal_edge(workflow, decision)
+
+
+def test_postgres_incomplete_draft_cannot_change_frozen_version(workflow):
+    builder.test_draft_can_hold_unconfigured_agent_but_preserves_executable_contract(workflow)
+
+
+@pytest.mark.parametrize("kind", ["agent", "condition"])
+def test_postgres_text_only_handler_admission(workflow, kind):
+    builder.test_html_consumers_can_be_edited_but_cannot_pass_text_only_runtime_admission(workflow, kind)
 
 
 @pytest.mark.parametrize(

@@ -232,9 +232,11 @@ for (const width of [1920, 1440, 1024, 768, 390])
       await drawer.getByRole('button', { name: 'Open Workflow Builder' }).click()
       await expect(page).toHaveURL(/\/workflows$/)
       await expect(
-        page.getByRole('heading', { name: 'Workflow Builder unavailable' }),
+        page.getByRole('heading', { name: 'Create Workflow', exact: true }),
       ).toBeVisible()
-      await expect(page.getByText('Review customer research')).toBeVisible()
+      await expect(page.getByLabel('Workflow name', { exact: true })).toHaveValue(
+        'Review customer research',
+      )
       expect(
         await page.evaluate(() =>
           JSON.stringify(localStorage).includes('Review customer research'),

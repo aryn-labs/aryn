@@ -14,6 +14,8 @@ import { ProjectsPage } from '@/features/projects/ProjectsPage'
 import { ProjectWorkspace } from '@/features/projects/ProjectWorkspace'
 import { AgentCatalog } from '@/features/agents/AgentCatalog'
 import { AgentEditor } from '@/features/agents/AgentEditor'
+import { WorkflowCatalog } from '@/features/workflows/WorkflowCatalog'
+import { WorkflowEditor } from '@/features/workflows/WorkflowEditor'
 import { navigation } from '@/components/navigation/items'
 import { FeatureScaffold, NotFound } from './pages'
 const root = createRootRoute({
@@ -28,7 +30,7 @@ const dashboard = createRoute({ getParentRoute: () => root, id: 'dashboard', com
 const studio = createRoute({ getParentRoute: () => root, id: 'studio', component: StudioShell })
 const home = createRoute({ getParentRoute: () => dashboard, path: '/', component: HomePage })
 const routes = navigation
-  .filter((item) => item.path !== '/' && item.path !== '/projects' && item.path !== '/agents')
+  .filter((item) => !['/', '/projects', '/agents', '/workflows'].includes(item.path))
   .map((item) =>
     createRoute({
       getParentRoute: () => dashboard,
@@ -55,6 +57,22 @@ const agentEditor = createRoute({
   getParentRoute: () => studio,
   path: '/agents/$projectId/$blueprintId',
   component: AgentEditor,
+})
+const workflows = createRoute({
+  getParentRoute: () => dashboard,
+  path: '/workflows',
+  component: WorkflowCatalog,
+})
+const workflowEditor = createRoute({
+  getParentRoute: () => studio,
+  path: '/workflows/$projectId/$workflowId',
+  component: WorkflowEditor,
+  validateSearch: (value: Record<string, unknown>): { run?: string } => ({
+    run:
+      typeof value.run === 'string' && /^workflow_run_[a-zA-Z0-9_-]{1,64}$/.test(value.run)
+        ? value.run
+        : undefined,
+  }),
 })
 const validateProjectSearch = (value: Record<string, unknown>): { selection?: string } => ({
   selection:
@@ -100,8 +118,8 @@ const projectRoutes = [
   projectActivity,
 ] as const
 const tree = root.addChildren([
-  dashboard.addChildren([home, chat, projects, agents, ...projectRoutes, ...routes]),
-  studio.addChildren([agentEditor]),
+  dashboard.addChildren([home, chat, projects, agents, workflows, ...projectRoutes, ...routes]),
+  studio.addChildren([agentEditor, workflowEditor]),
 ])
 export function createAppRouter(history: RouterHistory = createBrowserHistory()) {
   return createRouter({ routeTree: tree, history, defaultPreload: 'intent' })

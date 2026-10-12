@@ -14,7 +14,8 @@
     "format:check": "prettier --check src e2e scripts *.ts *.json *.js",
     "test:projects:e2e": "playwright test --config playwright.projects.config.ts",
     "test:chat:e2e": "playwright test --config playwright.chat.config.ts",
-    "test:agents:e2e": "playwright test --config playwright.agents.config.ts"
+    "test:agents:e2e": "playwright test --config playwright.agents.config.ts",
+    "test:workflows:e2e": "playwright test --config playwright.workflows.config.ts"
   },
   "dependencies": {
     "@fontsource/inter": "^5.2.8",

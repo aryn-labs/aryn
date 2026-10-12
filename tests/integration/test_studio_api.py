@@ -67,7 +67,7 @@ def draft(client, slug="research-test"):
     return bp, v.json()
 
 
-def promoted(client, bp, v):
+def promoted(client, bp, v, role_name="Peneliti tes"):
     bench = client.post(
         PREFIX + f"/versions/{v['id']}/bench", json={"allow_remote_model": True}
     )
@@ -88,7 +88,7 @@ def promoted(client, bp, v):
         json={
             "blueprint_id": bp["id"],
             "version_id": v["id"],
-            "role_name": "Peneliti tes",
+            "role_name": role_name,
         },
     )
     assert assignment.status_code == 201, assignment.text

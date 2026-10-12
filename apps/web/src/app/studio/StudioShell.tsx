@@ -8,7 +8,7 @@ export function StudioShell() {
   const { t } = useTranslation()
   const { pathname } = useLocation()
   useEffect(() => {
-    document.title = `ARYN Studio · ${t('agents.factory')}`
+    document.title = `ARYN Studio · ${t(pathname.startsWith('/workflows/') ? 'workflows.builder' : 'agents.factory')}`
     const frame = requestAnimationFrame(() =>
       document.getElementById('main-content')?.focus({ preventScroll: true }),
     )

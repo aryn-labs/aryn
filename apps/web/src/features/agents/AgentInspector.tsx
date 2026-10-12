@@ -38,6 +38,7 @@ export function AgentInspector({
       : '',
   )
   const [schemaInvalid, setSchemaInvalid] = useState(false)
+  const selectedModel = capabilities.models.find((model) => model.model_id === draft?.model)
   const field = (label: string, content: ReactElement<{ 'aria-labelledby'?: string }>) => (
     <label className="af-field">
       <span id={fieldPrefix + label}>{t('agents.' + label)}</span>
@@ -157,17 +158,24 @@ export function AgentInspector({
                   </option>
                   {!capabilities.models.some((model) => model.model_id === draft.model) && (
                     <option value={draft.model}>
-                      {draft.model} · {t('agents.unavailable')}
+                      {draft.model} · {t('agents.modelNotListed')}
                     </option>
                   )}
                   {capabilities.models.map((model) => (
                     <option key={model.model_id} value={model.model_id}>
                       {model.display_name}
-                      {model.availability !== 'available' ? ` · ${t('agents.unavailable')}` : ''}
+                      {model.availability !== 'available'
+                        ? ` · ${t(model.availability === 'unavailable' ? 'agents.modelUnavailable' : 'agents.modelUnverified')}`
+                        : ''}
                     </option>
                   ))}
                 </select>,
               )}
+              {selectedModel &&
+                selectedModel.availability !== 'available' &&
+                selectedModel.availability !== 'unavailable' && (
+                  <p className="af-note">{t('agents.modelCatalogOnly')}</p>
+                )}
               {field('provider', <input readOnly value={draft.model_policy.provider} />)}
               <div className="af-field-pair">
                 {field(

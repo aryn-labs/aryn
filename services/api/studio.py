@@ -1247,7 +1247,7 @@ def create_app(
         return sanitize(StopReceipt(cancellation_confirmed=result.status.value == "cancelled", result=result).model_dump(mode="json"), credentials=protected_credentials)
 
     from services.api.workflows import register_workflows
-    register_workflows(app, coordinator, context, require_runtime)
+    register_workflows(app, coordinator, context, require_runtime, model_catalog)
     from services.api.projects import register_projects
     register_projects(app, db, permissions, context, workspace_reads)
     from services.api.agent_canvas import register_agent_canvas

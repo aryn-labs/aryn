@@ -190,6 +190,22 @@ export function ProjectResourceDrawer({
           )}
         </div>
         <footer>
+          {item && (item.kind === 'workflow' || reference(item, 'workflow_id')) && (
+            <Button variant="secondary" asChild>
+              <Link
+                to="/workflows/$projectId/$workflowId"
+                params={{
+                  projectId: scope.project,
+                  workflowId: item.kind === 'workflow' ? item.id : reference(item, 'workflow_id')!,
+                }}
+                search={{
+                  run: item.kind === 'workflow-run' ? item.id : reference(item, 'workflow_run_id'),
+                }}
+              >
+                {t('workflows.open')}
+              </Link>
+            </Button>
+          )}
           {item?.kind === 'assignment' && reference(item, 'blueprint_id') && (
             <Button variant="secondary" asChild>
               <Link

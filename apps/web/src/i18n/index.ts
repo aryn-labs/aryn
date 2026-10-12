@@ -6,11 +6,28 @@ import { extraIds } from './extra'
 import { projectsId, projectsEn } from './projects'
 import { agentsId, agentsEn } from './agents'
 import { studioId, studioEn } from './studio'
+import { workflowsId, workflowsEn } from './workflows'
 
 void i18n.use(initReactI18next).init({
   resources: {
-    'id-ID': { translation: { ...id, projects: projectsId, agents: agentsId, studio: studioId } },
-    'en-US': { translation: { ...en, projects: projectsEn, agents: agentsEn, studio: studioEn } },
+    'id-ID': {
+      translation: {
+        ...id,
+        projects: projectsId,
+        agents: agentsId,
+        studio: studioId,
+        workflows: workflowsId,
+      },
+    },
+    'en-US': {
+      translation: {
+        ...en,
+        projects: projectsEn,
+        agents: agentsEn,
+        studio: studioEn,
+        workflows: workflowsEn,
+      },
+    },
   },
   lng: 'id-ID',
   fallbackLng: 'id-ID',

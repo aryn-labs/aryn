@@ -131,9 +131,7 @@ describe('Home overview interactions', () => {
     await user.click(within(drawer).getByRole('button', { name: 'Review brief' }))
     await user.click(within(drawer).getByRole('button', { name: /Open.*Workflow.*Builder/ }))
     await waitFor(() => expect(router.state.location.pathname).toBe('/workflows'))
-    expect(
-      await screen.findByRole('heading', { name: 'Workflow Builder unavailable' }),
-    ).toBeVisible()
+    expect(await screen.findByRole('heading', { name: 'Create Workflow' })).toBeVisible()
     expect(
       fetchMock.mock.calls.filter(
         ([url, options]) => url !== '/api/session' && options?.method === 'POST',

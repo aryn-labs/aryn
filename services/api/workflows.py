@@ -1,5 +1,9 @@
 """Authenticated workflow routes; each operation revalidates Core scope."""
 
+import asyncio
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import Query, Request
 from fastapi.responses import JSONResponse, Response
 
@@ -16,10 +20,36 @@ from packages.contracts.workflow import SaveWorkflow, Revision, StartWorkflow, R
 from packages.contracts.agent_builder import StopInput
 
 
-def register_workflows(app, coordinator, context, require_runtime):
+def register_workflows(app, coordinator, context, require_runtime, model_catalog):
     executor = WorkflowExecutor(coordinator)
     executor.recover()
     app.state.workflows = executor
+    tasks = {}
+
+    async def execute_background(ctx, identifier):
+        try:
+            await executor.execute(ctx, identifier)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logging.getLogger(__name__).error("workflow_background_execution_failed")
+        finally:
+            tasks.pop(identifier, None)
+
+    previous_lifespan = app.router.lifespan_context
+
+    @asynccontextmanager
+    async def lifespan(application):
+        async with previous_lifespan(application):
+            try:
+                yield
+            finally:
+                active = list(tasks.values())
+                for task in active:
+                    task.cancel()
+                await asyncio.gather(*active, return_exceptions=True)
+
+    app.router.lifespan_context = lifespan
     prefix = "/api/projects/{project_id}"
 
     @app.exception_handler(GraphRejected)
@@ -42,16 +72,26 @@ def register_workflows(app, coordinator, context, require_runtime):
 
             raise HTTPException(422, "Unknown or duplicate query.")
 
+    @app.get(prefix + "/workflow-targets")
+    def targets(project_id: str, request: Request, after: str = Query("", max_length=64), limit: int = Query(25, ge=1, le=100)):
+        queries(request, {"after", "limit"})
+        return executor.targets(context(project_id), after, limit)
+
+    @app.get(prefix + "/workflow-targets/{assignment_id}")
+    def target(project_id: str, assignment_id: str):
+        return executor.targets(context(project_id), assignment_id=assignment_id)
+
     @app.get(prefix + "/workflows")
     def definitions(
         project_id: str,
         request: Request,
         after: str = Query("", max_length=64),
         limit: int = Query(25, ge=1, le=100),
+        q: str = Query("", max_length=120),
     ):
-        queries(request, {"after", "limit"})
+        queries(request, {"after", "limit", "q"})
         return executor.inventory(
-            context(project_id), WorkflowDefinitionModel, after, limit
+            context(project_id), WorkflowDefinitionModel, after, limit, q=q
         )
 
     @app.post(prefix + "/workflows", status_code=201)
@@ -94,12 +134,20 @@ def register_workflows(app, coordinator, context, require_runtime):
         return executor.read(context(project_id), WorkflowVersionModel, id)
 
     @app.post(prefix + "/workflows/{workflow_id}/runs")
-    async def start(project_id: str, workflow_id: str, body: StartWorkflow):
+    async def start(project_id: str, workflow_id: str, body: StartWorkflow, request: Request):
         context(project_id, "run:create")
         await require_runtime()
-        return await executor.start(
-            context(project_id, "run:create"), workflow_id, body
-        )
+        from packages.contracts.runtime import GatewayUnavailableError
+        if not (await model_catalog()).discovery_valid:
+            raise GatewayUnavailableError()
+        ctx = context(project_id, "run:create")
+        deferred = request.headers.get("Prefer") == "respond-async"
+        result = await executor.start(ctx, workflow_id, body, defer=deferred)
+        if deferred:
+            if result["status"] == "running" and result["id"] not in tasks:
+                tasks[result["id"]] = asyncio.create_task(execute_background(ctx, result["id"]))
+            return JSONResponse(status_code=202, content=result, headers={"Preference-Applied": "respond-async"})
+        return result
 
     @app.get(prefix + "/workflows/{workflow_id}/runs")
     def runs(
@@ -125,6 +173,10 @@ def register_workflows(app, coordinator, context, require_runtime):
     @app.post(prefix + "/workflow-runs/{id}/review")
     def review(project_id: str, id: str, body: Review):
         return executor.review(context(project_id, "version:approve"), id, body)
+
+    @app.get(prefix + "/workflow-runs/{id}/review")
+    def review_receipt(project_id: str, id: str):
+        return executor.decision(context(project_id), id)
 
     @app.get(prefix + "/outputs")
     def outputs(
