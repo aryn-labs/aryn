@@ -61,6 +61,7 @@ class ARYNSettings(BaseModel):
     aryn_env: str = DEVELOPMENT_DEFAULTS["ARYN_ENV"]
     studio_host: str = DEVELOPMENT_DEFAULTS["ARYN_STUDIO_HOST"]
     studio_port: int = DEVELOPMENT_DEFAULTS["ARYN_STUDIO_PORT"]
+    webhook_ingress_origin: str = ""
     runtime_base_url: str = DEVELOPMENT_DEFAULTS["ARYN_RUNTIME_BASE_URL"]
     nine_router_base_url: str = DEVELOPMENT_DEFAULTS["ARYN_9ROUTER_BASE_URL"]
     nine_router_api_key: SecretStr = Field(default_factory=lambda: SecretStr(""))
@@ -81,6 +82,11 @@ class ARYNSettings(BaseModel):
         return values
 
     def model_post_init(self, context) -> None:
+        if self.webhook_ingress_origin:
+            value = _validate_url(self.webhook_ingress_origin, "ARYN_WEBHOOK_INGRESS_ORIGIN", enforce_loopback=False)
+            if urlsplit(value).scheme != "https" or urlsplit(value).path not in ("", "/") or urlsplit(value).hostname in LOOPBACK_HOSTS:
+                raise ValueError("Webhook ingress requires an explicit public HTTPS origin.")
+            object.__setattr__(self, "webhook_ingress_origin", value)
         host = self.studio_host.strip().lower()
         if host not in LOOPBACK_HOSTS:
             raise ValueError(f"ARYN Studio host must be a loopback address ({host} is not allowed).")
@@ -122,6 +128,7 @@ class ARYNSettings(BaseModel):
         values.update({field: value for field, value in endpoints.items() if value})
         values["nine_router_api_key"] = SecretStr(os.getenv("ARYN_9ROUTER_API_KEY", ""))
         values["api_server_key"] = SecretStr(os.getenv("API_SERVER_KEY", ""))
+        values["webhook_ingress_origin"] = os.getenv("ARYN_WEBHOOK_INGRESS_ORIGIN", "").strip()
         return cls(**values)
 
 

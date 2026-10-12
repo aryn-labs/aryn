@@ -264,6 +264,12 @@ jobs:
         env:
           ARYN_TEST_PYTHON: ${{ github.workspace }}/.venv/bin/python
         run: npm run test:agents:e2e
+      - name: Runs and Automations through API and Core (isolated runtime)
+        if: matrix.shard == 2
+        working-directory: apps/web
+        env:
+          ARYN_TEST_PYTHON: ${{ github.workspace }}/.venv/bin/python
+        run: npm run test:operations:e2e
       - name: Workflow Studio through API and Core (isolated runtime)
         if: matrix.shard == 3
         working-directory: apps/web

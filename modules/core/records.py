@@ -123,11 +123,13 @@ class SignedRecords:
             event, ctx, subject, AuditStatus.COMPLETED, details, session=session
         )
 
-    def page(self, session, ctx, cls, after="", limit=25, q="", status="", **filters):
+    def page(self, session, ctx, cls, after="", limit=25, q="", status="", *, conditions=(), **filters):
         self.authorize(session, ctx)
         query = session.query(cls).filter_by(
             organization_id=ctx.organization_id, project_id=ctx.project_id, **filters
         )
+        if conditions:
+            query = query.filter(*conditions)
         if status:
             query = query.filter_by(status=status)
         if q:

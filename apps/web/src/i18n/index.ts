@@ -7,6 +7,7 @@ import { projectsId, projectsEn } from './projects'
 import { agentsId, agentsEn } from './agents'
 import { studioId, studioEn } from './studio'
 import { workflowsId, workflowsEn } from './workflows'
+import { operationsId, operationsEn } from './operations'
 
 void i18n.use(initReactI18next).init({
   resources: {
@@ -17,6 +18,7 @@ void i18n.use(initReactI18next).init({
         agents: agentsId,
         studio: studioId,
         workflows: workflowsId,
+        operations: operationsId,
       },
     },
     'en-US': {
@@ -26,6 +28,7 @@ void i18n.use(initReactI18next).init({
         agents: agentsEn,
         studio: studioEn,
         workflows: workflowsEn,
+        operations: operationsEn,
       },
     },
   },

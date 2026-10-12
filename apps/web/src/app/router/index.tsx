@@ -16,6 +16,9 @@ import { AgentCatalog } from '@/features/agents/AgentCatalog'
 import { AgentEditor } from '@/features/agents/AgentEditor'
 import { WorkflowCatalog } from '@/features/workflows/WorkflowCatalog'
 import { WorkflowEditor } from '@/features/workflows/WorkflowEditor'
+import { RunsPage } from '@/features/runs/RunsPage'
+import { AutomationsPage } from '@/features/automations/AutomationsPage'
+import { AutomationBuilder } from '@/features/automations/AutomationBuilder'
 import { navigation } from '@/components/navigation/items'
 import { FeatureScaffold, NotFound } from './pages'
 const root = createRootRoute({
@@ -30,7 +33,10 @@ const dashboard = createRoute({ getParentRoute: () => root, id: 'dashboard', com
 const studio = createRoute({ getParentRoute: () => root, id: 'studio', component: StudioShell })
 const home = createRoute({ getParentRoute: () => dashboard, path: '/', component: HomePage })
 const routes = navigation
-  .filter((item) => !['/', '/projects', '/agents', '/workflows'].includes(item.path))
+  .filter(
+    (item) =>
+      !['/', '/projects', '/agents', '/workflows', '/runs', '/automations'].includes(item.path),
+  )
   .map((item) =>
     createRoute({
       getParentRoute: () => dashboard,
@@ -72,6 +78,39 @@ const workflowEditor = createRoute({
       typeof value.run === 'string' && /^workflow_run_[a-zA-Z0-9_-]{1,64}$/.test(value.run)
         ? value.run
         : undefined,
+  }),
+})
+const identifier = (value: unknown) =>
+  typeof value === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(value) ? value : undefined
+const runs = createRoute({
+  getParentRoute: () => dashboard,
+  path: '/runs',
+  component: RunsPage,
+  validateSearch: (
+    value: Record<string, unknown>,
+  ): { project?: string; run?: string; runKind?: 'agent' | 'workflow' } => ({
+    project: identifier(value.project),
+    run: identifier(value.run),
+    runKind:
+      value.runKind === 'workflow' ? 'workflow' : value.runKind === 'agent' ? 'agent' : undefined,
+  }),
+})
+const automations = createRoute({
+  getParentRoute: () => dashboard,
+  path: '/automations',
+  component: AutomationsPage,
+  validateSearch: (value: Record<string, unknown>): { project?: string; automation?: string } => ({
+    project: identifier(value.project),
+    automation: identifier(value.automation),
+  }),
+})
+const automationBuilder = createRoute({
+  getParentRoute: () => dashboard,
+  path: '/automations/new',
+  component: AutomationBuilder,
+  validateSearch: (value: Record<string, unknown>): { project?: string; edit?: string } => ({
+    project: identifier(value.project),
+    edit: identifier(value.edit),
   }),
 })
 const validateProjectSearch = (value: Record<string, unknown>): { selection?: string } => ({
@@ -118,7 +157,18 @@ const projectRoutes = [
   projectActivity,
 ] as const
 const tree = root.addChildren([
-  dashboard.addChildren([home, chat, projects, agents, workflows, ...projectRoutes, ...routes]),
+  dashboard.addChildren([
+    home,
+    chat,
+    projects,
+    agents,
+    workflows,
+    runs,
+    automations,
+    automationBuilder,
+    ...projectRoutes,
+    ...routes,
+  ]),
   studio.addChildren([agentEditor, workflowEditor]),
 ])
 export function createAppRouter(history: RouterHistory = createBrowserHistory()) {

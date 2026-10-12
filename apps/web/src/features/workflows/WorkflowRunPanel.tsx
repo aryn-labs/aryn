@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Link } from '@tanstack/react-router'
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { Play, Square } from 'lucide-react'
@@ -292,6 +293,11 @@ export function WorkflowRunPanel({
           </div>
           <p className="af-note">{t('workflows.checkpointHelp')}</p>
           <code>{run.id}</code>
+          <Button variant="secondary" asChild>
+            <Link to="/runs" search={{ project, run: run.id, runKind: 'workflow' }}>
+              {t('operations.runLink')}
+            </Link>
+          </Button>
           {run.error_code && <p className="af-error">{run.error_code}</p>}
           {['running', 'waiting_review'].includes(run.status) && (
             <>
@@ -401,7 +407,7 @@ export function WorkflowRunPanel({
     </div>
   )
 }
-function ArtifactPanel({
+export function ArtifactPanel({
   organization,
   project,
   workflow,
@@ -555,7 +561,7 @@ function ArtifactPanel({
             >
               {t('workflows.download')}
             </a>
-            {run.status === 'waiting_review' && run.artifact_id === id && (
+            {run.status === 'waiting_review' && run.artifact_id === id && canReview && (
               <>
                 <h3>{t('workflows.review')}</h3>
                 <label className="af-field">

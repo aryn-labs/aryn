@@ -28,6 +28,7 @@ def test_production_environment_reads_are_explicit_and_never_provider_credential
     root = Path(__file__).resolve().parents[2]
     allowed = {
         "ARYN_ENV",
+        "ARYN_WEBHOOK_INGRESS_ORIGIN",
         "ARYN_STUDIO_HOST",
         "ARYN_STUDIO_PORT",
         "ARYN_RUNTIME_BASE_URL",
@@ -73,4 +74,5 @@ def test_env_example_contains_only_safe_gateway_configuration():
         "ARYN_RUNTIME_BASE_URL=http://127.0.0.1:8642",
         "ARYN_9ROUTER_BASE_URL=http://127.0.0.1:20128/v1",
         "ARYN_9ROUTER_API_KEY=",
+        "ARYN_WEBHOOK_INGRESS_ORIGIN=",
     ]

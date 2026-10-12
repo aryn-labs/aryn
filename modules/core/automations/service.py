@@ -45,6 +45,11 @@ def stamp(value):
     return instant(value).isoformat(timespec="microseconds")
 
 
+def cursor_for(schedule, clock):
+    # Existing indexed cursor is retained; event-only definitions are never due.
+    return "9999-12-31T00:00:00.000000+00:00" if schedule.kind == "webhook" else stamp(next_instant(schedule, clock))
+
+
 class CoreAutomations(SignedRecords):
     def __init__(self, core, *, require_runtime=None, clock=None):
         super().__init__(core)
@@ -186,7 +191,8 @@ class CoreAutomations(SignedRecords):
                     title=body.title,
                     payload_hash=self.configuration_hash(ctx, ctx.actor.actor_id, body),
                     status="paused",
-                    next_run_at=stamp(next_instant(body.schedule, clock)),
+                    next_run_at=cursor_for(body.schedule, clock),
+                    webhook_credential=None,
                     updated_at=stamp(clock),
                 )
                 self.put(session, ctx, row, definition)
@@ -206,7 +212,7 @@ class CoreAutomations(SignedRecords):
                     revision=1,
                     configuration=body.model_dump(mode="json"),
                     payload_hash=self.configuration_hash(ctx, ctx.actor.actor_id, body),
-                    next_run_at=stamp(next_instant(body.schedule, clock)),
+                    next_run_at=cursor_for(body.schedule, clock),
                     updated_at=stamp(clock),
                 )
             self.event(
@@ -298,6 +304,17 @@ class CoreAutomations(SignedRecords):
         with self.db.session() as session:
             _, definition = self.get(session, DefinitionRow, ctx, identifier)
             body = AutomationInput.model_validate(definition["configuration"])
+            from database.schema import WorkflowDefinitionModel
+            from database.repositories.exceptions import EntityNotFoundError
+            target_label = None
+            try:
+                if body.target.kind == "agent":
+                    target_label = AgentRepository(session).get_assignment(ctx, body.target.id).role_name
+                else:
+                    _, target = self.workflows.get(session, WorkflowDefinitionModel, ctx, body.target.id)
+                    target_label = target["name"]
+            except EntityNotFoundError:
+                pass
             approval_verified = False
             try:
                 owner = self.owner_context(definition)
@@ -317,8 +334,9 @@ class CoreAutomations(SignedRecords):
                     raise
             return {
                 **definition,
+                "target_label": target_label,
                 "approval_verified": approval_verified,
-                "preview": preview(
+                "preview": [] if body.schedule.kind == "webhook" else preview(
                     body.schedule,
                     max(
                         instant(self.clock()),
@@ -349,6 +367,7 @@ class CoreAutomations(SignedRecords):
         limit=25,
         q="",
         status="",
+        trigger="",
     ):
         with self.db.session() as session:
             filters = {}
@@ -356,9 +375,16 @@ class CoreAutomations(SignedRecords):
                 self.get(session, DefinitionRow, ctx, identifier)
                 filters["automation_id"] = identifier
             items, next_after = self.page(
-                session, ctx, cls, after, limit, q, status, **filters
+                session, ctx, cls, after, limit, q, status, conditions=self.trigger_filter(cls, trigger), **filters
             )
             return {"items": items, "next": next_after}
+
+    def trigger_filter(self, cls, trigger):
+        if not trigger:
+            return ()
+        from sqlalchemy import cast, JSON
+        value = func.json_extract(cls.details_json, "$.configuration.schedule.kind") if self.db.engine.dialect.name == "sqlite" else cast(cls.details_json, JSON)["configuration"]["schedule"]["kind"].as_string()
+        return (value == trigger,)
 
     def targets(self, ctx, kind, after="", limit=25):
         from database.schema import AgentAssignmentModel, WorkflowVersionModel
@@ -497,6 +523,8 @@ class CoreAutomations(SignedRecords):
                 self.event(session, system, definition, "authority_revoked")
                 return []
             body = AutomationInput.model_validate(definition["configuration"])
+            if body.schedule.kind == "webhook":
+                return []
             clock = instant(self.clock())
             due, following, omitted = due_window(
                 body.schedule,
@@ -557,7 +585,7 @@ class CoreAutomations(SignedRecords):
             self.put(session, ctx, row, definition)
             return identifiers
 
-    async def manual(self, ctx, identifier, body):
+    async def manual(self, ctx, identifier, body, *, defer=False):
         with self.db.session(write=True) as session:
             self.manage(session, ctx)
             _, definition = self.get(session, DefinitionRow, ctx, identifier, True)
@@ -579,7 +607,7 @@ class CoreAutomations(SignedRecords):
                 raise InvalidStateTransitionError(
                     "Manual key belongs to another revision."
                 )
-        if fresh:
+        if fresh and not defer:
             await self.dispatch(occurrence["id"], definition)
         with self.db.session() as session:
             return self.get(session, OccurrenceRow, ctx, occurrence["id"])[1]

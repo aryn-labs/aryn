@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from packages.contracts.intelligence import (
     Contract,
     Record,
@@ -15,8 +15,9 @@ from packages.contracts.intelligence import (
 
 class Schedule(Contract):
     timezone: str = Field(default="UTC", max_length=100)
-    kind: Literal["interval", "daily", "weekly"] = "daily"
-    start_at: str
+    kind: Literal["interval", "daily", "weekly", "cron", "webhook"] = "daily"
+    cron_expression: str | None = Field(default=None, max_length=160)
+    start_at: str = Field(max_length=64)
     interval_minutes: int = Field(default=60, strict=True, ge=1, le=10080)
     local_time: str = Field(default="09:00", pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
     weekdays: list[int] = Field(
@@ -38,7 +39,13 @@ class Schedule(Contract):
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
         if parsed.tzinfo is None:
             raise ValueError("start_at memerlukan UTC offset.")
-        return parsed.astimezone(timezone.utc).isoformat()
+        try:
+            utc = parsed.astimezone(timezone.utc)
+        except OverflowError as exc:
+            raise ValueError("start_at di luar rentang perencanaan.") from exc
+        if not 2 <= utc.year <= 9990:
+            raise ValueError("start_at di luar rentang perencanaan (tahun 2–9990).")
+        return utc.isoformat()
 
     @field_validator("weekdays")
     @classmethod
@@ -48,6 +55,20 @@ class Schedule(Contract):
         ) != len(value):
             raise ValueError("Hari harus unik, Senin=0 sampai Minggu=6.")
         return sorted(value)
+
+    @field_validator("cron_expression")
+    @classmethod
+    def bounded_cron(cls, value):
+        if value is not None:
+            from modules.core.automations.cron import validate
+            validate(value)
+        return value
+
+    @model_validator(mode="after")
+    def trigger_configuration(self):
+        if (self.kind == "cron") != (self.cron_expression is not None):
+            raise ValueError("Cron expression is required only for cron triggers.")
+        return self
 
 
 class AutomationTarget(Contract):
@@ -88,6 +109,7 @@ class AutomationDefinition(Record):
     next_run_at: str
     last_occurrence_id: Identifier | None = None
     updated_at: str
+    webhook_credential: dict | None = None
 
 
 OccurrenceStatus = Literal[
@@ -120,6 +142,7 @@ class AutomationOccurrence(Record):
     error_code: str | None = None
     completed_at: str | None = None
     admitted_at: str | None = None
+    trigger_event_digest: Digest | None = None
 
 
 class AutomationEvent(Record):
@@ -155,6 +178,16 @@ class ReconcileOccurrence(Contract):
 
 class PreviewInput(Contract):
     schedule: Schedule
+
+
+class WebhookSignal(Contract):
+    event_id: str = Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9_-]+$")
+    event: Literal["trigger"]
+
+
+class WebhookCredentialAction(Contract):
+    expected_revision: Revision
+    action: Literal["rotate", "revoke"]
 
 
 class Capability(Contract):

@@ -6,10 +6,39 @@ from sqlalchemy.exc import DBAPIError
 from tests.postgresql.test_workflow_persistence import studio as studio
 from tests.integration.test_workflow_execution import workflow as workflow
 from tests.integration import test_core_automations as acceptance
+from tests.integration import test_runs_automations as operations
 from tests.postgresql.conftest import migrate_to
 from database.automation_protection import TABLES, MUTABLE_TABLES
 
 pytestmark = pytest.mark.postgresql
+
+
+def test_cron_core_budget_and_discovery(studio):
+    operations.test_cron_real_occurrence_daily_budget_approval_edit_and_cold_catalog(studio)
+
+
+def test_execution_projection_scope_and_cursor(studio):
+    operations.test_automation_agent_projection_lineage_private_modes_search_cursor_and_stop(studio)
+
+
+def test_workflow_parent_inspection(workflow):
+    operations.test_workflow_parent_projection_excludes_internal_core_tasks(workflow)
+
+
+def test_deferred_occurrence_dispatch(studio):
+    operations.test_manual_async_occurrence_is_durable_without_browser_or_second_runner(studio)
+
+
+def test_execution_filters_cursor_and_target_checks(studio):
+    operations.test_cursor_filter_order_tamper_and_target_checks_are_bound_to_actual_scope(studio)
+
+
+def test_private_preview(studio):
+    operations.test_preview_claim_visible_only_to_its_actor_and_signed_accepted_evidence(studio)
+
+
+def test_private_chat(studio):
+    operations.test_private_chat_is_excluded_even_with_project_admin_and_known_core_id(studio)
 
 
 def test_scheduled_core_claim(studio):

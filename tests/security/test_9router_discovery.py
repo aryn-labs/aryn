@@ -72,11 +72,12 @@ def test_env_configuration_reads_only_centralized_allowlisted_variables(monkeypa
     def read(name, *args):
         reads.append(name)
         assert name in {"ARYN_ENV", "ARYN_STUDIO_HOST", "ARYN_STUDIO_PORT", "ARYN_RUNTIME_BASE_URL",
-                        "ARYN_9ROUTER_BASE_URL", "ARYN_9ROUTER_API_KEY", "API_SERVER_KEY"}
+                        "ARYN_9ROUTER_BASE_URL", "ARYN_9ROUTER_API_KEY", "API_SERVER_KEY", "ARYN_WEBHOOK_INGRESS_ORIGIN"}
         return original(name, *args)
     monkeypatch.setattr(os, "getenv", read)
     settings = GatewaySettings.from_env()
-    assert len(reads) == 7
+    assert len(reads) == 8
+    assert reads.count("ARYN_WEBHOOK_INGRESS_ORIGIN") == 1
     assert settings.base_url.endswith("/v1")
 
 

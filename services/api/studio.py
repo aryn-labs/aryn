@@ -209,6 +209,9 @@ def create_app(
     if auth_config.environment != settings.aryn_env or (settings.aryn_env != "development" and auth_config.mode != "oidc"):
         raise ValueError("Authentication mode must match the deployment environment.")
     local_development = auth_config.mode == "local-development"
+    webhook_origin = settings.webhook_ingress_origin if not local_development else ""
+    if webhook_origin and webhook_origin != auth_config.public_origin:
+        raise ValueError("Webhook ingress must match the validated hosted Studio origin.")
     if not local_development:
         if origin is not None and origin != auth_config.public_origin:
             raise ValueError("Hosted origin must match the authenticated public origin.")
@@ -357,6 +360,7 @@ def create_app(
         else:
             try:
                 auth_config.check_request(request)
+                request.state.secure_transport_verified = True
             except HTTPException as exc:
                 return fail(exc.status_code, "Boundary HTTPS/host/proxy tidak valid.")
         if request.url.path.startswith(("/docs", "/redoc", "/openapi", "/debug", "/diagnostics")):
@@ -1252,10 +1256,18 @@ def create_app(
     register_projects(app, db, permissions, context, workspace_reads)
     from services.api.agent_canvas import register_agent_canvas
     register_agent_canvas(app, coordinator, editor, context, model_catalog, require_runtime)
+    from services.api.executions import register_executions
+    register_executions(app, workspace_reads, editor, context)
     from services.api.intelligence import register_intelligence
     register_intelligence(app, coordinator, context)
     from services.api.automations import register_automations
-    register_automations(app, coordinator, context, require_runtime, testing=testing, local=local_development)
+    async def automation_runtime():
+        await require_runtime()
+        from packages.contracts.runtime import GatewayUnavailableError
+        if not (await model_catalog()).discovery_valid:
+            raise GatewayUnavailableError()
+
+    register_automations(app, coordinator, context, automation_runtime, testing=testing, local=local_development, ingress_origin=webhook_origin)
     from services.api.conversations import register_conversations
     register_conversations(app, coordinator, context, model_catalog, require_runtime)
 
@@ -1265,7 +1277,7 @@ def create_app(
 
     @app.get("/{path:path}")
     async def frontend(path: str):
-        if path.startswith("api/"):
+        if path.startswith(("api/", "ingress/")):
             raise HTTPException(404, "Endpoint API tidak tersedia.")
         index = ROOT / "apps/web/dist/index.html"
         if not index.exists():

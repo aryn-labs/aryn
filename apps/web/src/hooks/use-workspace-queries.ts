@@ -2,8 +2,10 @@ import { useQuery } from '@tanstack/react-query'
 import { request } from '@/lib/api/client'
 import { resourceSchema, summarySchema, pageSchema, statusSchema } from '@/lib/types/workspace'
 import { useWorkspace } from '@/app/providers/WorkspaceProvider'
-export function useSummary() {
-  const { project, context } = useWorkspace()
+export function useSummary(projectId?: string) {
+  const { project: activeProject, context } = useWorkspace()
+  const project =
+    projectId === undefined ? activeProject : context?.projects.find((p) => p.id === projectId)
   return useQuery({
     queryKey: ['summary', context?.user.id, context?.organization.id, project?.id],
     enabled: !!project,

@@ -190,6 +190,29 @@ export function ProjectResourceDrawer({
           )}
         </div>
         <footer>
+          {item && ['run', 'workflow-run'].includes(item.kind) && (
+            <Button variant="secondary" asChild>
+              <Link
+                to="/runs"
+                search={{
+                  project: scope.project,
+                  run:
+                    item.kind === 'run' &&
+                    typeof item.references.workflow === 'object' &&
+                    item.references.workflow &&
+                    'run_id' in item.references.workflow
+                      ? String(item.references.workflow.run_id)
+                      : item.id,
+                  runKind:
+                    item.kind === 'workflow-run' || !!item.references.workflow
+                      ? 'workflow'
+                      : 'agent',
+                }}
+              >
+                {t('operations.runLink')}
+              </Link>
+            </Button>
+          )}
           {item && (item.kind === 'workflow' || reference(item, 'workflow_id')) && (
             <Button variant="secondary" asChild>
               <Link
