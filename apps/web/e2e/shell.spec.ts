@@ -321,10 +321,11 @@ test('all sidebar routes, browser back and deep link reload work', async ({ page
       .getByRole('navigation', { name: 'Primary navigation' })
       .getByRole('link', { name: title, exact: true })
       .click()
-    await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
+    const heading = title === 'Agents' ? 'Agent Catalog' : title
+    await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible()
     await expect(page.locator('#main-content')).toBeFocused()
     await page.reload()
-    await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible()
   }
   await page.goBack()
   await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible()

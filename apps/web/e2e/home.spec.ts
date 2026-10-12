@@ -304,6 +304,7 @@ test('project switching clears unsaved handoff and home composer input', async (
   await page.getByRole('button', { name: 'Review brief' }).click()
   await page.getByRole('button', { name: 'Open Agent Builder' }).click()
   await expect(page.getByText('Second project only')).toBeVisible()
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel', exact: true }).click()
   await page.getByRole('button', { name: 'Switch workspace' }).click()
   await page.getByRole('menuitemradio', { name: 'First Project' }).click()
   await expect(page.getByText('Second project only')).toHaveCount(0)

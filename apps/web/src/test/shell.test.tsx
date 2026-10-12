@@ -130,7 +130,7 @@ describe('Studio shell', () => {
         { name: 'Agents' },
       ),
     )
-    expect(await screen.findByText('Agents workspace is not available yet')).toBeVisible()
+    expect(await screen.findByRole('heading', { name: 'Agent Catalog' })).toBeVisible()
     expect(router.state.location.pathname).toBe('/agents')
   })
   it('does not restore the removed context panel from a legacy preference', async () => {
@@ -289,6 +289,20 @@ describe('Studio shell', () => {
     mockApi()
     renderShell('/does-not-exist')
     expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeVisible()
+  })
+  it('uses the Studio route layout for deep links and restores Dashboard on exit', async () => {
+    mockApi()
+    const { user } = renderShell('/agents/project-one/missing-blueprint')
+    expect(await screen.findByRole('link', { name: 'Back to Agent Catalog' })).toBeVisible()
+    expect(document.querySelector('.app-sidebar')).toBeNull()
+    expect(document.querySelector('.app-topbar')).toBeNull()
+    expect(document.querySelector('.studio-shell')).toBeInTheDocument()
+    await screen.findByText('The API response does not match the workspace contract.')
+    expect(screen.queryByRole('button', { name: 'Save Draft' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('link', { name: 'Back to Agent Catalog' }))
+    expect(await screen.findByRole('heading', { name: 'Agent Catalog' })).toBeVisible()
+    expect(document.querySelector('.app-sidebar')).toBeInTheDocument()
+    expect(document.querySelector('.studio-shell')).toBeNull()
   })
 })
 describe('API boundary', () => {

@@ -647,3 +647,8 @@
     width: 100%;
   }
 }
+.project-agent-factory-link {
+  display: flex;
+  justify-content: flex-end;
+  margin: 16px 0;
+}

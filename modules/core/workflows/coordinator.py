@@ -113,6 +113,10 @@ class RunCoordinator:
                 raise TimeoutError("Core execution deadline exceeded.")
             if row.status not in {"started", "running"}:
                 raise ExecutionOwnershipError("Claim is no longer eligible for dispatch.")
+            if row.execution_mode == "agent_preview" and row.status == "started":
+                RunStateRepository(session).transition_status(context, run_id, "running")
+                self.audit_logger.record("factory.preview.dispatched", context, run_id,
+                    AuditStatus.ALLOWED, {"requested_model": row.model}, session=session)
 
     async def _bounded(self, awaitable, seconds):
         task = asyncio.ensure_future(awaitable)

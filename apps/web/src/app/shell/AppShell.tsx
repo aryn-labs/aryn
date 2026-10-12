@@ -1,36 +1,28 @@
 import { translate as tr, labelText } from '@/i18n'
 import { useTranslation } from 'react-i18next'
 import { Outlet, useLocation } from '@tanstack/react-router'
-import { useEffect, useRef } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { AppTopbar } from './AppTopbar'
 import { AppSidebar } from './AppSidebar'
 import { MobileNavigation } from './MobileNavigation'
-import { GlobalSearch } from '@/components/overlays/GlobalSearch'
-import { ResourceDetailsDialog } from '@/components/overlays/ResourceDetailsDialog'
 import { useShell } from '@/app/providers/ShellProvider'
 import { useWorkspace } from '@/app/providers/WorkspaceProvider'
 import { navigation } from '@/components/navigation/items'
-export function AppShell() {
+export function AppShell({ children }: { children?: ReactNode }) {
   useTranslation()
 
   const { collapsed } = useShell()
   const { pathname } = useLocation()
-  const previous = useRef(pathname)
   const { context, loading, error } = useWorkspace()
   const label = pathname.startsWith('/chat/')
     ? tr('chat.assistant')
     : pathname.startsWith('/projects/')
       ? tr('projects.title')
-      : labelText(navigation.find((item) => item.path === pathname)?.label ?? 'Page not found')
+      : pathname.startsWith('/agents/')
+        ? tr('agents.factory')
+        : labelText(navigation.find((item) => item.path === pathname)?.label ?? 'Page not found')
   useEffect(() => {
     document.title = `${label} · ARYN Studio`
-    if (previous.current !== pathname) {
-      previous.current = pathname
-      const frame = requestAnimationFrame(() =>
-        document.getElementById('main-content')?.focus({ preventScroll: true }),
-      )
-      return () => cancelAnimationFrame(frame)
-    }
   }, [pathname, label])
   return (
     <div className={`app-shell ${collapsed ? 'is-sidebar-collapsed' : ''}`}>
@@ -41,7 +33,7 @@ export function AppShell() {
       <div className="shell-panels">
         <AppSidebar />
         <div className="main-column">
-          <Outlet />
+          {children ?? <Outlet />}
           <footer className="workspace-footer">
             <span className="footer-brand">{tr('ui.aryn_studio')}</span>
             <span>
@@ -60,8 +52,6 @@ export function AppShell() {
         </div>
       </div>
       <MobileNavigation />
-      <GlobalSearch />
-      <ResourceDetailsDialog />
       <div className="sr-only" role="status" aria-live="polite">
         {label}
       </div>

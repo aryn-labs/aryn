@@ -125,10 +125,62 @@ class Viewport(EditorContract):
     zoom: float = Field(default=1, ge=0.1, le=4)
 
 
+CanvasNodeType = Literal["input", "agent", "output", "constraints", "tool-policy", "budget", "evaluation"]
+
+
+class CanvasNode(EditorContract):
+    id: CanvasNodeType
+    type: CanvasNodeType
+    x: float = Field(ge=-10000, le=10000)
+    y: float = Field(ge=-10000, le=10000)
+
+    @model_validator(mode="after")
+    def singleton_identity(self):
+        if self.id != self.type:
+            raise ValueError("Each agent configuration section has one stable identity.")
+        return self
+
+
+class CanvasConnection(EditorContract):
+    source: CanvasNodeType
+    source_port: Literal["text", "result", "policy"]
+    target: CanvasNodeType
+    target_port: Literal["input", "result", "policy"]
+
+
+class AgentCanvasGraph(EditorContract):
+    """Editor metadata for ONE agent, never a workflow or tool permission grant."""
+    schema_version: Literal["1.0.0"] = "1.0.0"
+    nodes: list[CanvasNode] = Field(default_factory=list, max_length=7)
+    connections: list[CanvasConnection] = Field(default_factory=list, max_length=6)
+
+    @model_validator(mode="after")
+    def typed_connections(self):
+        ids = {node.id for node in self.nodes}
+        if len(ids) != len(self.nodes):
+            raise ValueError("Canvas identities must be unique.")
+        seen = set()
+        for edge in self.connections:
+            key = (edge.source, edge.source_port, edge.target, edge.target_port)
+            valid = key in {("input", "text", "agent", "input"), ("agent", "result", "output", "result")} or (
+                edge.source in {"constraints", "tool-policy", "budget", "evaluation"}
+                and key[1:] == ("policy", "agent", "policy"))
+            if not valid or edge.source not in ids or edge.target not in ids or key in seen:
+                raise ValueError("Invalid, dangling or duplicate typed connection.")
+            seen.add(key)
+        return self
+
+    def require_preview_path(self):
+        path = {(edge.source, edge.target) for edge in self.connections}
+        if not {("input", "agent"), ("agent", "output")}.issubset(path):
+            raise ValueError("Connect Input → Agent → Output before testing.")
+
+
 class LayoutInput(EditorContract):
     expected_generation: int = Field(ge=0)
     positions: list[NodePosition] = Field(default_factory=list, max_length=8)
     viewport: Viewport = Field(default_factory=Viewport)
+    graph: AgentCanvasGraph | None = None
 
     @model_validator(mode="after")
     def unique_sections(self):
@@ -141,6 +193,36 @@ class LayoutView(EditorContract):
     generation: int
     positions: list[NodePosition]
     viewport: Viewport
+    graph: AgentCanvasGraph | None = None
+
+
+class AgentPreviewInput(EditorContract):
+    expected_generation: int = Field(ge=1)
+    expected_layout_generation: int = Field(ge=1)
+    prompt: str = Field(min_length=5, max_length=12000)
+    idempotency_key: str = Field(pattern=r"^[a-zA-Z0-9_-]{16,100}$")
+    allow_remote_model: Literal[True]
+
+
+class AgentPreviewEvent(EditorContract):
+    id: str
+    sequence: int = Field(ge=0)
+    occurred_at: str
+    type: Literal["input.accepted", "agent.dispatched", "run.completed", "run.failed", "run.outcome_unknown", "run.cancelled", "run.stopping"]
+    source: Literal["core_audit"] = "core_audit"
+
+
+class AgentPreviewView(EditorContract):
+    organization_id: str
+    project_id: str
+    blueprint_id: str
+    working_copy_generation: int
+    definition_hash: str
+    input: str
+    result: RunResult
+    events: list[AgentPreviewEvent]
+    telemetry: Literal["core_lifecycle_only"] = "core_lifecycle_only"
+    cancellation_supported: bool = False
 
 
 class LifecycleProjection(EditorContract):

@@ -4,11 +4,13 @@ import { id, en } from './resources'
 import { uiIds } from './ui'
 import { extraIds } from './extra'
 import { projectsId, projectsEn } from './projects'
+import { agentsId, agentsEn } from './agents'
+import { studioId, studioEn } from './studio'
 
 void i18n.use(initReactI18next).init({
   resources: {
-    'id-ID': { translation: { ...id, projects: projectsId } },
-    'en-US': { translation: { ...en, projects: projectsEn } },
+    'id-ID': { translation: { ...id, projects: projectsId, agents: agentsId, studio: studioId } },
+    'en-US': { translation: { ...en, projects: projectsEn, agents: agentsEn, studio: studioEn } },
   },
   lng: 'id-ID',
   fallbackLng: 'id-ID',

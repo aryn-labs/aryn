@@ -130,6 +130,13 @@ function ScopedProjectWorkspace({ projectId }: { projectId: string }) {
                   </Link>
                 ))}
               </nav>
+              {tab === 'team' && (
+                <div className="project-agent-factory-link">
+                  <Button variant="secondary" asChild>
+                    <Link to="/agents">{t('agents.catalog')}</Link>
+                  </Button>
+                </div>
+              )}
               {workspace.project?.id === projectId &&
                 (tab === 'overview' ? (
                   <ProjectOverview key={projectId} scope={scope} onOpen={open} />

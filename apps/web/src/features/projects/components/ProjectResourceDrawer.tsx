@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { useRef } from 'react'
+import { Link } from '@tanstack/react-router'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { DataState, QueryError } from '@/components/feedback/DataState'
 import { Button } from '@/components/ui/button'
@@ -189,6 +190,16 @@ export function ProjectResourceDrawer({
           )}
         </div>
         <footer>
+          {item?.kind === 'assignment' && reference(item, 'blueprint_id') && (
+            <Button variant="secondary" asChild>
+              <Link
+                to="/agents/$projectId/$blueprintId"
+                params={{ projectId: scope.project, blueprintId: reference(item, 'blueprint_id')! }}
+              >
+                {t('agents.open')}
+              </Link>
+            </Button>
+          )}
           <Button variant="secondary" onClick={onClose}>
             {t('projects.close')}
           </Button>

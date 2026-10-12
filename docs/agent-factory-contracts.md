@@ -445,6 +445,29 @@ Publication memerlukan organization admin/operator serta project permission yang
 Capabilities mengikuti aturan itu; membership direvalidate pada transaction commit.
 Tidak ada perluasan project admin rights. Lihat [execution hardening](core-execution-hardening.md).
 
+## Agent Canvas dan diagnostic preview (12 Oktober 2026)
+
+`AgentCanvasGraph` ditambahkan sebagai optional editor layout metadata pada
+kontrak builder. Stable singleton nodes: Input, Agent, Output, Constraints,
+Tool policy, Budget, Evaluation. Port hanya menerima text → agent input,
+agent result → output result, atau policy → agent policy. Incomplete graph boleh
+disimpan, tetapi preview memerlukan `Input → Agent → Output`. Layout dan Working
+Copy mempertahankan generation CAS serta scope existing; published versions
+tetap immutable. Tidak ada schema migration.
+
+`AgentPreviewInput` memerlukan current generation Working Copy/layout, prompt,
+idempotency key dan explicit remote-model consent. Core menangkap definition
+hash/generation melalui authenticated audit, lalu memakai existing run claim,
+budget reservation, confined runtime, exact model check dan execution fencing.
+Tidak ada assignment/publication side effect. API mengembalikan scoped
+`AgentPreviewView` dengan stored result dan verified allowlisted audit events.
+Granular tool/token trace dan direct cancellation belum tersedia.
+
+Routes: `GET /api/projects/{project}/factory/capabilities`,
+`POST /api/projects/{project}/blueprints/{blueprint}/preview-runs`,
+`GET /api/projects/{project}/blueprints/{blueprint}/preview-runs/{run}`.
+Details, audit, test evidence dan limitations: [Agent Factory Canvas](agent-factory-canvas.md).
+
 ## Deployment identity boundary
 
 Hosted user identity is resolved only from verified issuer/subject, provisioned DB mapping and active server session; browser fields/identity headers cannot select actor/organization/role. Existing project membership and human org-admin governance policies remain authoritative for approval/baseline/rollback. Migration 015 creates empty authentication tables and never backfills memberships, approvals, publications or Bench evidence. AF-07, exact captured version, 013 commitments and 014 execution ownership remain unchanged. See [deployment security](deployment-security.md).
