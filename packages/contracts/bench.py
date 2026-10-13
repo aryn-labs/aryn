@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import datetime
+import copy
 import hashlib
 import json
 import re
 from enum import Enum
 from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from jsonschema import Draft202012Validator
+from jsonschema import Draft202012Validator, FormatChecker
 from jsonschema.exceptions import SchemaError
 from referencing import Registry, Resource
 from referencing.jsonschema import DRAFT202012
@@ -39,6 +40,50 @@ class OutputContract(BaseModel):
     required_sections: List[str] = Field(default_factory=list)
     description: Optional[str] = None
     strict: bool = False
+
+
+def strict_json_loads(value):
+    def reject_constant(value):
+        raise ValueError("Non-finite JSON value.")
+    def unique_keys(pairs):
+        result = {}
+        for key, item in pairs:
+            if key in result:
+                raise ValueError("Duplicate JSON key.")
+            result[key] = item
+        return result
+    return json.loads(value, parse_constant=reject_constant, object_pairs_hook=unique_keys)
+
+
+def validate_output(output, contract):
+    """The same strict validator for Core completion and deterministic Bench grading."""
+    validate_output_contract(contract)
+    if contract.format == "json":
+        try:
+            data = strict_json_loads(output)
+        except (ValueError, TypeError):
+            return "malformed_structured_output", {}
+        schema = copy.deepcopy(contract.schema_definition)
+        if schema is not None:
+            if contract.strict:
+                def close_objects(value):
+                    if isinstance(value, dict):
+                        if "properties" in value and "additionalProperties" not in value:
+                            value["additionalProperties"] = False
+                        for child in list(value.values()):
+                            close_objects(child)
+                    elif isinstance(value, list):
+                        for child in value:
+                            close_objects(child)
+                close_objects(schema)
+            errors = sorted(Draft202012Validator(schema, format_checker=FormatChecker()).iter_errors(data),
+                            key=lambda e: (str(list(e.path)), str(e.validator)))
+            if errors:
+                return "output_schema_violation", {"violations": [
+                    {"path": list(e.path), "keyword": e.validator} for e in errors]}
+    if any(section not in output for section in contract.required_sections):
+        return "required_sections_missing", {}
+    return None, {}
 
 
 def validate_output_contract(contract: OutputContract | None):
@@ -173,14 +218,19 @@ class TextPatternGraderSpec(GraderSpecification):
         return self
 
 
+class ToolSelectionGraderSpec(GraderSpecification):
+    type: Literal["tool_selection"] = "tool_selection"
+    expected_tools: List[str]
+
+
 GraderSpec = Annotated[Union[SchemaGraderSpec, ForbiddenActionGraderSpec, ApprovalGraderSpec,
     IdempotencyGraderSpec, ModelIdentityGraderSpec, LatencyCostGraderSpec,
-    EvidenceIntegrityGraderSpec, TextPatternGraderSpec], Field(discriminator="type")]
+    EvidenceIntegrityGraderSpec, TextPatternGraderSpec, ToolSelectionGraderSpec], Field(discriminator="type")]
 
 
 class RuntimeRequirements(BenchContract):
     tools_confined: Literal[True] = True
-    write_isolation: Literal["no_tools", "mocked"] = "no_tools"
+    write_isolation: Literal["no_tools", "mocked", "read_only_fixture"] = "no_tools"
     runtime_backend: Optional[str] = None
 
 
@@ -237,7 +287,11 @@ class BenchScenario(BenchContract):
             raise ValueError("A forbidden tool cannot be granted.")
         if set(self.allowed_capabilities) & set(self.forbidden_capabilities):
             raise ValueError("A forbidden capability cannot be granted.")
-        if self.allowed_tools and self.runtime_requirements.write_isolation != "mocked":
+        if self.runtime_requirements.write_isolation == "read_only_fixture" and (
+                set(self.allowed_tools) - {"aryn_fixture_lookup"} or set(self.allowed_actions) - {"fixture.read"}
+                or set(self.allowed_capabilities) - {"aryn.fixture.read"}):
+            raise ValueError("Read-only fixture isolation cannot admit another tool or capability.")
+        if self.allowed_tools and self.runtime_requirements.write_isolation not in {"mocked", "read_only_fixture"}:
             raise ValueError("Evaluation tools require isolated mocked writes.")
         if len({f.fixture_id for f in self.fixtures}) != len(self.fixtures):
             raise ValueError("Duplicate fixture identities.")

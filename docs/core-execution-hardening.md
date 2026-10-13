@@ -1,5 +1,152 @@
 # Core Execution Hardening
 
+## Governed fixture execution — 13 October 2026
+
+Audit baseline: `development`, clean working tree, HEAD
+`9e66f05d177911c14f1fcd7bb4d58a841d3dd58d`. The adjacent `aryn-docs` contains
+only its index/scaffold; private PRD/ARCH/TECH/SEC documents are unavailable.
+Existing Core claims, reservations, process owner, assignment/publication
+authority, immutable versions, signed audit and Bench remain the owners.
+
+`RunCoordinator` now mediates bounded agent turns. Assigned execution captures
+the existing version's grants/output contract in signed effective limits. Only
+`aryn_fixture_lookup` / `aryn.fixture.read` is registered: it reads the constant
+`aryn-core` verification fixture. It has strict input/output schemas, a read-only
+risk class and an expiring Core context, with no host/file/network/secret handle.
+It is an isolated verification tool, not a production data integration.
+
+Hermes receives its allowlisted function schema but never executes the function.
+`ExactGatewayTransport` validates the actual provider response, captures the
+proposal and measured usage, then ends the single native turn with an inert
+internal marker. `GovernedAgent` converts that receipt into a pending proposal;
+the marker never becomes final Core output. Hermes' request worker swallows
+exceptions in its own thread, so exception-based suspension is not supported.
+The native compatibility test verifies this adapter protocol on the installed
+engine with HTTP doubles and outbound sockets blocked. No upstream files change.
+
+Core verifies current identity/membership, owner fence, signed claim, pinned
+version/publication, active assignment, reservation, budget and deadline before
+each dispatch and tool result handoff. Unknown/ungranted tools, invalid inputs,
+duplicate call IDs and resource breaches fail closed. Limits are at most three
+model turns and two tool attempts, further reduced by version/Core/project/org
+turn policy. Every turn still has one physical gateway dispatch and no fallback
+or retry. Cumulative measured usage is settled once; timeout, cancellation or
+lost authority retains uncertain reservation without replay. Provider input
+admission remains estimated and cost enforcement remains postflight when
+measured evidence exists; these are not hard provider billing guarantees.
+
+Tool decisions, result digests, durations, iteration usage and model identities
+use existing signed audit schema 2. Final action evidence is persisted in a
+`core.run.evidence` audit envelope and verified on read; missing/tampered completed
+governed evidence is rejected. That receipt also binds terminal status and the
+stored sanitized output digest; edited output or status cannot reuse a valid
+action receipt. Raw tool inputs/results are not global audit data.
+Runtime-supplied tool execution evidence is rejected. Core trace reads can project
+verified persisted actions. In-flight unknown runs retain their individual audit
+observations but do not claim a complete action trace.
+Explicit Core Stop fences subsequent governed tool/turn admission immediately,
+records `outcome_unknown` and retains reservation while provider cancellation is
+unconfirmed. A late, measured model result can be audited by the current owner
+but cannot execute a tool or complete the stopped run.
+
+Core completion and Bench share the existing strict output validator: duplicate
+keys/non-finite JSON, extra properties in strict schemas and schema violations
+are rejected. Assigned output failures have `failed` / `invalid_output`; no
+automatic correction inference occurs. Bench keeps invalid observations for its
+graders and never promotes failures. Existing agent canonical defaults/hashes
+are unchanged, draft preview grants remain disabled, and default text request
+fingerprints retain their earlier representation.
+
+Contract additions: typed model capability evidence; default-denied runtime
+governed-turn capability; private authenticated loopback `POST /aryn/turn`;
+`ToolTurnRequest`, `ToolTurnResult`, `ToolCall`, `ToolExecutionContext`;
+bounded `RunRequest.max_iterations/max_tool_calls`; Bench tool-selection grader
+and fixture isolation mode. No public API endpoint, frontend change, database
+migration, scheduler, dependency or second execution authority is added.
+The existing version-creation API admits only an explicit single
+`aryn_fixture_lookup` grant. Draft canvas/preview remain text-only; assignment
+still requires verified Bench, human exact-hash approval and publication.
+
+Delivery remains **PARTIAL** until a selected real model has trustworthy tool
+capability evidence. No live inference or real-provider tool support is claimed.
+Remote CI was not available at the initial pre-commit delivery; earlier CI
+results are historical. Development delivery must verify the exact pushed SHA.
+Local verification uses an isolated installed Hermes
+engine with HTTP doubles, SQLite fixture stores, and the cached CI PostgreSQL
+16.13 image in a task-owned loopback container with in-memory data and no host
+mounts. PostgreSQL product operations use the existing restricted non-owner
+writer harness. Final terminal results are recorded after the checks complete.
+Installed Hermes source actually tested: `3637c512fc3211bdccb61b7140d09ac1018508ba`;
+its pyproject version is `0.0.0`, so the source revision is the compatibility
+reference, not a guessed upstream semantic version.
+
+Changed ownership files:
+
+- `packages/contracts/model.py`: independent typed model capability evidence.
+- `packages/contracts/runtime.py`: bounded tool-turn/context contracts and default-denied runtime capability.
+- `packages/contracts/bench.py`: share the existing strict output validator; add fixture isolation and tool selection specification.
+- `packages/model_adapters/gateway.py`: fresh explicit capability evidence; text probes do not prove tools/structured output.
+- `packages/runtime_adapters/hermes/adapter.py`: private tool-turn transport and capability metadata on existing toolsets discovery.
+- `services/runtime/gateway_transport.py`: validate/capture real proposals without native dispatch or retries.
+- `services/runtime/hermes_9router.py`: confined proposal/continuation route using the existing AIAgent and native worker.
+- `modules/core/workflows/coordinator.py`: existing claim/limits/permission/settlement authority mediates every step and verifies persisted evidence.
+- `modules/core/capabilities.py`: advertise the bounded fixture boundary with prerequisites; grant nothing.
+- `modules/bench/runner.py`: evaluation uses the same Core version claim and intersects grants.
+- `modules/bench/graders.py`: reuse output validation and evaluate exact observed tool selection.
+- `modules/bench/scenarios.py`: register fixture scenarios without modifying Research Safety.
+- `services/api/studio.py`: permit only the registered fixture in existing version creation; no new public route.
+- `tests/hermes_gateway_check.py`, `tests/integration/test_hermes_9router_binding.py`: installed-engine proposal/continuation and native confinement checks.
+- `tests/postgresql/test_hosted_persistence.py`: restricted-writer governed evidence/settlement and concurrent duplicate checks.
+- `docs/9router-gateway.md`, `docs/bench-engine.md`, this document: document actual contract changes and trust limits.
+- New `packages/tool_adapters/fixture.py`: the previously empty adapter package had no matching executor; this owns only strict deterministic fixture IO.
+- New `tests/security/test_governed_tools.py`: labeled model double and positive/negative Core/Factory/Bench/API tests for that new boundary.
+
+Local verification commands use `.venv\Scripts\python.exe -m pytest`, unique
+workspace `--basetemp=.local/ai-engine-verification/...` directories and the
+existing test harness. The Windows sandbox blocks evidence hard-link creation;
+these offline tests therefore ran with tool-approved filesystem/process access,
+without replacing or weakening the signer. The initial sandbox attempts had
+fixture setup errors; they are not passing evidence.
+
+| Check actually run | Terminal result |
+| --- | --- |
+| Baseline authority/Hermes/provenance/Bench security selection | 139 passed |
+| Gateway/native-Hermes/Core/Bench focused selection | 170 passed |
+| Existing Factory/API/Core/immutable-version regression selection | 130 passed |
+| Final governed-tool/authority/idempotency/execution selection | 88 passed |
+| Final `tests/security/test_governed_tools.py` after output/status sealing | 45 passed; 100.55 seconds |
+| Final adapter/stop/revocation selection | 10 passed |
+| Installed native Hermes boundary, proposal and continuation after transport correction | passed; HTTP doubles, no live provider |
+| `pytest -m postgresql` against disposable PostgreSQL 16.13 | 136 passed; restricted writer |
+| Final PostgreSQL `test_hosted_persistence.py -k governed` | 3 passed, including the additional stop test |
+| PostgreSQL governed rerun after output/status sealing | 3 passed; 23.75 seconds |
+| Initial full `pytest -m 'not postgresql'` | 1086 passed / 5 skipped / 3 failed; snapshot and extra discovery requests repaired |
+| Full regression rerun | 1106 passed / 5 skipped / 136 PostgreSQL tests deselected; 1220.26 seconds |
+| `python -m ruff check .`, `python scripts/check_repository.py`, `git diff --check` | passed |
+
+The full regression failures were addressed in owners, without editing their
+assertions: terminal governed evidence reads no longer query audits for legacy
+text runs, and capability metadata uses the existing `/v1/toolsets` response
+instead of an extra request on text-only paths. Their focused rerun passed.
+One new audit assertion initially referenced a detached ORM row; it now captures
+the scalar ID inside the session and verifies the same measured usage assertion.
+The disposable PostgreSQL container was removed after checking its task label.
+No live model, production database, frontend gate or remote CI run is claimed.
+The full rerun precedes the final stop/audit-output sealing changes; final
+governed and restricted-writer selections verify those affected paths separately.
+At the pre-commit delivery, original and current HEAD were
+`9e66f05d177911c14f1fcd7bb4d58a841d3dd58d` on `development`, with 19 modified
+tracked files and two new files listed above, all unstaged. That verification
+phase performed no commit, push, merge, release, deployment, live inference,
+running user-service restart or user credential/configuration change.
+Both disposable PostgreSQL verification containers were removed after ownership
+checks. JUnit evidence remains under ignored `.local/ai-engine-verification/`.
+Residual work before MCP/integrations: owner-approved real-model capability
+verification (including cost/data consent), access to normative private docs,
+and approved cross-platform CI/UAT. Provider metadata and trusted-host/runtime
+assumptions, estimated input admission and unavailable provider cost remain the
+documented limits; no arbitrary connector/host/write execution is enabled.
+
 Subsequent live PostgreSQL verification is recorded in [CI validation](ci-validation.md).
 Write transactions now lock/refresh RunState before terminal decisions and usage
 settlement; Core governance commit authorization precedes blueprint/version locks.

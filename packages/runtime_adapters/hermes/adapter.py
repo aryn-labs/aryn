@@ -131,6 +131,37 @@ class HermesRuntimeAdapter(RuntimeAdapter):
     async def model_availability(self, model, *, refresh=False):
         return await self.model_gateway.availability(model, refresh=refresh)
 
+    async def model_capabilities(self, model):
+        return await self.model_gateway.model_capabilities(model)
+
+    async def execute_tool_turn(self, request, context):
+        from packages.contracts.runtime import ToolTurnResult
+        if (request.organization_id != context.organization_id or request.project_id != context.project_id):
+            raise RuntimeSecurityError("Governed turn scope differs.")
+        caps = await self.capabilities()
+        if not caps.tools_confined or caps.enabled_toolsets or not caps.supports_governed_tool_turns:
+            raise RuntimeSecurityError("Governed tool turns are unavailable.")
+        await self.require_model_available(request.request.model)
+        client = self._get_client()
+        try:
+            response = await client.post(f"{self.base_url}/aryn/turn", headers=self._headers(),
+                json=request.model_dump(mode="json"), timeout=request.request.timeout_seconds)
+            self._check_model_rejection(response, request.request.model)
+            if response.status_code != 200:
+                raise HermesAdapterError("Governed turn was rejected.")
+            data = response.json()
+            self._assert_no_secret(data)
+            turn = ToolTurnResult.model_validate(data)
+            if (turn.run_id != request.run_id or turn.iteration != request.iteration
+                    or turn.result.actual_model != request.request.model
+                    or turn.result.requested_model != request.request.model
+                    or turn.result.gateway != "9Router" or turn.result.runtime_backend != "Hermes"):
+                raise ModelIdentityError()
+            return turn
+        finally:
+            if self._custom_client is None:
+                await client.aclose()
+
     async def gateway_binding(self):
         """Require a runtime-side routing/actual-model contract; echoed model is not proof."""
         client = self._get_client()
@@ -330,13 +361,17 @@ class HermesRuntimeAdapter(RuntimeAdapter):
                     "Expected platform_toolsets.api_server to deny host access tools."
                 )
 
+            governed = (not enabled and body.get("governed_tool_turns") is True
+                        and body.get("tool_isolation") == "read_only_fixture")
             return RuntimeCapabilities(
                 enabled_toolsets=enabled,
                 available_toolsets=available,
                 tools_confined=tools_confined,
                 supports_cancellation=True,
                 supports_streaming=True,
-                details={"active_risky_tools": list(active_risky), "total_toolsets": len(toolsets)},
+                supports_governed_tool_turns=governed,
+                details={"active_risky_tools": list(active_risky), "total_toolsets": len(toolsets),
+                         **({"tool_isolation": "read_only_fixture"} if governed else {})},
             )
         finally:
             if should_close:

@@ -47,6 +47,16 @@ def provider(request):
     body = json.loads(request.content)
     assert request.headers["Authorization"] == "Bearer " + settings.api_key.get_secret_value()
     calls.append(body)
+    if body["model"] == "test/tool-model":
+        from packages.tool_adapters.fixture import definition
+        assert body.get("tools") == [definition()]
+        continued = any(m.get("role") == "tool" for m in body["messages"])
+        message = {"role": "assistant", "content": '{"summary":"ARYN Core owns execution authorization."}'} if continued else {
+            "role": "assistant", "content": None, "tool_calls": [{"id": "native_fixture_call", "type": "function",
+                "function": {"name": "aryn_fixture_lookup", "arguments": '{"key":"aryn-core"}'}}]}
+        return httpx.Response(200, json={"id": "native-tool-step", "model": body["model"], "created": 1,
+            "choices": [{"index": 0, "message": message, "finish_reason": "stop" if continued else "tool_calls"}],
+            "usage": {"prompt_tokens": 7, "completion_tokens": 4, "total_tokens": 11}})
     return httpx.Response(200, json={"id": "isolated-gateway-id", "model": "test/model-substitute" if body["model"] == "test/model-rejected" else body["model"], "created": 1,
         "choices": [{"index": 0, "message": {"role": "assistant", "content": settings.api_key.get_secret_value() if body["model"] == "test/model-secret" else "Isolated Hermes gateway output."}, "finish_reason": "stop"}],
         "usage": {"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 5}})
@@ -186,6 +196,40 @@ async def check():
     assert (await dispatch("POST", "/v1/chat/completions", body, extra_headers={"X-Hermes-Session-Key": "foreign"})).status == 403
     assert (await dispatch("GET", "/v1/capabilities", extra_headers={"Upgrade": "websocket"})).status == 403
     assert (await dispatch("GET", "/v1/runs/" + runtime_id)).status == 200
+    # Real AIAgent proposes, pauses at transport BEFORE native dispatch, then
+    # consumes a locally schema-verified fixture result on a separate bounded turn.
+    from packages.contracts.runtime import RunRequest, ToolTurnRequest, ToolTurnResult, ToolExecutionContext
+    from packages.tool_adapters import fixture
+    turn = ToolTurnRequest(run_id="core_fixture_run", organization_id="isolated-org", project_id="isolated-project",
+        iteration=1, tool_names=[fixture.NAME], request=RunRequest(model="test/tool-model", max_tokens=128,
+            prompt="Read aryn-core and summarize it.", metadata={"initial_prompt": "Read aryn-core and summarize it."}))
+    assert (await dispatch("POST", "/aryn/turn", turn.model_dump(mode="json"), authenticated=False)).status == 401
+    invalid = turn.model_dump(mode="json")
+    invalid["tool_names"] = ["terminal"]
+    assert (await dispatch("POST", "/aryn/turn", invalid)).status == 422
+    assert len(calls) == 8
+    response = await dispatch("POST", "/aryn/turn", turn.model_dump(mode="json"))
+    assert response.status == 200, response.body
+    proposed = ToolTurnResult.model_validate_json(response.body)
+    assert proposed.tool_calls[0].name == fixture.NAME and proposed.result.status.value == "running"
+    assert proposed.result.usage.total_tokens == 11 and len(calls) == 9
+    data = fixture.execute(proposed.tool_calls[0].arguments, ToolExecutionContext(run_id=turn.run_id,
+        organization_id=turn.organization_id, project_id=turn.project_id, deadline_at=__import__("time").time() + 30,
+        call_number=1))
+    turn.iteration = 2
+    turn.history = [{"role": "user", "content": turn.request.prompt},
+        {"role": "assistant", "content": "", "tool_calls": [{"id": "native_fixture_call", "type": "function",
+            "function": {"name": fixture.NAME, "arguments": '{"key":"aryn-core"}'}}]},
+        {"role": "tool", "name": fixture.NAME, "tool_call_id": "native_fixture_call", "content": json.dumps(data)}]
+    turn.request.prompt = "Continue using the verified tool result."
+    response = await dispatch("POST", "/aryn/turn", turn.model_dump(mode="json"))
+    assert response.status == 200, response.body
+    final = ToolTurnResult.model_validate_json(response.body)
+    assert final.result.status.value == "completed" and not final.tool_calls
+    assert json.loads(final.result.output) == {"summary": data["text"]}
+    assert final.result.usage.total_tokens == 11 and len(calls) == 10
+    assert network_attempts == []
+    print("REAL_HERMES_GOVERNED_PROPOSAL_CONTINUATION_PASS")
     import logging
     logging.getLogger("runtime.security.probe").warning("credential %s gateway %s", os.environ["API_SERVER_KEY"], settings.api_key.get_secret_value())
     await api.disconnect()

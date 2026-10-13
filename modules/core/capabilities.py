@@ -50,6 +50,15 @@ class Capabilities(SignedRecords):
                     ],
                 ),
                 (
+                    "aryn.fixture.read",
+                    "core_governed_read_only_fixture",
+                    "governed_text",
+                    "run:create",
+                    ["explicit published version tool grant", "active signed assignment",
+                     "fresh model tool-calling evidence", "confined Hermes proposal protocol",
+                     "Core per-step authorization and cumulative budget", "isolated verification fixture only"],
+                ),
+                (
                     "aryn.relay.restart_demo",
                     "project_disposable_database_fixture",
                     "disposable_write",

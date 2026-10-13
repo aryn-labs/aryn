@@ -392,3 +392,66 @@ def test_authentication_session_persistence_revocation_and_scope(hosted_lifecycl
         with pytest.raises(TenantIsolationError):
             from database.repositories.agent_repo import AgentRepository
             AgentRepository(session).get_blueprint(ctx.model_copy(update={"project_id": "other"}), hosted_lifecycle[4].id)
+
+
+@pytest.mark.asyncio
+async def test_governed_fixture_uses_restricted_writer_and_signed_evidence(hosted_lifecycle, monkeypatch):
+    from tests.security.test_governed_tools import published
+    from packages.contracts.runtime import RunStatus
+    from packages.tool_adapters import fixture
+    db, ctx, runtime, core, assignment, _ = await published(hosted_lifecycle)
+    result = await core.execute_assigned_agent_turn(assignment.id, "Read aryn-core.", ctx, "postgres-fixture")
+    assert result.status == RunStatus.COMPLETED and result.usage.total_tokens == 30
+    assert result.execution_evidence["run_id"] == result.run_id
+    assert (await core.get_managed_trace(result.run_id, ctx)).available
+    assert await core.execute_assigned_agent_turn(assignment.id, "Read aryn-core.", ctx, "postgres-fixture") == result
+    effects = []
+    monkeypatch.setattr(fixture, "execute", lambda *args: effects.append(True))
+    runtime.proposal["name"] = "terminal"
+    denied = await core.execute_assigned_agent_turn(assignment.id, "Do not infer any grant.", ctx, "postgres-denial")
+    assert denied.status == RunStatus.FAILED and denied.error_code == "tool_permission_denied" and effects == []
+    with db.session() as session:
+        assert BudgetRepository(session).get_budget(ctx).reserved_tokens == 0
+        assert not session.execute(text("SELECT rolsuper FROM pg_roles WHERE rolname=current_user")).scalar()
+        assert RunStateRepository(session).get_run(ctx, result.run_id).total_tokens == 30
+
+
+@pytest.mark.asyncio
+async def test_governed_concurrent_duplicate_claim_is_not_dispatched(hosted_lifecycle):
+    import asyncio
+    from tests.security.test_governed_tools import published
+    from modules.core.workflows.coordinator import RunInProgressError
+    db, ctx, runtime, core, assignment, _ = await published(hosted_lifecycle)
+    entered, release = asyncio.Event(), asyncio.Event()
+    async def held(turn):
+        entered.set()
+        await release.wait()
+    runtime.before_result = held
+    task = asyncio.create_task(core.execute_assigned_agent_turn(assignment.id, "Read aryn-core.", ctx, "postgres-concurrent"))
+    await asyncio.wait_for(entered.wait(), 5)
+    with pytest.raises(RunInProgressError):
+        await core.execute_assigned_agent_turn(assignment.id, "Read aryn-core.", ctx, "postgres-concurrent")
+    release.set()
+    result = await task
+    assert result.status.value == "completed" and len(runtime.turns) == 2
+    with db.session() as session:
+        assert BudgetRepository(session).get_budget(ctx).reserved_tokens == 0
+
+
+@pytest.mark.asyncio
+async def test_governed_stop_fences_late_model_result_with_restricted_writer(hosted_lifecycle, monkeypatch):
+    from tests.security.test_governed_tools import published
+    from modules.core.permissions.engine import PermissionDeniedError
+    from packages.tool_adapters import fixture
+    db, ctx, runtime, core, assignment, _ = await published(hosted_lifecycle)
+    effects = []
+    monkeypatch.setattr(fixture, "execute", lambda *args: effects.append(True))
+    async def stopped(turn):
+        assert await core.cancel_managed_run(turn.run_id, ctx) is False
+    runtime.before_result = stopped
+    with pytest.raises(PermissionDeniedError):
+        await core.execute_assigned_agent_turn(assignment.id, "Read aryn-core.", ctx, "postgres-stop")
+    with db.session() as session:
+        row = session.query(RunStateModel).filter_by(idempotency_key="postgres-stop").one()
+        assert row.status == "outcome_unknown" and row.reserved_tokens > 0
+    assert not effects

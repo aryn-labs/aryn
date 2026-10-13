@@ -7,7 +7,7 @@ import json
 import secrets
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Request, Query
@@ -113,7 +113,7 @@ class VersionInput(BaseModel):
     model: str = Field(min_length=1, max_length=128)
     temperature: float = Field(default=0.3, ge=0, le=2)
     max_tokens: int = Field(default=2048, ge=128, le=4096)
-    tool_grants: list[str] = Field(default_factory=list, max_length=0)
+    tool_grants: list[Literal["aryn_fixture_lookup"]] = Field(default_factory=list, max_length=1)
     schema_version: Optional[str] = Field(default="1.0.0", max_length=32)
     role: Optional[str] = Field(default=None, max_length=64)
     objective: Optional[str] = Field(default=None, max_length=4000)

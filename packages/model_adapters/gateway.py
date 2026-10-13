@@ -49,6 +49,20 @@ class NineRouterGateway:
         self._lock = asyncio.Lock()
         self._rejected = set()
         self._runtime_verified = {}
+        self._capability_evidence = {}
+
+    async def model_capabilities(self, model):
+        from packages.contracts.model import ModelCapabilities
+        await self.discover(refresh=True)
+        caps = self._capability_evidence.get(model, ModelCapabilities(model=model)).model_copy(deep=True)
+        observed = self._runtime_verified.get(model)
+        if observed is not None and model not in self._rejected and 0 <= time.time() - observed <= 60:
+            caps.text_generation = "supported"
+            if caps.source == "capability_evidence_unavailable":
+                caps.source = "core_runtime_probe"
+        if model in self._rejected:
+            return ModelCapabilities(model=model, source="provider_rejected")
+        return caps
 
     def record_runtime_verification(self, result):
         """Only Core-settled, measured, exact-model results establish readiness.
@@ -87,10 +101,21 @@ class NineRouterGateway:
                     if not isinstance(body, dict) or body.get("object") != "list" or not isinstance(body.get("data"), list):
                         raise ValueError("Invalid discovery")
                     rows, seen = [], set()
+                    self._capability_evidence.clear()
                     for model in body["data"]:
                         if not isinstance(model, dict) or not isinstance(model.get("id"), str) or not MODEL_ID.fullmatch(model["id"]):
                             raise ValueError("Invalid model identity")
                         mid = model["id"]
+                        # A listing or a supports_tools boolean is never proof.
+                        from packages.contracts.model import ModelCapabilities
+                        observed_caps = model.get("capabilities_checked_at")
+                        if (model.get("capabilities_verified") is True
+                                and model.get("capabilities_source") in {"provider_attestation", "runtime_probe"}
+                                and type(observed_caps) in {int, float}
+                                and 0 <= time.time() - observed_caps <= 60
+                                and isinstance(model.get("capabilities"), dict)):
+                            self._capability_evidence[mid] = ModelCapabilities(
+                                model=mid, source=model["capabilities_source"], **model["capabilities"])
                         if key and key in mid:
                             raise ValueError("Protected credential in discovery")
                         if mid in seen:
@@ -126,6 +151,7 @@ class NineRouterGateway:
             finally:
                 if not self._snapshot.discovery_valid:
                     self._runtime_verified.clear()
+                    self._capability_evidence.clear()
                 else:
                     current = {row["model_id"] for row in self._snapshot.models}
                     self._runtime_verified = {key: value for key, value in self._runtime_verified.items()

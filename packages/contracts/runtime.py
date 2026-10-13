@@ -9,7 +9,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from packages.contracts.core import SecurityContext
 
@@ -40,7 +40,44 @@ class RuntimeCapabilities(BaseModel):
     tools_confined: bool  # True when risky tools (terminal, file, code_exec, browser) are disabled
     supports_cancellation: bool = True
     supports_streaming: bool = True
+    supports_governed_tool_turns: bool = False
     details: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ToolCall(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+    call_id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+    name: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z][A-Za-z0-9_]*$")
+    arguments: Dict[str, Any]
+
+
+class ToolExecutionContext(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    run_id: str
+    organization_id: str
+    project_id: str
+    deadline_at: float = Field(allow_inf_nan=False)
+    call_number: int = Field(ge=1, le=2, strict=True)
+
+
+class ToolTurnRequest(BaseModel):
+    """Private Core-to-runtime turn. Runtime proposes and never executes tools."""
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+    run_id: str = Field(min_length=1, max_length=64)
+    organization_id: str = Field(min_length=1, max_length=64)
+    project_id: str = Field(min_length=1, max_length=64)
+    iteration: int = Field(ge=1, le=3, strict=True)
+    request: RunRequest
+    tool_names: List[str] = Field(max_length=1)
+    history: List[Dict[str, Any]] = Field(default_factory=list, max_length=8)
+
+
+class ToolTurnResult(BaseModel):
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+    run_id: str
+    iteration: int = Field(ge=1, le=3, strict=True)
+    result: RunResult
+    tool_calls: List[ToolCall] = Field(default_factory=list, max_length=2)
 
 
 class RuntimeModelAvailability(BaseModel):
@@ -101,6 +138,8 @@ class RunRequest(BaseModel):
     max_cost_usd: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     max_total_tokens: Optional[int] = Field(default=None, ge=1)
     max_input_tokens: Optional[int] = Field(default=None, ge=1)
+    max_iterations: int = Field(default=1, ge=1, le=3, strict=True)
+    max_tool_calls: int = Field(default=0, ge=0, le=2, strict=True)
 
 
 class RunUsage(BaseModel):
@@ -136,6 +175,7 @@ class RunResult(BaseModel):
     assignment_transition_id: Optional[str] = None
     requested_model: Optional[str] = None
     actual_model: Optional[str] = None
+    reported_model: Optional[str] = None
     gateway: Optional[Literal["9Router"]] = None
     runtime_backend: Optional[Literal["Hermes"]] = None
     provider: Optional[str] = None
@@ -168,6 +208,13 @@ class RuntimeAdapter(ABC):
     async def model_availability(self, model: str, *, refresh: bool = False) -> RuntimeModelAvailability:
         """Unsupported discovery is unknown, never proof of model readiness."""
         return RuntimeModelAvailability(model=model)
+
+    async def model_capabilities(self, model: str):
+        from packages.contracts.model import ModelCapabilities
+        return ModelCapabilities(model=model)
+
+    async def execute_tool_turn(self, request: ToolTurnRequest, context: SecurityContext) -> ToolTurnResult:
+        raise RuntimeGatewayError()
 
     async def require_model_available(self, model: str) -> None:
         availability = await self.model_availability(model, refresh=True)

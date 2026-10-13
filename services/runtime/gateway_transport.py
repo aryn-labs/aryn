@@ -6,7 +6,8 @@ import threading
 from dataclasses import dataclass, field
 
 import httpx
-
+from packages.contracts.bench import strict_json_loads
+from packages.contracts.runtime import RunUsage, ToolCall
 from packages.model_adapters.gateway import GatewaySettings, MODEL_ID
 
 
@@ -23,12 +24,16 @@ class ModelReceipt:
     dispatched: bool = False
     dispatch_lock: object = field(default_factory=threading.Lock, repr=False)
     transport: object = field(default=None, repr=False)
+    tool_names: tuple[str, ...] | None = None
+    tool_calls: list[ToolCall] = field(default_factory=list)
+    usage: RunUsage | None = None
 
     def evidence(self):
         if not self.verified or self.failure or self.actual_model != self.requested_model:
             return None
         return {"gateway": "9Router", "runtime_backend": "Hermes",
                 "requested_model": self.requested_model, "actual_model": self.actual_model,
+                "reported_model": self.reported_model,
                 "actual_model_source": "gateway_response", "provider": self.provider}
 
 
@@ -57,8 +62,16 @@ class ExactGatewayTransport(httpx.BaseTransport):
             return self._reject(request, "invalid_gateway_request")
         if (str(request.url) != f"{self.settings.base_url}/chat/completions" or request.method != "POST"
                 or not isinstance(body, dict) or body.get("model") != self.receipt.requested_model
-                or body.get("stream") is True or body.get("tools") or body.get("functions")):
+                or body.get("stream") is True or body.get("functions")):
             return self._reject(request, "gateway_route_mismatch")
+        if self.receipt.tool_names is None:
+            if body.get("tools"):
+                return self._reject(request, "gateway_route_mismatch")
+        else:
+            from packages.tool_adapters.fixture import NAME, definition
+            expected = [definition()] if self.receipt.tool_names == (NAME,) else []
+            if body.get("tools", []) != expected:
+                return self._reject(request, "gateway_tool_schema_mismatch")
         with self.receipt.dispatch_lock:
             if self.receipt.dispatched:
                 return self._reject(request, "additional_dispatch_forbidden")
@@ -102,7 +115,7 @@ class ExactGatewayTransport(httpx.BaseTransport):
             raw_text = response.text
             if "data: [DONE]" in raw_text:
                 raw_text = raw_text.split("data: [DONE]")[0].strip()
-            data = json.loads(raw_text)
+            data = strict_json_loads(raw_text)
             if isinstance(data, dict):
                 self.receipt.response_fields = [name for name in data
                     if isinstance(name, str) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,31}", name)][:16]
@@ -130,13 +143,42 @@ class ExactGatewayTransport(httpx.BaseTransport):
             choices = data.get("choices")
             usage = data.get("usage")
             if (not isinstance(choices, list) or len(choices) != 1 or not isinstance(choices[0], dict)
-                    or choices[0].get("finish_reason") != "stop"
+                    or choices[0].get("finish_reason") not in {"stop", "tool_calls"}
                     or not isinstance(choices[0].get("message"), dict)
-                    or not isinstance(choices[0]["message"].get("content"), str)
-                    or choices[0]["message"].get("tool_calls")
                     or not isinstance(usage, dict) or any(type(usage.get(k)) is not int or usage[k] < 0
                         for k in ("prompt_tokens", "completion_tokens", "total_tokens"))
                     or usage["total_tokens"] != usage["prompt_tokens"] + usage["completion_tokens"]):
+                return self._reject(request, "invalid_gateway_completion")
+            self.receipt.usage = RunUsage(input_tokens=usage["prompt_tokens"],
+                output_tokens=usage["completion_tokens"], total_tokens=usage["total_tokens"])
+            message = choices[0]["message"]
+            calls = message.get("tool_calls")
+            if calls:
+                if (self.receipt.tool_names is None or choices[0]["finish_reason"] != "tool_calls"
+                        or not isinstance(calls, list) or not 1 <= len(calls) <= 2):
+                    return self._reject(request, "invalid_gateway_completion")
+                parsed = []
+                for call in calls:
+                    if (not isinstance(call, dict) or set(call) != {"id", "type", "function"}
+                            or call["type"] != "function" or not isinstance(call["function"], dict)
+                            or set(call["function"]) != {"name", "arguments"}
+                            or not isinstance(call["function"]["arguments"], str)
+                            or len(call["function"]["arguments"]) > 4096):
+                        return self._reject(request, "invalid_tool_proposal")
+                    parsed.append(ToolCall(call_id=call["id"], name=call["function"]["name"],
+                        arguments=strict_json_loads(call["function"]["arguments"])))
+                if len({call.call_id for call in parsed}) != len(parsed):
+                    return self._reject(request, "duplicate_tool_proposal")
+                self.receipt.tool_calls = parsed
+                # Hermes' request worker swallows BaseException. A typed proposal
+                # receipt plus an inert terminal marker ends its single turn safely;
+                # the marker is never a final output or a successful Core run.
+                return httpx.Response(200, request=request, json={"id": data.get("id"),
+                    "object": "chat.completion", "model": requested, "created": data.get("created", 0),
+                    "usage": {k: usage[k] for k in ("prompt_tokens", "completion_tokens", "total_tokens")},
+                    "choices": [{"index": 0, "finish_reason": "stop", "message": {
+                        "role": "assistant", "content": "ARYN_CORE_TOOL_PROPOSAL_PENDING"}}]})
+            if choices[0]["finish_reason"] != "stop" or not isinstance(message.get("content"), str):
                 return self._reject(request, "invalid_gateway_completion")
             safe = {"id": data.get("id"), "object": "chat.completion", "model": requested,
                     "created": data.get("created", 0), "usage": {k: usage[k] for k in ("prompt_tokens", "completion_tokens", "total_tokens")},

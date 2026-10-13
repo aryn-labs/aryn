@@ -39,12 +39,11 @@ class BenchRunner:
                 raise QualityGateFailedError("Agent output contract requires schema grading in every scenario.")
         return suite
 
-    async def _execute(self, request, context, allowed_tools=()):
+    async def _execute(self, request, context, allowed_tools=(), version=None):
         if self.coordinator is not None:
             self.coordinator.runtime_adapter = self.runtime_adapter
             try:
-                return await self.coordinator.execute_managed_direct_turn(request, context,
-                    _allowed_tools=allowed_tools, _execution_mode="bench")
+                return await self.coordinator.execute_bench_agent_turn(request, context, version, allowed_tools)
             except ModelIdentityError as exc:
                 if not hasattr(exc, "observed_result"):
                     raise
@@ -83,6 +82,8 @@ class BenchRunner:
                 raise QualityGateFailedError("This suite requires an isolated runtime without tools.")
             if scenario.runtime_requirements.write_isolation == "mocked" and caps.details.get("write_isolation") != "mocked":
                 raise QualityGateFailedError("Bench requires verified mocked write isolation.")
+            if scenario.runtime_requirements.write_isolation == "read_only_fixture" and caps.details.get("tool_isolation") != "read_only_fixture":
+                raise QualityGateFailedError("Bench requires verified read-only fixture isolation.")
         await bounded(self.runtime_adapter.require_model_available(version.model), max(0, preflight_deadline - time.monotonic()))
         result = BenchEvaluationResult(
             evaluation_id=f"eval_{uuid.uuid4().hex[:16]}", blueprint_id=version.blueprint_id,
@@ -130,7 +131,7 @@ class BenchRunner:
             )
             started = time.perf_counter()
             try:
-                observed = await self._execute(request, context, allowed_tools) if self.coordinator is not None else await asyncio.wait_for(self._execute(request, context, allowed_tools), timeout=timeout)
+                observed = await self._execute(request, context, allowed_tools, version) if self.coordinator is not None else await asyncio.wait_for(self._execute(request, context, allowed_tools), timeout=timeout)
                 execution.run_id = observed.run_id
                 execution.runtime_status = observed.status.value
                 execution.output = observed.output

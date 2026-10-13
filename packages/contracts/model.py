@@ -7,8 +7,18 @@ Complies with ARYN-TECH-001 ADR-005 (No vendor lock-in, no silent fallback).
 from __future__ import annotations
 
 from enum import Enum
-from typing import Dict, List, Optional
-from pydantic import BaseModel, Field
+from typing import Dict, List, Literal, Optional
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class ModelCapabilities(BaseModel):
+    """Evidence about one exact model; catalog membership grants no capability."""
+    model_config = ConfigDict(extra="forbid")
+    model: str
+    text_generation: Literal["supported", "unsupported", "unknown"] = "unknown"
+    structured_output: Literal["supported", "unsupported", "unknown"] = "unknown"
+    tool_calling: Literal["supported", "unsupported", "unknown"] = "unknown"
+    source: str = "capability_evidence_unavailable"
 
 
 class ModelProviderType(str, Enum):

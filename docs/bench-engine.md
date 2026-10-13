@@ -1,5 +1,22 @@
 # Generic Bench Evaluation Engine
 
+13 October 2026 extension: the existing registry also contains `governed-fixture`
+1.0.0. It requires the isolated read-only fixture boundary, schema/identity/
+integrity/resource/action graders and an exact tool-selection grader. The
+authorized scenario requires one actual `aryn_fixture_lookup` action; the
+no-grant scenario requires none. Unauthorized proposals, runtime/tool errors,
+limits and invalid evidence remain failed evaluations. The existing Research
+Safety suite, thresholds and historical hashes are unchanged.
+
+Factory evaluation claims the same Core run/reservation with a persisted
+evaluating version, and intersects version grants with scenario grants. This
+does not grant draft tools to user runs or preview. No live write adapter is
+available under `read_only_fixture`; that mode admits only the registered fixture
+tool/action/capability. Existing mocked-write suites and model-free capsule replay
+retain their original isolation requirements. Signed final action evidence is
+read from Core audit rather than accepted from a governed runtime response.
+See [Core execution contract and verification](core-execution-hardening.md).
+
 Tanggal validasi: 8 Oktober 2026. Branch kerja: `development`.
 
 ## Audit dan keputusan arsitektur

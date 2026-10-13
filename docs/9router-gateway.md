@@ -1,5 +1,25 @@
 # ARYN: Hermes runtime, gateway model 9Router
 
+Governed fixture extension (13 October 2026): `/aryn/turn` is an authenticated
+private loopback proposal/continuation protocol; native toolsets remain empty
+and native tool execution is forbidden. Core owns grants and all execution of
+`aryn_fixture_lookup`. Each Hermes turn still permits one gateway dispatch.
+See [the Core contract and limits](core-execution-hardening.md).
+
+`ModelCapabilities` reports text, structured output and tool calling independently.
+Catalog membership and `supports_tools=true` do not establish any of them.
+Explicit capability fields require `capabilities_verified=true`, source
+`provider_attestation` or `runtime_probe`, a Unix `capabilities_checked_at` age
+of 0–60 seconds, and typed `supported`/`unsupported`/`unknown` values in
+`capabilities`. A Core-settled text probe proves text generation only. Missing,
+stale, rejected or malformed evidence remains unknown and governed tool runs are
+blocked. Standard 9Router installations are not assumed to provide these fields.
+No model probe, gateway configuration or credential change is performed by discovery.
+The raw reported model identifier is retained in governed iteration audit while
+the existing exact route/alias checks remain in force. Provider identity is
+unavailable if the provider does not report it; a gateway cannot prove a provider
+that returns dishonest metadata.
+
 Status Home/Chat V1.0 pada 11 Oktober 2026: percakapan nyata multi-turn memakai
 `ds/deepseek-flash` telah diverifikasi melalui API/Core/Hermes/9Router. Consent
 first-use memakai receipt Core tersimpan dan dapat dicabut, bukan checkbox setiap

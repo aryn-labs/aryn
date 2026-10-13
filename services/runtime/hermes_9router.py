@@ -75,7 +75,12 @@ def build_adapter(settings, runtime_key, port=None):
             if not self.aryn_receipt.evidence():
                 return {"completed": False, "failed": True, "final_response": "",
                         "error": self.aryn_receipt.failure or "Missing gateway model evidence."}
+            if self.aryn_receipt.tool_calls:
+                return {"completed": False, "pending_tools": True, "failed": False, "final_response": ""}
             return result
+
+        def _execute_tool_calls(self, *args, **kwargs):
+            raise RuntimeError("Native tool execution is forbidden; Core mediation required.")
 
     class BoundHermesAPI(APIServerAdapter):
         async def connect(self, *, is_reconnect=False):
@@ -226,6 +231,7 @@ def build_adapter(settings, runtime_key, port=None):
                 ("GET", "/v1/toolsets", self.aryn_toolsets),
                 ("GET", "/v1/capabilities", self.aryn_capabilities),
                 ("GET", "/aryn/gateway", self.aryn_gateway),
+                ("POST", "/aryn/turn", self.aryn_turn),
                 ("POST", "/v1/chat/completions", self._handle_chat_completions),
                 ("POST", "/v1/runs", self._handle_runs),
                 ("GET", "/v1/runs/{run_id}", self._handle_get_run),
@@ -237,11 +243,13 @@ def build_adapter(settings, runtime_key, port=None):
 
         async def aryn_toolsets(self, request):
             require_confinement()
-            return web.json_response({"data": []})
+            return web.json_response({"data": [], "governed_tool_turns": True,
+                                      "tool_isolation": "read_only_fixture"})
 
         async def aryn_capabilities(self, request):
             require_confinement()
             return web.json_response({"text_execution": True, "native_streaming": False,
+                "governed_tool_turns": True,
                 "tools": [], "jobs": False, "scheduler": False, "session_administration": False,
                 "operations": [method + " " + path for method, path, _ in self._http_route_table()]})
 
@@ -273,8 +281,68 @@ def build_adapter(settings, runtime_key, port=None):
                                   platform="api_server", quiet_mode=True, verbose_logging=False,
                                   skip_context_files=True, skip_memory=True, skip_background_review=True,
                                   **callbacks)
+            if receipt.tool_names is not None:
+                from packages.tool_adapters.fixture import NAME, definition
+                if receipt.tool_names not in {(), (NAME,)}:
+                    raise RuntimeError("Unregistered governed tool definition.")
+                agent.tools = [definition()] if receipt.tool_names else []
+                agent.valid_tool_names = set(receipt.tool_names)
             agent._hermes_api_runtime = {"provider": "custom", "model": model, "route_source": "aryn_9router"}
             return agent
+
+        async def aryn_turn(self, request):
+            from packages.contracts.runtime import ToolTurnRequest, ToolTurnResult, RunResult, RunStatus
+            from packages.tool_adapters.fixture import NAME
+            import time
+            body = await request.json()
+            try:
+                turn = ToolTurnRequest.model_validate(body)
+                if turn.tool_names not in [[], [NAME]] or turn.request.session_id:
+                    raise ValueError("Invalid governed turn.")
+                # Only paired Core-produced assistant/tool history, never native session ingress.
+                if turn.history:
+                    if turn.history[0] != {"role": "user", "content": turn.request.metadata.get("initial_prompt")}:
+                        raise ValueError("Invalid transcript origin.")
+                    for message in turn.history[1:]:
+                        if message.get("role") == "assistant":
+                            if set(message) != {"role", "content", "tool_calls"}:
+                                raise ValueError("Invalid proposal transcript.")
+                        elif message.get("role") == "tool":
+                            if set(message) != {"role", "name", "content", "tool_call_id"}:
+                                raise ValueError("Invalid result transcript.")
+                        else:
+                            raise ValueError("Invalid transcript role.")
+                self.validate_text_request({"model": turn.request.model, "provider": "9router",
+                    "temperature": turn.request.temperature, "max_tokens": turn.request.max_tokens,
+                    "messages": [{"role": "user", "content": turn.request.prompt}]})
+                if any(key and key in json.dumps(body, ensure_ascii=False)
+                        for key in (runtime_key, settings.api_key.get_secret_value())):
+                    raise ValueError("Protected credential input.")
+            except (ValueError, TypeError):
+                return web.json_response({"error": {"code": "invalid_governed_turn"}}, status=422)
+            receipt = ModelReceipt(turn.request.model, tool_names=tuple(turn.tool_names),
+                transport={"temperature": turn.request.temperature, "max_tokens": turn.request.max_tokens})
+            receipt.session_id = "aryn_" + uuid.uuid4().hex
+            token = TURN.set(receipt)
+            started = time.time()
+            try:
+                native, _ = await asyncio.wait_for(self._run_agent(user_message=turn.request.prompt,
+                    conversation_history=turn.history, ephemeral_system_prompt=turn.request.system_instructions,
+                    requested_model=turn.request.model, requested_provider="9router"), turn.request.timeout_seconds)
+                proof = receipt.evidence()
+                if not proof or receipt.usage is None or native.get("failed") or not (
+                        native.get("completed") or native.get("pending_tools")):
+                    return web.json_response({"error": {"code": receipt.failure or "governed_turn_unverified"}}, status=409)
+                result = RunResult(run_id=receipt.session_id, status=RunStatus.RUNNING if receipt.tool_calls else RunStatus.COMPLETED,
+                    model=turn.request.model, output=native.get("final_response", ""), usage=receipt.usage,
+                    requested_model=turn.request.model, actual_model=proof["actual_model"],
+                    reported_model=receipt.reported_model,
+                    gateway="9Router", runtime_backend="Hermes", provider=proof["provider"],
+                    created_at=started, completed_at=time.time())
+                return web.json_response(ToolTurnResult(run_id=turn.run_id, iteration=turn.iteration,
+                    result=result, tool_calls=receipt.tool_calls).model_dump(mode="json"))
+            finally:
+                TURN.reset(token)
 
         async def _handle_chat_completions(self, request):
             body = await request.json()
