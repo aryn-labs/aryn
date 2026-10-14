@@ -1,5 +1,376 @@
 # ARYN: Hermes runtime, gateway model 9Router
 
+## Official isolation controls and unresolved delivery gates — 15 October 2026
+
+The owner explicitly declined live inference and requested a source-only blocker
+review. The actual baseline remains `development` at
+`4994a6cc49f95deec0e2fe5b8608b0ca6e32a489`, with 23 modified existing tracked files.
+No application/test source changed in this follow-up. The 21 modified non-Markdown
+files match the saved SHA-256 snapshot in
+`.local/ai-engine-verification/provider-preflight-20261015/source-state.json`.
+Actual final JUnit identities and selection manifests still agree on 1208 distinct
+backend cases: 1203 passed, 5 skipped. The same-source PostgreSQL report has 6
+passed; the pinned-Node frontend execution JSON has 125 passed. These are retained
+execution results, revalidated against current source, not newly executed live or
+remote tests. The previous failing native subprocess reports remain retained.
+
+Read-only review of installed 9Router **0.5.91** found the following supported
+controls and limitations. No endpoint request, settings mutation, user credential access,
+provider request or second gateway process was used to perform this audit.
+
+| Control / installed source | What it actually controls | Remaining limitation |
+|---|---|---|
+| README Docker example; server data-directory code in `chunks/3726.js`; CLI client `src/cli/api/client.js:getDataDir` | `DATA_DIR` selects separate storage. CLI `--host` and `--port` select bind address and port. | An invalid/unwritable data directory can fall back to default storage. Verify the effective directory before any account configuration. These controls do not cap inference attempts. |
+| `cli.js:killAllAppProcesses`, called before server startup | Stops matching 9Router/Next processes and performs MITM/tunnel cleanup. CLI PID cleanup uses the default user app directory. | A second CLI invocation on this host can disturb existing processes even with another port/data directory. Prefer a separately approved disposable VM/container with no user data mounts, rather than assuming a second local CLI is isolated. Nothing was started here. |
+| Authenticated provider update handler, module 98244 in `app/api/providers/[id]/route.js` | `isActive` allows disabling individual connections. | Exactly one active approved connection in isolated storage removes alternate-account candidates; it does not disable retries of that connection, inline credential refresh or endpoint fallback. No existing connection was changed. |
+| `chunks/4572.js`, module 80238 credential selector | `providerStrategies[provider].fallbackStrategy` / global `fallbackStrategy`, with `fill-first` or `round-robin` selection and sticky round-robin limits. | These are account-selection strategies, not a failure-rotation off switch. The chat loop calls the selector without its optional `preferredConnectionId`; that preference is not an enforceable client pin on this route. |
+| `app/src/sse/services/backgroundTokenRefresh.js`; compiled `chunks/4037.js` | Official `DISABLE_BACKGROUND_TOKEN_REFRESH=1` prevents this scheduler from starting. | It does not disable on-demand refresh in an inference request. It is only a proposed setting for a separately approved isolated environment. |
+| Settings PATCH module 20617; `quotaAutoPing.js:configureQuotaAutoPing` | Per-connection auto-ping maps, including `claudeAutoPing` / `codexAutoPing`, control scheduled quota pings. Empty/false connection maps stop that scheduler. | Current maps are UNKNOWN. Disabling that scheduler would not disable other discovery, refresh or inference paths. No settings PATCH was sent. |
+| `chunks/2132.js`, module 41004 | `FETCH_CONNECT_TIMEOUT_MS` configures a per-attempt fetch connection timeout; installed default is 60000 ms. | This is not a whole-run deadline or retry-count control. The executor clears its timer after fetch resolves; it cannot prove cancellation or a billing ceiling for all upstream work. |
+| `chunks/700.js`, module 74957 `execute` | Retry configuration merges static defaults with provider executor configuration. Defaults allow three additional attempts for 502/503, two for 504, and none for 429; network failures use the 502 branch. | No consumed official setting/request field for disabling all inference retries or limiting total upstream requests was found in the audited chat path. Settings PATCH accepting an arbitrary key would not make that key effective. |
+| Shared `getBaseUrls` / `getFallbackCount`, generic runtime transport and provider-specific executors | Base-URL lists and selected provider transport determine endpoint fallback. | No uniform official client control disabling every provider's base-URL fallback was found. A single verified endpoint removes alternate endpoints for that particular path, not retry/refresh logic. Saved transport and endpoint overrides are UNKNOWN. |
+| `chunks/7220.js:buildModelsList` / model GET handler | Some active-provider catalog paths perform dynamic discovery and credential refresh. The skip-dynamic option does not cover every provider path. | A gateway model listing is not universally an offline/local-only operation. Any later authorized probe plan must account for its discovery/refresh traffic as well as inference attempts. No model GET was sent here. |
+
+Thus storage/account isolation is possible through existing official mechanisms,
+but **zero retry / zero endpoint fallback / a trusted total upstream request cap
+is not established for this installation**. Even the shared executor can make
+four attempts on one URL under its three-retry defaults. This observation is not
+an aggregate cap: account count, refresh re-execution and provider-specific loops
+also matter. Two Core model dispatches must not be presented as two upstream
+requests. Native Hermes and ARYN still have zero automatic alternate-model
+fallback; the gateway's additional behavior is a distinct boundary.
+
+### Provenance boundary and safe engineering choices
+
+Core can sign its claim, observed tool proposal/decision/result, continuation,
+output hash, usage as reported by runtime, and probe receipt. The runtime binding
+binds the ARYN gateway URL/credential scope and runtime instance. It does **not**
+identify the gateway's private provider configuration or chosen account. Hashing
+the installed package, catalog or a user-written configuration label would not
+repair that gap.
+
+The missing evidence lies between the 9Router provider executor and its normalized
+completion/catalog responses: some converters can synthesize model/usage fields,
+and the installed server chunks contain no `provider_configuration` contract.
+Neither a matching echoed model ID nor a Core signature proves raw upstream
+identity, measured usage origin or a configuration revision that was never
+reported. Existing `ModelProbeEvidence.live_eligible` and
+`NineRouterGateway._verified_tool_probe` therefore remain strict; `supported` is
+not issued from missing metadata, isolated doubles or an invented revision.
+
+Safe next choices require separate owner review:
+
+1. Restore authorized metadata access through the administrator responsible for
+   the saved/managed origin policy on `http://127.0.0.1:20128`. Dashboard login and
+   an earlier owner confirmation did not remove the actual denial. No alternate
+   browser, hostname, direct HTTP client or CLI token is used as a workaround.
+   Alternatively, the owner can provide a nonsecret metadata export from an
+   authorized environment. An export supports preflight only, not live attestation.
+2. Prepare an approved disposable gateway environment, pin the audited artifact,
+   use empty separate storage and one owner-configured approved account, prevent
+   unrelated schedulers, and verify the effective route/settings. Do not copy the
+   user's credential database or launch the CLI against existing host processes.
+   This narrows uncertainty; it does not by itself create an upstream cap or
+   trustworthy provenance. No environment was provisioned in this follow-up.
+3. Obtain an official gateway contract or reviewed upstream enhancement covering
+   a per-request attempt/account/endpoint limit, preserved output limit, deadline
+   propagation, and authenticated execution receipts. Receipts need raw upstream
+   model/provider, effective nonsecret configuration revision, actual subrequest
+   count and usage origin, bound consistently to catalog and completion evidence.
+   ARYN's existing adapter can consume valid evidence; no second router, proxy,
+   authority or synthetic attestation is proposed here. No installed source was
+   patched. Provider-specific behavior must be covered, not just the shared loop.
+4. If the owner later accepts an explicitly bounded ARYN-side diagnostic with
+   unknown upstream cost/attempts, functional success could be reported separately
+   from attestation. This would not close verified-capability acceptance. Such
+   inference and any credential refresh/persistence it could cause remain unapproved.
+
+### Multi-provider live plan, not authorized or dispatch-ready
+
+No provider currently qualifies for an unconditional testing order. First restore
+authorized metadata, then rank routes by preserved limits and provenance; choose
+one exact route explicitly. Alternatives require their own approval and Core
+claim. These are owner-requested candidates, not freshly confirmed catalog entries:
+
+| Candidate exact ID | Stock source mapping, not actual provider proof | Availability / tool / structured output | Current gate |
+|---|---|---|---|
+| `ds/deepseek-flash` | DeepSeek route | UNKNOWN / UNKNOWN / UNKNOWN | Current catalog, endpoint/account, request bound and provenance unverified. |
+| `ag/gemini-3.8-flash` | Antigravity route | UNKNOWN / UNKNOWN / UNKNOWN | Same gates, plus provider-specific 429/base-URL behavior and output transformation review. |
+| `cx/gpt-6-luna` | Codex route | UNKNOWN / UNKNOWN / UNKNOWN | Same gates; current executor removes output-token limit fields, so excluded from a plan promising a preserved 128-token upstream limit. |
+
+For a later explicitly approved eligible candidate, use only the existing Core
+`verify_model(..., mode="tool_calling")`: fixed synthetic prompt and schema,
+`aryn_fixture_lookup({"key":"aryn-core"})`, maximum one fixture call, two ARYN
+inference dispatches, 128 requested output tokens per turn, 4096 measured total
+tokens and a maximum 60-second Core deadline (subject to tighter existing limits).
+No private project data is included. Current proposed gateway ingress remains
+`http://127.0.0.1:20128/v1/chat/completions` through confined Hermes; actual runtime
+binding, upstream provider/endpoint and configuration are UNKNOWN. Maximum total
+upstream requests and potential cost are **UNKNOWN**, and these Core limits are
+not a provider billing cap. No automatic retry, model substitution or alternate
+candidate invocation is authorized on the ARYN side.
+
+Expected evidence remains a genuine structured proposal with valid call identity,
+Core authorization, verified fixture output, continuation and schema-valid JSON,
+available usage and signed Core evidence. Gateway identity/configuration/usage
+origin must be separately trustworthy before VERIFIED CAPABILITY can be claimed.
+Without that evidence the strongest functional outcome is **FUNCTIONAL SUCCESS /
+ATTESTATION INCOMPLETE**. No live functional outcome has been observed here.
+
+Delivery review covers all 23 existing modified files, with no newly discovered
+ARYN defect requiring application changes. Exact IDs, immutable versions, signed
+history, permission/claim/budget ownership and Bench authority remain unchanged.
+This follow-up updates only this existing documentation. Offline implementation
+remains COMPLETE for the accepted tested scope; live verification is BLOCKED;
+remote CI execution is BLOCKED pending explicit commit/push authorization; Stage 1
+remains PARTIAL. No commit, push, deployment or paid/provider inference occurred.
+Current follow-up checks passed: `.venv/Scripts/python.exe -m ruff check .`,
+`.venv/Scripts/python.exe scripts/check_repository.py`, `git diff --check`, and
+`git diff --no-ext-diff | .local/gitleaks/gitleaks.exe stdin --redact --no-banner`.
+The redacted scan found no leaks in the tracked diff. Since application/test hashes
+are unchanged, the accepted same-source regressions were not rerun solely for this
+documentation update. Remote CI has not tested these uncommitted changes.
+
+## Provider preflight and delivery audit — 15 October 2026
+
+This follow-up rechecked `development` at
+`4994a6cc49f95deec0e2fe5b8608b0ca6e32a489` with 21 modified tracked files. Prior
+results were not assumed to verify the current tree. No live inference, provider
+credential access, configuration change, commit, push or deployment is authorized.
+The installed package reports 9Router 0.5.91; current dashboard metadata is blocked
+by a saved browser origin permission for `http://127.0.0.1:20128`. After the owner
+confirmed that the permission was opened, the same authorized browser access
+was retried once and again denied by saved permission/managed policy.
+No alternate transport is used to bypass it. Current configured connections,
+catalog membership of the three candidate IDs, authentication/credit, custom
+endpoints and configuration revision therefore remain UNKNOWN. The 50-route
+observation below is historical, not current preflight evidence.
+
+Read-only source audit examined the installed public server bundle under
+`C:/Users/User/AppData/Roaming/npm/node_modules/9router/app/.next-cli-build/server/`.
+These are stock source behaviors, not proof that a particular user setting is active:
+
+| Boundary / source symbol | Observed behavior | Consequence |
+|---|---|---|
+| `chunks/6249.js`, module 40669 `g`/`i`; `chunks/8635.js`, module 38775 `i`/`j` | Explicit slash IDs parse a provider token and model; unprefixed aliases can consult saved mappings. Slash routes bypass named combo lookup. Public provider definitions map `ds`, `ag`, `cx`, but saved overrides are not inspected. | Keep exact slash ID; actual connection/endpoint still needs metadata. |
+| `chunks/8635.js`, module 17603 `l`; `chunks/8910.js`, module 18910 `n` | Capacity routing is driven by vision/PDF/audio/video inputs. | The fixed text-only fixture payload does not request these adaptations. This is not a universal fallback guarantee for arbitrary requests. |
+| `chunks/8635.js`, module 79489 `A` | Loops over available accounts; failures can select another account of the resolved provider. | Connection count and effective account strategy are unknown; two ARYN POSTs do not bound upstream attempts. |
+| `chunks/700.js`, module 74957 `execute`; `chunks/2132.js`, module 41004 defaults | Per-base-URL retry; defaults allow 3 retries for 502/503, 2 for 504, 0 for 429; network errors use the 502 branch. Provider overrides apply. | Even one account can issue multiple upstream inference requests. This is distinct from generic HTTP-library retry defaults. |
+| `chunks/8895.js`, module 92500 `N`; `chunks/3943.js`, module 8521 `K` | 401/403 may refresh credentials, with up to three refresh attempts, then invoke the executor again. | Inference may indirectly refresh provider credentials and persist refreshed state. Read-only preflight does not invoke this code. |
+| Public Antigravity definition; executor module 39536 | Provider-specific 429 retries and base-URL fallback logic. | Additional retry/endpoint uncertainty; current account configuration unknown. |
+| `chunks/5330.js`, module 19932 Codex executor | Additional transient SSE retries; removes `max_tokens`, `max_completion_tokens`, `max_output_tokens`; can normalize model/reasoning identifiers. | `cx/gpt-6-luna` is BLOCKED for a proposal promising an enforced 128-token provider output cap. Do not silently substitute a route. |
+| `chunks/8895.js`, modules 5016/81626 response conversion | Some paths reconstruct completion/model/usage fields; e.g. a response model can fall back to the requested model. | An equal response ID alone is not independent proof of raw upstream identity or provider-measured usage. |
+| Entire installed public server chunk set | No `provider_configuration` receipt field found; current ARYN requires it in catalog and completion with explicit provider provenance. | Gateway capability limitation: functional success cannot become authoritative supported capability without trustworthy configuration/model/provider/usage evidence. |
+
+Public endpoint defaults include DeepSeek
+`https://api.deepseek.com/chat/completions` and Codex
+`https://chatgpt.com/backend-api/codex/responses`. They are not attested current
+endpoints. Native Hermes revision was rechecked as
+`3637c512fc3211bdccb61b7140d09ac1018508ba`. Only 9Router was listening during
+initial inspection (port 20128, all interfaces); ARYN runtime/API ports 8642/8710
+were not listening. No listener/configuration was changed. Live runtime session
+authentication therefore remains unavailable; installed-native offline tests use
+isolated authentication and outbound-denied doubles.
+
+Blocker classification: missing gateway receipt/provenance is **B**; blocked
+metadata and stopped runtime are **D**; multiplied upstream requests, token
+transformation and continued work after a Core deadline are **E** uncertainties.
+No live request has tested a model, so no **C** provider tool-support failure is
+asserted. Unknown evidence is not repaired by inventing a revision or relaxing
+exact identity. A safe gateway extension would need bounded dispatch/cancellation,
+explicit route/account policy, configuration revision, raw upstream model/provider,
+usage origin and subrequest evidence; it requires separate review/authorization.
+
+The conditional live proposal below remains unapproved. Current readiness does
+not justify an unconditional provider order: first refresh authorized metadata;
+then prefer a route with preserved token parameters and sufficient provenance.
+DeepSeek is a conditional diagnostic candidate because its stock OpenAI-compatible
+path has fewer conversions, not a required dependency. Antigravity is a conditional
+alternate after its retry/token behavior is established. Codex is excluded from
+the bounded-output proposal until its output-limit contract is resolved. Successful
+tool proposal → Core fixture → continuation → schema output with missing identity
+or configuration provenance must be labeled **FUNCTIONAL SUCCESS / ATTESTATION
+INCOMPLETE**, never VERIFIED CAPABILITY. Strict identity mismatch remains failure.
+
+The current proposal is conditional; no provider is eligible for immediate live
+dispatch while the metadata policy gate remains blocked:
+
+| Field | Current proposal/evidence |
+|---|---|
+| Provider | Actual provider UNKNOWN; installed stock mappings identify DeepSeek and Antigravity routes only. |
+| Exact model ID | Primary candidate `ds/deepseek-flash`; alternate candidate `ag/gemini-3.8-flash`. Both are requested candidates, not freshly confirmed catalog entries. `cx/gpt-6-luna` is excluded due to output-cap removal. |
+| Availability / tool / structured output | UNKNOWN / UNKNOWN / UNKNOWN for both candidates; no live invocation or truthful capability receipt exists from this audit. |
+| Route | ARYN contract is private Hermes → `http://127.0.0.1:20128/v1/chat/completions`; effective runtime binding/session and actual external endpoint are not currently verified. |
+| Internal retries | ARYN zero automatic retries; at most two ARYN model POSTs. Gateway retries/account refresh/rotation exist as described above; total upstream attempts UNKNOWN. |
+| Fallback | Disabled in ARYN. Source excludes combo/capacity adaptation for these explicit slash IDs and the fixed text-only payload; gateway account/base-URL fallback still exists. Current saved configuration is UNKNOWN. |
+| Provenance | Partial static source evidence; trustworthy actual provider/model/configuration/usage-origin attestation is missing. Equal or reconstructed IDs are insufficient. |
+| Token/deadline budget | Core reserves a maximum 4096 measured total tokens; at most two turns, one fixture call, 128 requested output tokens per turn, deadline at most 60 seconds and further reduced by Core/runtime limits. This is not a guaranteed upstream token/billing ceiling. |
+| Potential cost | UNKNOWN; no verified price/credit or total upstream request bound. No amount is represented as a spending cap. |
+| Test data | Fixed synthetic prompt/system instructions, registered fixture schema, `{"key":"aryn-core"}`, returned fixture text, call ID and continuation; native static Hermes framing. No project/private data or provider credential in the model payload. |
+| Expected evidence | Structured tool proposal, validated name/arguments/call ID, Core permission decision, one fixture effect, validated continuation JSON, available reported usage, signed Core run evidence; capability remains unknown if attestation is incomplete. |
+| Approval | Separate owner approval of exact model, synthetic data, at most two ARYN dispatches and unknown upstream costs/retries. Any approval is conditional on restoring authorized metadata access and admission. No automatic alternate-model execution. |
+
+An overly broad public bundle excerpt during audit included bundled OAuth client
+constants. No user credential file/value was accessed or copied to the repository;
+subsequent source output was restricted to selected audit fields. This limitation
+is recorded rather than claiming all tool output was credential-free.
+
+## Multi-provider discovery and presentation — 15 October 2026
+
+`NineRouterGateway` remains the only gateway catalog. `ModelRouter` requires an
+explicit exact selection, never a DeepSeek default or an automatic substitute.
+The legacy standalone provider payload builders do not execute Studio requests.
+No provider was added, configured or contacted for inference in this change.
+
+The catalog separates `model_id` from `display_name`. The projection first ignores
+rich metadata with sensitive field names (including nested credential fields) or
+excessive nesting; it never inspects their values to infer readiness. For those
+rows, labels come only from the ID and provider identity stays unknown. For other
+rows, a bounded plain-text gateway `display_name`/`name` takes precedence.
+Otherwise, deterministic presentation formatting
+recognizes the existing 9Router route tokens `ds`, `ag`, `cx`, `gemini`, `openai`
+only for IDs with one separator. Unknown/multiple namespaces remain intact.
+These tokens describe presentation, never provider identity or authorization.
+The installed 9Router 0.5.91 public provider definitions confirm these aliases;
+they do not prove an active connection or the upstream model actually used.
+Case-insensitive duplicate labels receive an exact-ID suffix. For example:
+
+| Internal ID, unchanged | Display label |
+|---|---|
+| `ds/deepseek-flash` | DeepSeek Flash |
+| `ag/gemini-2.5-pro` | Gemini 2.5 Pro |
+| `ag/gemini-2.5-flash` | Gemini 2.5 Flash |
+| `unknown/model-name` | unknown/model-name |
+
+Chat/Factory/discovery already consume these API labels. The fixed Chat picker
+also uses a matching catalog label, falling back to the historical ID if absent.
+Option values, request bodies, immutable versions, run/Bench identities, signing
+and historical evidence retain the exact ID. Evidence inspectors retain raw IDs.
+No records are renamed and there is no migration.
+
+Rows now expose `listed`, `provider_identity_status`, `provider_configured`,
+`provider_reachability`, `credit_status` and `rate_limit_status` independently of
+model availability. Configuration requires an explicit gateway boolean; absent
+metadata is unknown. Reachability requires verified provider-discovery evidence
+at most 60 seconds old. Neither configuration nor reachability proves model
+availability, capability or credit. Credit/rate-limit metadata is unavailable in
+the existing discovery contract and remains unknown. `owned_by` may be a routing
+alias and is not treated as an upstream provider identity. Only bounded explicit
+provider metadata is projected; raw provider configuration/errors are excluded.
+
+Fresh gateway capability attestations additionally require an explicit provider
+identity and configuration revision. Core probe receipts must match that current
+catalog provider, exact reported model, gateway/credential scope, runtime instance,
+configuration revision and expiry. Missing provenance leaves capability unknown.
+Isolated doubles still cannot issue live attestations.
+
+**Identity contract hardening:** transport no longer equates provider-prefixed
+and unprefixed response model IDs using provider-specific heuristics. The actual
+gateway response must equal the selected exact ID. Providers that report a
+different ID are rejected, even if a human considers the names equivalent. An
+eventual alias contract would need trustworthy model/configuration-bound evidence;
+display formatting cannot authorize it. Existing historical evidence is preserved,
+not rewritten. This deliberately tightens the previous namespace compatibility.
+
+Provider failures remain sanitized and latched per turn. HTTP 429 is
+`provider_rate_limited`; explicit `insufficient_credit` or `insufficient_balance`
+codes produce `provider_insufficient_credit`; `insufficient_quota` is reported
+separately as `provider_quota_exhausted`, without inferring its billing cause; 502/503/504
+produce `provider_unavailable`. Other failures are not guessed to be credit
+problems. These observations grant neither fallback nor retry. Core retains
+`outcome_unknown` and reservations when settlement evidence is missing, along
+with the bounded diagnostic code. A transient provider failure does not permanently
+mark the model rejected. ARYN limits native dispatches; opaque gateway internal
+retries and external billing ceilings remain unverified.
+
+Read-only metadata refresh through the logged-in local dashboard was denied by
+the browser origin approval gate during this audit. No alternative transport was
+used to bypass it. Earlier observations listed 50 routes across configured
+DeepSeek, Gemini, Antigravity and Codex connections, all with unknown model
+availability. That observation is not current readiness evidence. Installed public
+provider definitions corroborate routing aliases only. No live tool support,
+credit, actual upstream identity or provider configuration revision is asserted.
+
+### Conditional live verification proposal (not authorized or executed)
+
+These are earlier observed catalog candidates, not freshly verified available
+providers. Mapping comes from installed public gateway definitions plus the
+earlier local connection metadata, not inference from a prefix alone. Current
+connection state must be refreshed after owner permission for local metadata.
+No model is substituted if its route fails.
+
+| Gateway provider route | Exact model ID | Availability | Tool calling / structured output | Provenance |
+|---|---|---|---|---|
+| DeepSeek | `ds/deepseek-flash` | unknown | unknown / unknown | earlier catalog/configuration observation; actual upstream/configuration revision unavailable |
+| Antigravity | `ag/gemini-3.8-flash` | unknown | unknown / unknown | installed route mapping; actual upstream provider/model/configuration revision unavailable |
+| Codex | `cx/gpt-6-luna` | unknown | unknown / unknown | installed route mapping; actual upstream provider/model/configuration revision unavailable |
+
+For each explicitly approved model:
+
+- Route: Core → confined Hermes → `http://127.0.0.1:20128/v1/chat/completions`.
+  Actual external endpoint is not verified. ARYN fallback is disabled; gateway
+  internal routing/retry policy must be established before promising a bound.
+- Caller: current human `model:verify` and `run:create`; a separate exact-model
+  idempotency claim and budget reservation per approved probe.
+- Dispatch: at most two ARYN-to-gateway model POSTs per probe, one per native
+  turn, zero automatic ARYN retries; one Core fixture read. Approving all three
+  candidates would permit at most six ARYN model POSTs, but they are not a batch
+  default. External provider request counts remain unknown behind the gateway.
+- Limits: 128 requested output tokens per turn, 4096 Core measured total-token
+  ceiling, at most 60 seconds bounded further by runtime/Core deadlines. Provider
+  input/reasoning accounting and opaque retries prevent a guaranteed billing cap.
+- Data: only `TOOL_PROBE_PROMPT`, `TOOL_PROBE_SYSTEM`, the strict fixture tool
+  definition, `{"key":"aryn-core"}`, Core-verified fixture text
+  `ARYN Core owns execution authorization.`, call identity and continuation
+  transcript. No project/private data or provider credential enters the prompt.
+- Output: strict `{"summary":"ARYN Core owns execution authorization."}`.
+  Inspect actual model/provider, measured usage, tool trace, signed evidence and
+  current configuration revision. Missing provenance yields unknown, never an
+  authoritative supported receipt. Identity mismatch rejects the probe.
+- Costs/quotas: unknown. Configured accounts or a static pricing table do not
+  establish remaining credit or actual charges. Separate owner approval of the
+  exact candidate list, data, cost uncertainty and request-count uncertainty is
+  required before any inference. Resolve metadata/routing blockers first.
+
+## Explicit Core tool capability probe — 15 October 2026
+
+`RunCoordinator.verify_model(..., mode="tool_calling")` is a server-only fixed
+synthetic operation, separate from the existing default text probe. It requires
+current human `model:verify` and `run:create` permissions. It does not grant tools
+to an agent, publish a version, or add an API endpoint. Normal agent and Bench
+admission still require verified model availability and tool capability.
+
+Only this probe may test an exact listed candidate with unknown readiness. It
+has one Core claim/reservation, at most two model requests, one
+`aryn_fixture_lookup({"key":"aryn-core"})` read, and strict JSON summary
+validation. Its fixed payload, two-turn/one-call limits, Core deadline and budget
+are checked at both Core and the private runtime turn contract. Each native
+Hermes turn still dispatches once, without native tool execution or retries.
+
+Core signs the completed observation and retains its trace in the existing
+audit/evidence records. Replay returns historical evidence without dispatch or
+renewing its expiry. Failed/unknown/cancelled observations cannot issue a
+capability receipt. A receipt lasts no more than 60 seconds and is checked again
+against model, gateway URL/credential scope, runtime instance and the gateway's
+provider configuration revision before reuse. Gateway/runtime restarts, model
+removal/rejection, configuration changes, signature failure or expiry invalidate it.
+
+The optional `provider_configuration` field is a SHA-256 configuration revision
+reported by the gateway in both its model catalog and actual completion. ARYN
+does not invent that revision or read 9Router's private provider credentials.
+Missing provider identity or revision leaves live capability **unknown**, even
+if the fixed fixture conversation completed. Current standard 9Router may omit
+these fields; a successful probe alone is not proof of opaque upstream routing
+configuration. No live support is claimed until actual evidence is observed.
+
+Transport doubles are explicitly labeled `isolated_test_double`; unregistered
+runtimes have no live attestation binding. Offline probe evidence remains
+inspectable but cannot populate the live capability registry. The supported
+structured-output observation is limited to the fixed fixture schema, not a
+guarantee of arbitrary provider-native constrained decoding. Provider input and
+cost admission retain the existing estimated/postflight limits, not a guaranteed
+external billing ceiling. Live requests require separate owner approval.
+
 Governed fixture extension (13 October 2026): `/aryn/turn` is an authenticated
 private loopback proposal/continuation protocol; native toolsets remain empty
 and native tool execution is forbidden. Core owns grants and all execution of
@@ -16,7 +387,7 @@ stale, rejected or malformed evidence remains unknown and governed tool runs are
 blocked. Standard 9Router installations are not assumed to provide these fields.
 No model probe, gateway configuration or credential change is performed by discovery.
 The raw reported model identifier is retained in governed iteration audit while
-the existing exact route/alias checks remain in force. Provider identity is
+exact response identity is required as described above. Provider identity is
 unavailable if the provider does not report it; a gateway cannot prove a provider
 that returns dishonest metadata.
 

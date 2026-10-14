@@ -27,6 +27,8 @@ class ModelReceipt:
     tool_names: tuple[str, ...] | None = None
     tool_calls: list[ToolCall] = field(default_factory=list)
     usage: RunUsage | None = None
+    evidence_origin: str = "unavailable"
+    provider_configuration: str | None = None
 
     def evidence(self):
         if not self.verified or self.failure or self.actual_model != self.requested_model:
@@ -46,6 +48,7 @@ class ExactGatewayTransport(httpx.BaseTransport):
 
     def __init__(self, settings: GatewaySettings, receipt: ModelReceipt, transport=None):
         self.settings, self.receipt = settings, receipt
+        receipt.evidence_origin = "isolated_test_double" if transport is not None else "gateway_response"
         self.inner = transport or httpx.HTTPTransport(retries=0, trust_env=False)
 
     def _reject(self, request, code):
@@ -99,10 +102,18 @@ class ExactGatewayTransport(httpx.BaseTransport):
         if response.status_code != 200:
             # No upstream error body/header ever enters Hermes logs or an ARYN response.
             rejected = response.status_code == 404
+            code = ""
+            try:
+                error = response.json().get("error", {})
+                code = error.get("code", "") if isinstance(error, dict) else ""
+                code = code if isinstance(code, str) else ""
+            except (ValueError, AttributeError):
+                pass
             if response.status_code == 400:
                 try:
                     error = response.json().get("error", {})
                     code = error.get("code", "") if isinstance(error, dict) else ""
+                    code = code if isinstance(code, str) else ""
                     message = error.get("message", "") if isinstance(error, dict) else ""
                     message = message.lower() if isinstance(message, str) else ""
                     rejected = code in {"model_not_found", "model_not_available", "unknown_model"} or (
@@ -110,7 +121,12 @@ class ExactGatewayTransport(httpx.BaseTransport):
                 except (ValueError, AttributeError):
                     pass
             response.close()
-            return self._reject(request, "model_not_available" if rejected else "gateway_rejected")
+            failure = ("provider_insufficient_credit" if code in {"insufficient_credit", "insufficient_balance"}
+                else "provider_quota_exhausted" if code == "insufficient_quota"
+                else "provider_rate_limited" if response.status_code == 429
+                else "provider_unavailable" if response.status_code in {502, 503, 504}
+                else "model_not_available" if rejected else "gateway_rejected")
+            return self._reject(request, failure)
         try:
             raw_text = response.text
             if "data: [DONE]" in raw_text:
@@ -124,21 +140,15 @@ class ExactGatewayTransport(httpx.BaseTransport):
             actual = data.get("model")
             self.receipt.reported_model = actual if isinstance(actual, str) and MODEL_ID.fullmatch(actual) else None
             requested = self.receipt.requested_model
-            model_matches = (
-                isinstance(actual, str) and (
-                    actual == requested
-                    or (requested.startswith("ds/") and actual in {requested[3:], f"deepseek/{requested[3:]}"})
-                    or (requested.startswith("gemini/") and actual in {requested[7:], f"google/{requested[7:]}"})
-                    or (requested.startswith("ag/") and actual in {requested[3:], f"antigravity/{requested[3:]}"})
-                    or (requested.startswith("cx/") and actual in {requested[3:], f"codex/{requested[3:]}", f"openai/{requested[3:]}"})
-                    or (requested.startswith("openai/") and actual == requested[7:])
-                    or (actual.startswith("ds/") and requested in {actual[3:], f"deepseek/{actual[3:]}"})
-                )
-            )
+            # A routing prefix is not evidence of equivalent model identity.
+            # No provider-specific alias can silently authorize a different response ID.
+            model_matches = isinstance(actual, str) and actual == requested
             if not model_matches:
                 return self._reject(request, "actual_model_mismatch")
             provider = data.get("provider")
             self.receipt.provider = provider if isinstance(provider, str) and MODEL_ID.fullmatch(provider) else None
+            revision = data.get("provider_configuration")
+            self.receipt.provider_configuration = revision if isinstance(revision, str) and re.fullmatch(r"[a-f0-9]{64}", revision) else None
             self.receipt.actual_model, self.receipt.verified = requested, True
             choices = data.get("choices")
             usage = data.get("usage")

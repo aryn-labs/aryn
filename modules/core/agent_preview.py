@@ -93,9 +93,14 @@ class AgentPreviewService:
                 "core.run.completed": "run.completed", "core.run.failed": "run.failed",
                 "core.run.outcome_unknown": "run.outcome_unknown", "core.run.recovered": "run.outcome_unknown",
                 "core.run.cancelled": "run.cancelled", "core.run.cancellation.requested": "run.stopping"}
+            # Clock resolution can give dispatched and terminal events the same
+            # timestamp. Random audit UUIDs cannot order execution phases.
+            phases = {"input.accepted": 0, "agent.dispatched": 1, "run.stopping": 2}
+            timeline = sorted((row for row in valid if row.event_type in mapping),
+                key=lambda row: (row.occurred_at, phases.get(mapping[row.event_type], 3), row.id))
             events = [AgentPreviewEvent(id=row.id, sequence=index,
                 occurred_at=AuditRepository.contract(row).occurred_at, type=mapping[row.event_type])
-                for index, row in enumerate(valid) if row.event_type in mapping]
+                for index, row in enumerate(timeline)]
             self.editor.authorize(session, context, blueprint_id)
             return AgentPreviewView(organization_id=context.organization_id, project_id=context.project_id,
                 blueprint_id=blueprint_id, working_copy_generation=reference["working_copy_generation"],

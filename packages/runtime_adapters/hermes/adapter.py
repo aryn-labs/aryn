@@ -18,6 +18,7 @@ from packages.contracts.runtime import (
     GatewayUnavailableError,
     ModelIdentityError,
     RuntimeGatewayError,
+    ProviderRequestError,
     RunRequest,
     RunResult,
     RunStatus,
@@ -129,19 +130,56 @@ class HermesRuntimeAdapter(RuntimeAdapter):
         return await self.model_gateway.discover(refresh=refresh)
 
     async def model_availability(self, model, *, refresh=False):
+        if self.model_gateway.has_tool_verifications:
+            await self.capability_verification_binding()
         return await self.model_gateway.availability(model, refresh=refresh)
 
     async def model_capabilities(self, model):
+        if self.model_gateway.has_tool_verifications:
+            await self.capability_verification_binding()
         return await self.model_gateway.model_capabilities(model)
 
+    async def capability_verification_binding(self):
+        from packages.contracts.model import ModelProbeBinding
+        import re
+        if not await self.gateway_binding():
+            self.model_gateway.bind_runtime_configuration(None)
+            return None
+        instance = self._gateway_binding.get("runtime_instance")
+        configuration = self._gateway_binding.get("configuration_id")
+        if (not isinstance(instance, str) or not re.fullmatch(r"[a-f0-9]{32}", instance)
+                or configuration != self.model_gateway.settings.runtime_configuration_id(instance)):
+            self.model_gateway.bind_runtime_configuration(None)
+            return None
+        isolated = self._custom_client is not None or self.model_gateway.client is not None
+        self.model_gateway.bind_runtime_configuration(None if isolated else configuration)
+        return ModelProbeBinding(origin="isolated_test_double" if isolated else "gateway_response", runtime_configuration=configuration,
+            gateway_configuration=self.model_gateway.settings.configuration_id)
+
+    async def record_tool_verification(self, evidence, attestation, verifier):
+        from packages.contracts.model import ModelProbeEvidence
+        evidence = ModelProbeEvidence.model_validate(evidence)
+        binding = await self.capability_verification_binding()
+        if (binding is None or binding.origin != "gateway_response" or evidence.binding is None
+                or evidence.binding.runtime_configuration != binding.runtime_configuration
+                or evidence.binding.gateway_configuration != binding.gateway_configuration):
+            return False
+        await self.model_gateway.discover(refresh=True)
+        return self.model_gateway.record_tool_verification(evidence, attestation, verifier)
+
+    def invalidate_tool_verification(self, model):
+        self.model_gateway.invalidate_tool_verification(model)
+
     async def execute_tool_turn(self, request, context):
-        from packages.contracts.runtime import ToolTurnResult
+        from packages.contracts.runtime import ToolTurnRequest, ToolTurnResult
+        request = ToolTurnRequest.model_validate(request.model_dump(mode="json"))
         if (request.organization_id != context.organization_id or request.project_id != context.project_id):
             raise RuntimeSecurityError("Governed turn scope differs.")
         caps = await self.capabilities()
         if not caps.tools_confined or caps.enabled_toolsets or not caps.supports_governed_tool_turns:
             raise RuntimeSecurityError("Governed tool turns are unavailable.")
-        await self.require_model_available(request.request.model)
+        preflight = self.require_model_candidate if request.verification_mode else self.require_model_available
+        await preflight(request.request.model)
         client = self._get_client()
         try:
             response = await client.post(f"{self.base_url}/aryn/turn", headers=self._headers(),
@@ -152,6 +190,8 @@ class HermesRuntimeAdapter(RuntimeAdapter):
             data = response.json()
             self._assert_no_secret(data)
             turn = ToolTurnResult.model_validate(data)
+            if turn.result.model_evidence is not None and (self._custom_client is not None or self.model_gateway.client is not None):
+                turn.result.model_evidence = turn.result.model_evidence.model_copy(update={"origin": "isolated_test_double"})
             if (turn.run_id != request.run_id or turn.iteration != request.iteration
                     or turn.result.actual_model != request.request.model
                     or turn.result.requested_model != request.request.model
@@ -238,6 +278,9 @@ class HermesRuntimeAdapter(RuntimeAdapter):
             error = body.get("error", {}) if isinstance(body, dict) else {}
             message = error.get("message", "") if isinstance(error, dict) else error
             code = error.get("code", "") if isinstance(error, dict) else ""
+            code = code if isinstance(code, str) else ""
+            if code in {"provider_rate_limited", "provider_insufficient_credit", "provider_quota_exhausted", "provider_unavailable"}:
+                raise ProviderRequestError(code)
             if code == "actual_model_mismatch":
                 error = ModelIdentityError()
                 error.identity_stage = "gateway_response"

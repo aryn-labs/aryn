@@ -84,7 +84,7 @@ class RunCoordinator:
         from database.repositories.audit_repo import AuditRepository
         evidence = None
         session = object_session(row)
-        if session is not None and row.execution_mode == "governed_agent" and row.status in {"completed", "failed"}:
+        if session is not None and row.execution_mode in {"governed_agent", "tool_probe"} and row.status in {"completed", "failed"}:
             captured = session.query(AuditEventModel).filter_by(resource_id=row.id,
                 organization_id=row.organization_id, project_id=row.project_id,
                 event_type="core.run.evidence").all()
@@ -100,7 +100,7 @@ class RunCoordinator:
                 if (receipt.get("status") != row.status or receipt.get("output_hash") !=
                         hashlib.sha256((row.output or "").encode()).hexdigest()):
                     raise PermissionDeniedError("Captured execution output or status differs.")
-            elif row.execution_mode == "governed_agent" and row.status == "completed":
+            elif row.status == "completed":
                 raise PermissionDeniedError("Completed governed execution evidence is missing.")
         return RunResult(
             run_id=row.id, status=RunStatus(row.status), output=sanitize(row.output or ""),
@@ -193,7 +193,13 @@ class RunCoordinator:
     def _claim(self, request, context, mode, session=None, assignment_provenance=None, agent_configuration=None, allowed_tools=None):
         """Unique insert commits before runtime dispatch. Only its owner may execute."""
         self._fence()
-        if agent_configuration is None and (request.max_iterations != 1 or request.max_tool_calls):
+        probe = mode == "tool_probe"
+        if probe:
+            from packages.contracts.model import tool_probe_request
+            if request != tool_probe_request(request.model, request.idempotency_key) or not request.idempotency_key:
+                raise PermissionDeniedError("Only the fixed capability probe may claim probe authority.")
+            self.permission_engine.enforce("model:verify", context, context.organization_id, context.project_id, session=session)
+        if not probe and agent_configuration is None and (request.max_iterations != 1 or request.max_tool_calls):
             raise PermissionDeniedError("Multi-step authority requires a captured agent version.")
         from database.repositories.exceptions import DuplicateEntityError
         from database.repositories.run_state_repo import RunStateRepository
@@ -216,6 +222,8 @@ class RunCoordinator:
             with (nullcontext(session) if session is not None else self.db_manager.session(write=True)) as active:
                 self._fence()
                 self.permission_engine.enforce("run:create", context, context.organization_id, context.project_id, session=active)
+                if probe:
+                    self.permission_engine.enforce("model:verify", context, context.organization_id, context.project_id, session=active)
                 from database.repositories.budget_repo import BudgetRepository
                 budgets = BudgetRepository(active).authority_budgets(context)
                 total = min([self.budget_engine.default_rule.max_tokens_per_run, request.max_total_tokens or spec.context_window, spec.context_window, *[b.max_tokens_per_run for b in budgets]])
@@ -239,6 +247,14 @@ class RunCoordinator:
                           "total_enforcement": "measured_postflight", "output_enforcement": "provider_request_and_measured_postflight",
                           "max_turns": 1, "actor_id": context.actor.actor_id, "billing_category": "external_or_local",
                           "max_cost_usd": cost_limit, "cost_enforcement": "measured_if_supplied_external_cost_unavailable"}
+                if probe:
+                    from packages.tool_adapters.fixture import NAME
+                    from packages.contracts.model import tool_probe_output_contract
+                    if min(self.budget_engine.default_rule.max_turns, *[b.max_turns for b in budgets]) < 2:
+                        raise BudgetExceededError("Capability probe requires two authorized turns.")
+                    limits.update({"probe_mode": "tool_calling", "max_turns": 2, "max_tool_calls": 1,
+                        "tool_grants": [NAME], "output_contract": tool_probe_output_contract().model_dump(mode="json"),
+                        "max_output_tokens": min(total, request.max_tokens * 2)})
                 if agent_configuration is not None:
                     from packages.tool_adapters.fixture import NAME
                     from packages.contracts.bench import validate_output_contract
@@ -341,6 +357,10 @@ class RunCoordinator:
             self._fence(row)
             if row.status in repo.TERMINAL_STATES:
                 return self.stored_result(row)
+            if row.execution_mode == "tool_probe":
+                # Hold current identity/membership authority through receipt issuance.
+                self.permission_engine.enforce("model:verify", context, row.organization_id, row.project_id, session=session)
+                self.permission_engine.enforce("run:create", context, row.organization_id, row.project_id, session=session)
             if result.model != row.model:
                 raise ModelIdentityError()
             if row.provider == "9router" and (result.gateway != "9Router" or result.runtime_backend != "Hermes"
@@ -380,7 +400,7 @@ class RunCoordinator:
             row.error_code = "execution_limit_exceeded" if breach else "execution_evidence_unknown" if target == "outcome_unknown" else "runtime_failed" if target == "failed" else None
             if invalid_output and target == "failed":
                 row.error_code = "invalid_output"
-            elif target == "failed" and result.error_code in {"tool_permission_denied", "tool_input_invalid", "tool_failed", "execution_limit_exceeded"}:
+            elif target == "failed" and result.error_code in {"tool_permission_denied", "tool_input_invalid", "tool_failed", "execution_limit_exceeded", "capability_probe_failed"}:
                 row.error_code = result.error_code
             # Settle even a confirmed partial failure, but never a missing usage estimate.
             BudgetRepository(session).settle(context, row, usage)
@@ -392,19 +412,65 @@ class RunCoordinator:
                 AuditStatus.COMPLETED if target == "completed" else AuditStatus.CANCELLED if target == "cancelled" else AuditStatus.FAILED,
                 {"requested_model": row.model, "actual_model": row.actual_model, "provider": row.actual_provider,
                  "usage_availability": row.usage_availability, "usage": usage.model_dump(), "error_code": row.error_code}, session=session)
-            if result.execution_evidence is not None and row.execution_mode == "governed_agent":
+            if result.execution_evidence is not None and row.execution_mode in {"governed_agent", "tool_probe"}:
+                if row.execution_mode == "tool_probe" and target == "completed":
+                    from packages.contracts.model import ModelProbeEvidence
+                    captured = result.execution_evidence["capability_probe"]
+                    observed_at = utc_datetime(row.completed_at).timestamp()
+                    proof = ModelProbeEvidence(run_id=row.id, model=row.model, provider=row.actual_provider,
+                        observed_at=observed_at, expires_at=observed_at + 60,
+                        output_hash=hashlib.sha256((row.output or "").encode()).hexdigest(), **captured)
+                    result.execution_evidence["capability_probe"] = proof.model_dump(mode="json")
+                    result.execution_evidence["capability_attestation"] = self.db_manager.evidence_signer.sign(
+                        "model_capability_probe", proof.model_dump(mode="json"))
                 # Only Core's in-process observations may enter the governed path.
                 self.audit_logger.record("core.run.evidence", context, run_id, AuditStatus.COMPLETED,
                     {"execution_evidence": result.execution_evidence, "status": target,
                      "output_hash": hashlib.sha256((row.output or "").encode()).hexdigest()}, session=session)
             stored = self.stored_result(row)
             # Preserve operational Bench observations with the captured Core run ID.
-            if result.execution_evidence is not None and row.execution_mode != "governed_agent":
+            if result.execution_evidence is not None and row.execution_mode not in {"governed_agent", "tool_probe"}:
                 stored.execution_evidence = sanitize({**result.execution_evidence, "run_id": run_id} if result.execution_evidence.get("run_id") == result.run_id else result.execution_evidence)
             return stored
 
-    async def verify_model(self, model, context, idempotency_key):
-        """Explicit, metered text-only readiness check; no user prompt is dispatched here."""
+    async def verify_model(self, model, context, idempotency_key, *, mode="text"):
+        """Fixed metered probes. Tool verification has separate human authority."""
+        if mode not in {"text", "tool_calling"}:
+            raise PermissionDeniedError("Unknown model verification mode.")
+        if mode == "tool_calling":
+            from packages.contracts.model import tool_probe_request
+            try:
+                self.permission_engine.enforce("model:verify", context, context.organization_id, context.project_id)
+            except PermissionDeniedError:
+                self.audit_logger.record("core.model.denied", context, "model_probe", AuditStatus.DENIED,
+                    {"mode": mode, "error_code": "permission_denied"})
+                raise
+            if not isinstance(idempotency_key, str) or not idempotency_key.strip():
+                raise IdempotencyConflictError("Capability probes require an explicit idempotency key.")
+            request = tool_probe_request(model, idempotency_key)
+            try:
+                owner, captured = self._claim(request, context, "tool_probe")
+            except BudgetExceededError:
+                self.audit_logger.record("core.run.budget_exceeded", context, "model_probe", AuditStatus.DENIED,
+                    {"mode": mode, "error_code": "budget_exceeded"})
+                raise
+            if owner:
+                self.runtime_adapter.invalidate_tool_verification(model)
+            completed = await self._execute_governed_turns(request, context, (owner, captured))
+            if owner and completed.status == RunStatus.COMPLETED:
+                from packages.contracts.model import ModelProbeEvidence
+                evidence = completed.execution_evidence
+                proof = ModelProbeEvidence.model_validate(evidence["capability_probe"])
+                accepted = False
+                if proof.live_eligible:
+                    accepted = await self._bounded(self.runtime_adapter.record_tool_verification(
+                        evidence["capability_probe"], evidence["capability_attestation"], self.db_manager.evidence_signer),
+                        self._remaining(completed.run_id, context))
+                self.audit_logger.record("core.model.capability", context, completed.run_id,
+                    AuditStatus.COMPLETED if accepted else AuditStatus.ATTEMPTED,
+                    {"mode": mode, "model": model, "capability": "supported" if accepted else "unknown",
+                     "reason": "verified_runtime_probe" if accepted else "live_provenance_unavailable"})
+            return completed
         request = RunRequest(model=model, prompt="Reply with the word Ready.",
             system_instructions="Verify text generation only. Do not use tools.",
             max_tokens=128, timeout_seconds=60, temperature=0,
@@ -413,6 +479,8 @@ class RunCoordinator:
             _execution_mode="model_probe", _model_verification=True)
 
     async def execute_managed_direct_turn(self, request: RunRequest, context: SecurityContext, *, _claimed=None, _allowed_tools=(), _execution_mode="direct", _model_verification=False) -> RunResult:
+        if _execution_mode == "tool_probe":
+            raise PermissionDeniedError("Capability probes require verify_model's explicit tool mode.")
         if _model_verification and (_execution_mode != "model_probe" or _allowed_tools or _claimed is not None
                 or request.prompt != "Reply with the word Ready."
                 or request.system_instructions != "Verify text generation only. Do not use tools."
@@ -598,6 +666,16 @@ class RunCoordinator:
                     or b.max_cost_usd < limits["max_cost_usd"] for b in current_budgets)
                     or row.usage_settled or row.reserved_tokens != limits["max_total_tokens"]):
                 raise PermissionDeniedError("Budget authority changed during execution.")
+            if row.execution_mode == "tool_probe":
+                self.permission_engine.enforce("model:verify", context, row.organization_id, row.project_id, session=session)
+                from packages.tool_adapters.fixture import NAME
+                from packages.contracts.model import tool_probe_output_contract
+                if (row.status not in {"started", "running"} or self._remaining(run_id, context) <= 0
+                        or limits.get("probe_mode") != "tool_calling" or limits.get("tool_grants") != [NAME]
+                        or limits.get("max_turns") != 2 or limits.get("max_tool_calls") != 1 or iteration > 2
+                        or limits.get("output_contract") != tool_probe_output_contract().model_dump(mode="json")):
+                    raise PermissionDeniedError("Capability probe authority is stale.")
+                return limits
             version = AgentVersion.from_stored(AgentRepository(session).get_version(context, limits["agent_version_id"]))
             if (version.payload_hash != limits["agent_payload_hash"] or row.status not in {"started", "running"}
                     or self._remaining(run_id, context) <= 0 or iteration > limits["max_turns"]):
@@ -623,6 +701,8 @@ class RunCoordinator:
                 raise RunInProgressError(captured.run_id, captured.status.value)
             return captured
         run_id = captured.run_id
+        probe = captured.effective_limits.get("probe_mode") == "tool_calling"
+        probe_steps, probe_binding = [], None
         usage = RunUsage(input_tokens=0, output_tokens=0, total_tokens=0)
         history, actions, seen_calls = [], [], set()
         tool_count = 0
@@ -633,17 +713,25 @@ class RunCoordinator:
             caps = await self._bounded(self.runtime_adapter.capabilities(), self._remaining(run_id, context))
             if not caps.tools_confined or caps.enabled_toolsets or not caps.supports_governed_tool_turns:
                 raise PermissionDeniedError("Runtime governed capability mismatch.")
-            await self._bounded(self.runtime_adapter.require_model_available(request.model), self._remaining(run_id, context))
+            preflight = self.runtime_adapter.require_model_candidate if probe else self.runtime_adapter.require_model_available
+            await self._bounded(preflight(request.model), self._remaining(run_id, context))
             model_caps = await self._bounded(self.runtime_adapter.model_capabilities(request.model), self._remaining(run_id, context))
-            if model_caps.model != request.model or model_caps.tool_calling != "supported":
+            if model_caps.model != request.model or model_caps.tool_calling == "unsupported" or (model_caps.tool_calling != "supported" and not probe):
                 raise PermissionDeniedError("Model tool-calling capability is unverified.")
+            if probe:
+                probe_binding = await self._bounded(self.runtime_adapter.capability_verification_binding(), self._remaining(run_id, context))
             limits = self._tool_authority(run_id, context, 1)
             for iteration in range(1, limits["max_turns"] + 1):
                 caps = await self._bounded(self.runtime_adapter.capabilities(), self._remaining(run_id, context))
                 model_caps = await self._bounded(self.runtime_adapter.model_capabilities(request.model), self._remaining(run_id, context))
                 if (not caps.tools_confined or caps.enabled_toolsets or not caps.supports_governed_tool_turns
-                        or model_caps.model != request.model or model_caps.tool_calling != "supported"):
+                        or model_caps.model != request.model or model_caps.tool_calling == "unsupported"
+                        or (model_caps.tool_calling != "supported" and not probe)):
                     raise PermissionDeniedError("Continuation capability evidence is unavailable.")
+                if probe:
+                    binding = await self._bounded(self.runtime_adapter.capability_verification_binding(), self._remaining(run_id, context))
+                    if binding != probe_binding:
+                        raise PermissionDeniedError("Probe runtime configuration changed.")
                 limits = self._tool_authority(run_id, context, iteration)
                 prompt = request.prompt if not history else "Continue using the verified tool result."
                 estimate = max(1, len(json.dumps([prompt, request.system_instructions, history,
@@ -665,15 +753,29 @@ class RunCoordinator:
                 turn = await self._bounded(self.runtime_adapter.execute_tool_turn(ToolTurnRequest(
                     run_id=run_id, organization_id=context.organization_id, project_id=context.project_id,
                     iteration=iteration, request=step_request, history=history,
-                    tool_names=limits["tool_grants"]), context), self._remaining(run_id, context))
+                    tool_names=limits["tool_grants"], verification_mode="tool_calling" if probe else None), context), self._remaining(run_id, context))
                 turn = ToolTurnResult.model_validate(turn.model_dump(mode="json"))
                 observed = turn.result
                 if turn.run_id != run_id or turn.iteration != iteration or observed.execution_evidence is not None:
                     raise PermissionDeniedError("Runtime step evidence differs from Core authority.")
                 if (observed.model != request.model or observed.actual_model != request.model
+                        or observed.reported_model is not None and observed.reported_model != request.model
                         or observed.requested_model != request.model or observed.gateway != "9Router"
                         or observed.runtime_backend != "Hermes"):
                     raise ModelIdentityError()
+                if probe:
+                    binding = observed.model_evidence
+                    if probe_binding is not None and (binding is None
+                            or binding.runtime_configuration != probe_binding.runtime_configuration
+                            or binding.gateway_configuration != probe_binding.gateway_configuration):
+                        raise PermissionDeniedError("Probe response configuration differs.")
+                    if probe_steps and (observed.provider != probe_steps[0]["provider"]
+                            or (binding and binding.provider_configuration != probe_steps[0]["provider_configuration"])):
+                        raise ModelIdentityError()
+                    probe_steps.append({"provider": observed.provider, "reported_model": observed.reported_model,
+                        "provider_configuration": binding.provider_configuration if binding else None,
+                        "model_evidence": binding.model_dump() if binding else None,
+                        "usage": observed.usage.model_dump(), "runtime_run_id": observed.run_id})
                 measured = observed.usage
                 if measured.availability != "measured" or measured.total_tokens != measured.input_tokens + measured.output_tokens:
                     raise RuntimeError("Step usage unavailable or inconsistent.")
@@ -691,6 +793,7 @@ class RunCoordinator:
                         {"iteration": iteration, "runtime_run_id": observed.run_id, "requested_model": request.model,
                          "actual_model": observed.actual_model, "provider": observed.provider,
                          "reported_model": observed.reported_model, "usage": measured.model_dump(),
+                         **({"model_evidence": observed.model_evidence.model_dump() if observed.model_evidence else None} if probe else {}),
                          "duration_seconds": time.perf_counter() - step_started}, session=session)
                 self._tool_authority(run_id, context, iteration)
                 failure = None
@@ -701,9 +804,13 @@ class RunCoordinator:
                 elif not turn.tool_calls:
                     if observed.status != RunStatus.COMPLETED:
                         raise RuntimeError("Final turn is not completed.")
+                    if probe and (iteration != 2 or tool_count != 1):
+                        failure = "capability_probe_failed"
                 else:
                     if observed.status != RunStatus.RUNNING:
                         raise RuntimeError("Tool proposal must remain pending.")
+                    if probe and len(turn.tool_calls) != 1:
+                        failure = "capability_probe_failed"
                     if not history:
                         history.append({"role": "user", "content": request.prompt})
                     history.append({"role": "assistant", "content": "", "tool_calls": [
@@ -713,6 +820,8 @@ class RunCoordinator:
                         limits = self._tool_authority(run_id, context, iteration)
                         tool_count += 1
                         code = "tool_permission_denied" if call.name != fixture.NAME or call.name not in limits["tool_grants"] else None
+                        if probe and (failure or (code is None and call.arguments != {"key": "aryn-core"})):
+                            code = "tool_input_invalid" if not failure else failure
                         if call.call_id in seen_calls or tool_count > limits["max_tool_calls"] or iteration == limits["max_turns"]:
                             code = "execution_limit_exceeded"
                         self.audit_logger.record("core.tool.decision", context, run_id,
@@ -756,6 +865,16 @@ class RunCoordinator:
                         "usage": usage, "error_code": failure, "execution_evidence": {
                             "run_id": run_id, "trace_complete": True, "actions": actions,
                             "resources": {"iterations": iteration, "tool_call_attempts": tool_count}}})
+                    if probe and not failure:
+                        binding = observed.model_evidence
+                        if (probe_binding is None or binding is None or probe_binding.origin != "gateway_response"
+                                or any(not s["reported_model"] or not s["model_evidence"]
+                                    or s["model_evidence"]["origin"] != "gateway_response" for s in probe_steps)):
+                            binding = binding.model_copy(update={"origin": "isolated_test_double"}) if binding else None
+                        final.execution_evidence["capability_probe"] = {
+                            "reported_model": observed.reported_model, "binding": binding.model_dump() if binding else None,
+                            "tool_call_id": next(iter(seen_calls)),
+                            "transcript_hash": hashlib.sha256(json.dumps([history, probe_steps], sort_keys=True).encode()).hexdigest()}
                     completed = self._complete_dispatch(run_id, final, context)
                     self.permission_engine.enforce("run:read", context, context.organization_id, context.project_id)
                     return completed
@@ -840,7 +959,7 @@ class RunCoordinator:
         if stored.status in {RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELLED, RunStatus.OUTCOME_UNKNOWN}:
             return stored.status == RunStatus.CANCELLED
         if not runtime_id:
-            if mode == "governed_agent":
+            if mode in {"governed_agent", "tool_probe"}:
                 # A model thread may still be in flight. Fence future tool/turn
                 # admission immediately without inventing provider cancellation.
                 from database.repositories.run_state_repo import RunStateRepository
@@ -890,7 +1009,7 @@ class RunCoordinator:
 
     async def get_managed_trace(self, run_id: str, context: SecurityContext) -> RuntimeTrace:
         stored, runtime_id, mode = self._owned_run(run_id, context, "run:trace")
-        if mode == "governed_agent" and stored.execution_evidence is not None:
+        if mode in {"governed_agent", "tool_probe"} and stored.execution_evidence is not None:
             return RuntimeTrace(run_id=run_id, available=True, events=stored.execution_evidence["actions"],
                 raw_trace={"complete": stored.execution_evidence["trace_complete"], "source": "signed_core_audit"})
         if mode != "async" or not runtime_id:

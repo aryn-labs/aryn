@@ -122,6 +122,34 @@ def test_preview_terminal_outcomes_are_not_success(studio, status):
     assert result["events"][-1]["type"] == "run." + status
 
 
+@pytest.mark.parametrize("status", ["completed", "failed", "outcome_unknown", "cancelled"])
+def test_preview_equal_timestamps_order_verified_phases_without_uuid_authority(studio, monkeypatch, status):
+    import datetime
+    import uuid
+    from modules.core.audit import logger
+    from packages.contracts.runtime import RunStatus
+    client, _, runtime, _ = studio
+    base, _, _ = setup(client)
+    original = logger.AuditEvent
+    timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    ordinal = 100
+    def same_clock_event(**kwargs):
+        nonlocal ordinal
+        ordinal -= 1
+        return original(**kwargs, occurred_at=timestamp, event_id=str(uuid.UUID(int=ordinal)))
+    monkeypatch.setattr(logger, "AuditEvent", same_clock_event)
+    runtime.status = RunStatus(status)
+    started = client.post(base + "/preview-runs", json=preview_body())
+    assert started.status_code == 202
+    result = wait(client, base + "/preview-runs/" + started.json()["result"]["run_id"])
+    events = result["events"]
+    assert result["result"]["status"] == status
+    assert [e["type"] for e in events] == ["input.accepted", "agent.dispatched", "run." + status]
+    assert [e["sequence"] for e in events] == [0, 1, 2]
+    assert len({e["occurred_at"] for e in events}) == 1
+    assert [e["id"] for e in events] == sorted((e["id"] for e in events), reverse=True)
+
+
 def test_incomplete_graph_is_saved_but_cannot_run_and_layout_conflicts(studio):
     client, _, runtime, _ = studio
     base, _, _ = setup(client)

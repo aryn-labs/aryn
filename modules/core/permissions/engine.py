@@ -37,6 +37,7 @@ class PermissionEngine:
             "chat:delete",
             "division:manage",
             "run:create",
+            "model:verify",
             "run:read",
             "run:cancel",
             "run:trace",
@@ -56,6 +57,7 @@ class PermissionEngine:
             "chat:update",
             "chat:delete",
             "run:create",
+            "model:verify",
             "run:read",
             "run:cancel",
             "run:trace",
@@ -75,6 +77,7 @@ class PermissionEngine:
 
     # Actions strictly reserved for human actors; autonomous agents are forbidden
     HUMAN_ONLY_ACTIONS: Set[str] = {
+        "model:verify",
         "project:create",
         "project:update",
         "division:manage",

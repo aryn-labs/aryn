@@ -72,5 +72,8 @@ def public_error(exc=None, *, correlation_id=None, run_id=None):
              "ExecutionOwnershipError": "execution_ownership_unavailable", "TimeoutError": "execution_deadline",
              "QualityGateFailedError": "quality_gate_failed"}
     code = codes.get(type(exc).__name__, "execution_failed")
+    from packages.contracts.runtime import ProviderRequestError
+    if isinstance(exc, ProviderRequestError):
+        code = exc.code
     return {"error_code": code, "message": "Operasi belum dapat diselesaikan. Periksa evidence Core dengan ID diagnosis.",
             "correlation_id": correlation_id, "run_id": run_id}

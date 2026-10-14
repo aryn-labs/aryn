@@ -49,6 +49,8 @@ def build_adapter(settings, runtime_key, port=None):
             raise RuntimeError("Hermes toolsets must already be disabled.")
 
     require_confinement()
+    runtime_instance = uuid.uuid4().hex
+    runtime_configuration = settings.runtime_configuration_id(runtime_instance)
     # Session naming must not dispatch an additional, ungoverned model request.
     # This affects only the dedicated ARYN process, never installed Hermes config.
     title_generator._auto_title_enabled = lambda: False
@@ -258,7 +260,8 @@ def build_adapter(settings, runtime_key, port=None):
             require_confinement()
             return web.json_response({"gateway": "9Router", "runtime_backend": "Hermes",
                                       "base_url": settings.base_url, "exact_model_enforced": True,
-                                      "async_provenance": True})
+                                      "async_provenance": True, "runtime_instance": runtime_instance,
+                                      "configuration_id": runtime_configuration})
 
         def _create_agent(self, **kwargs):
             require_confinement()
@@ -338,6 +341,8 @@ def build_adapter(settings, runtime_key, port=None):
                     requested_model=turn.request.model, actual_model=proof["actual_model"],
                     reported_model=receipt.reported_model,
                     gateway="9Router", runtime_backend="Hermes", provider=proof["provider"],
+                    model_evidence={"origin": receipt.evidence_origin, "runtime_configuration": runtime_configuration,
+                        "gateway_configuration": settings.configuration_id, "provider_configuration": receipt.provider_configuration},
                     created_at=started, completed_at=time.time())
                 return web.json_response(ToolTurnResult(run_id=turn.run_id, iteration=turn.iteration,
                     result=result, tool_calls=receipt.tool_calls).model_dump(mode="json"))

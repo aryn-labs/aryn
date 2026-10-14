@@ -23,7 +23,8 @@ def verified_studio(tmp_path):
 
     def handler(request):
         if request.url.port == 20128:
-            return httpx.Response(200, json={"object": "list", "data": [{"id": MODEL}] if state["listed"] else []})
+            return httpx.Response(200, json={"object": "list", "data": [{"id": MODEL,
+                **({"display_name": state["label"]} if state.get("label") else {})}] if state["listed"] else []})
         if request.method == "POST":
             calls.append(request)
             if state["failure"]:
@@ -94,6 +95,27 @@ def test_unknown_candidate_is_probed_and_settled_before_chat_dispatch(verified_s
     response = client.post(PREFIX + "/conversations/" + result["id"] + "/messages", json=follow)
     assert response.status_code == 202
     assert finish(client, result["id"])["revision"] == 2 and len(calls) == 3
+
+
+def test_catalog_label_changes_never_rewrite_historical_run_identity_or_signatures(verified_studio):
+    import json
+    client, db, _, _, calls, state = verified_studio
+    response = client.post(PREFIX + "/conversations", json=payload())
+    assert response.status_code == 202
+    historical = finish(client, response.json()["id"])
+    assert historical["status"] == "completed" and historical["model"] == MODEL
+    def identities():
+        with db.session() as session:
+            return [(r.id, r.model, r.actual_model, r.request_hash, r.execution_attestation)
+                for r in session.query(RunStateModel).order_by(RunStateModel.id).all()]
+    before = identities()
+    assert len(before) == 2 and all(row[1] == row[2] == MODEL and row[4] for row in before)
+    state["label"] = "Readable Catalog Model"
+    catalog = client.get(PREFIX + "/capability").json()
+    assert catalog["models"][0]["id"] == MODEL and catalog["models"][0]["name"] == "Readable Catalog Model"
+    assert identities() == before
+    assert client.get(PREFIX + "/conversations/" + historical["id"]).json() == historical
+    assert len(calls) == 2 and all(json.loads(r.content)["model"] == MODEL for r in calls)
 
 
 @pytest.mark.parametrize("changes,status", [

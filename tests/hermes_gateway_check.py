@@ -230,6 +230,35 @@ async def check():
     assert final.result.usage.total_tokens == 11 and len(calls) == 10
     assert network_attempts == []
     print("REAL_HERMES_GOVERNED_PROPOSAL_CONTINUATION_PASS")
+    # Explicit capability-probe mode uses the same native boundary; transport
+    # doubles remain labeled and cannot become live capability evidence.
+    from packages.contracts.model import tool_probe_request, TOOL_PROBE_PROMPT
+    assert proposed.result.model_evidence.origin == "isolated_test_double"
+    turn.request = tool_probe_request("test/tool-model", "isolated-native-probe")
+    turn.request.metadata = {"initial_prompt": TOOL_PROBE_PROMPT}
+    turn.verification_mode, turn.iteration, turn.history = "tool_calling", 1, []
+    invalid = turn.model_dump(mode="json")
+    invalid["request"]["prompt"] = "Non-probe request"
+    assert (await dispatch("POST", "/aryn/turn", invalid)).status == 422
+    assert len(calls) == 10
+    response = await dispatch("POST", "/aryn/turn", turn.model_dump(mode="json"))
+    assert response.status == 200, response.body
+    probe = ToolTurnResult.model_validate_json(response.body)
+    assert probe.tool_calls[0].name == fixture.NAME
+    turn.history = [{"role": "user", "content": TOOL_PROBE_PROMPT},
+        {"role": "assistant", "content": "", "tool_calls": [{"id": probe.tool_calls[0].call_id, "type": "function",
+            "function": {"name": fixture.NAME, "arguments": json.dumps(probe.tool_calls[0].arguments)}}]},
+        {"role": "tool", "name": fixture.NAME, "tool_call_id": probe.tool_calls[0].call_id, "content": json.dumps(data)}]
+    turn.iteration, turn.request.prompt = 2, "Continue using the verified tool result."
+    response = await dispatch("POST", "/aryn/turn", turn.model_dump(mode="json"))
+    assert response.status == 200, response.body
+    probe_final = ToolTurnResult.model_validate_json(response.body)
+    assert probe_final.result.status.value == "completed" and not probe_final.tool_calls
+    assert json.loads(probe_final.result.output) == {"summary": data["text"]}
+    assert probe_final.result.model_evidence.origin == "isolated_test_double"
+    assert probe_final.result.model_evidence.runtime_configuration == proposed.result.model_evidence.runtime_configuration
+    assert network_attempts == [] and len(calls) == 12
+    print("REAL_HERMES_FIXED_CAPABILITY_PROBE_PASS")
     import logging
     logging.getLogger("runtime.security.probe").warning("credential %s gateway %s", os.environ["API_SERVER_KEY"], settings.api_key.get_secret_value())
     await api.disconnect()

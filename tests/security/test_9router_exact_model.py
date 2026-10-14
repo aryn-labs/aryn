@@ -71,9 +71,9 @@ def test_sdk_never_dispatches_alternate_gateway_or_model():
     assert calls == []
 
 
-@pytest.mark.parametrize("actual,accepted", [("openai/gpt-4o-mini", True), ("gpt-4o-mini", True),
+@pytest.mark.parametrize("actual,accepted", [("openai/gpt-4o-mini", True), ("gpt-4o-mini", False),
     ("gpt-4o-mini-2024-07-18", False), ("gpt-4o", False), ("other/gpt-4o-mini", False)])
-def test_openai_gateway_namespace_is_not_a_model_substitution(actual, accepted):
+def test_gateway_namespace_requires_exact_identity_without_alias_assumptions(actual, accepted):
     requested = "openai/gpt-4o-mini"
     response = copy.deepcopy(COMPLETION)
     response["model"] = actual
@@ -83,6 +83,42 @@ def test_openai_gateway_namespace_is_not_a_model_substitution(actual, accepted):
         result = client.post("http://127.0.0.1:20128/v1/chat/completions", json={"model": requested})
     assert (result.status_code == 200) is accepted
     assert bool(receipt.evidence()) is accepted
+
+
+@pytest.mark.parametrize("requested,reported", [("ds/deepseek-flash", "deepseek-flash"),
+    ("ag/gemini-2.5-pro", "gemini-2.5-pro"), ("cx/gpt-6-sol", "openai/gpt-6-sol")])
+def test_provider_aliases_cannot_change_signed_model_identity(requested, reported):
+    receipt = ModelReceipt(requested)
+    response = {**COMPLETION, "model": reported}
+    with httpx.Client(transport=ExactGatewayTransport(GatewaySettings(), receipt,
+            httpx.MockTransport(lambda r: httpx.Response(200, json=response)))) as client:
+        assert client.post("http://127.0.0.1:20128/v1/chat/completions", json={"model": requested}).status_code == 400
+    assert receipt.failure == "actual_model_mismatch" and receipt.evidence() is None
+
+
+@pytest.mark.parametrize("status,code,expected", [(429, "rate_limit_exceeded", "provider_rate_limited"),
+    (429, "insufficient_quota", "provider_quota_exhausted"), (402, "insufficient_balance", "provider_insufficient_credit"),
+    (429, "insufficient_credit", "provider_insufficient_credit"),
+    (503, "unknown", "provider_unavailable"), (400, "unknown", "gateway_rejected")])
+def test_provider_errors_are_distinct_sanitized_and_never_retry(status, code, expected):
+    from modules.core.errors import public_error
+    from packages.contracts.runtime import ProviderRequestError
+    calls = []
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(status, json={"error": {"code": code, "message": "private provider response"}})
+    receipt = ModelReceipt(MODEL)
+    with httpx.Client(transport=ExactGatewayTransport(GatewaySettings(), receipt, httpx.MockTransport(handler))) as client:
+        for _ in range(2):
+            result = client.post("http://127.0.0.1:20128/v1/chat/completions", json={"model": MODEL})
+            assert result.json()["error"]["code"] == expected
+            assert "private" not in result.text
+    assert len(calls) == 1 and receipt.evidence() is None
+    if expected.startswith("provider_"):
+        adapter = make_adapter(None)
+        with pytest.raises(ProviderRequestError) as error:
+            adapter._check_model_rejection(result, MODEL)
+        assert public_error(error.value)["error_code"] == expected
 
 
 def test_text_turn_native_history_is_private_to_actor_scope_and_request(lifecycle):

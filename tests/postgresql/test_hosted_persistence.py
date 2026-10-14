@@ -455,3 +455,51 @@ async def test_governed_stop_fences_late_model_result_with_restricted_writer(hos
         row = session.query(RunStateModel).filter_by(idempotency_key="postgres-stop").one()
         assert row.status == "outcome_unknown" and row.reserved_tokens > 0
     assert not effects
+
+
+@pytest.mark.asyncio
+async def test_capability_probe_signed_settlement_with_restricted_writer(hosted_lifecycle):
+    from tests.security.test_governed_tools import capability_probe_core
+    db, ctx, runtime, core = capability_probe_core(hosted_lifecycle)
+    result = await core.verify_model("mock-fast", ctx, "postgres-capability", mode="tool_calling")
+    assert result.status.value == "completed" and len(runtime.turns) == 2
+    proof = result.execution_evidence["capability_probe"]
+    assert proof["binding"] is None  # Offline double cannot attest live support.
+    assert db.evidence_signer.verify("model_capability_probe", proof, result.execution_evidence["capability_attestation"])
+    assert await core.verify_model("mock-fast", ctx, "postgres-capability", mode="tool_calling") == result
+    assert len(runtime.turns) == 2
+    assert await core.get_managed_result(result.run_id, ctx) == result
+    with db.session() as session:
+        row = RunStateRepository(session).get_run(ctx, result.run_id)
+        assert row.execution_mode == "tool_probe" and row.total_tokens == 30
+        assert row.usage_settled and row.reserved_tokens == 0
+        assert not session.execute(text("SELECT rolsuper FROM pg_roles WHERE rolname=current_user")).scalar()
+    runtime.proposal["name"] = "terminal"
+    denied = await core.verify_model("mock-fast", ctx, "postgres-capability-denied", mode="tool_calling")
+    assert denied.status.value == "failed" and denied.error_code == "tool_permission_denied"
+    assert "capability_attestation" not in denied.execution_evidence
+
+
+@pytest.mark.asyncio
+async def test_capability_probe_stop_fences_restricted_writer(hosted_lifecycle, monkeypatch):
+    from tests.security.test_governed_tools import capability_probe_core
+    from modules.core.permissions.engine import PermissionDeniedError
+    from packages.tool_adapters import fixture
+    db, ctx, runtime, core = capability_probe_core(hosted_lifecycle)
+    effects = []
+    monkeypatch.setattr(fixture, "execute", lambda *args: effects.append(True))
+    async def stop(turn):
+        assert not await core.cancel_managed_run(turn.run_id, ctx)
+    runtime.before_result = stop
+    with pytest.raises(PermissionDeniedError):
+        await core.verify_model("mock-fast", ctx, "postgres-probe-stop", mode="tool_calling")
+    with db.session() as session:
+        row = session.query(RunStateModel).filter_by(idempotency_key="postgres-probe-stop").one()
+        assert row.status == "outcome_unknown" and row.reserved_tokens > 0 and not row.usage_settled
+    assert not effects and len(runtime.turns) == 1
+
+
+@pytest.mark.asyncio
+async def test_capability_probe_settlement_revocation_with_restricted_writer(hosted_lifecycle):
+    from tests.security.test_governed_tools import test_capability_probe_permission_revoked_at_settlement_cannot_issue_receipt
+    await test_capability_probe_permission_revoked_at_settlement_cannot_issue_receipt(hosted_lifecycle)

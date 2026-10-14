@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from packages.contracts.core import SecurityContext
+from packages.contracts.model import ModelProbeBinding
 
 
 class RunStatus(str, Enum):
@@ -70,6 +71,48 @@ class ToolTurnRequest(BaseModel):
     request: RunRequest
     tool_names: List[str] = Field(max_length=1)
     history: List[Dict[str, Any]] = Field(default_factory=list, max_length=8)
+    verification_mode: Optional[Literal["tool_calling"]] = None
+
+    @model_validator(mode="after")
+    def bounded_probe(self):
+        if self.verification_mode is None:
+            return self
+        from packages.contracts.model import TOOL_PROBE_PROMPT, TOOL_PROBE_SYSTEM
+        from packages.contracts.bench import strict_json_loads
+        from packages.tool_adapters.fixture import NAME, FixtureInput, FixtureOutput
+        r = self.request
+        valid = (self.tool_names == [NAME] and self.iteration <= 2 and r.max_iterations == 2
+            and r.max_tool_calls == 1 and r.max_tokens <= 128 and r.timeout_seconds <= 60
+            and r.temperature == 0 and r.system_instructions == TOOL_PROBE_SYSTEM and not r.session_id
+            and r.metadata == {"initial_prompt": TOOL_PROBE_PROMPT}
+            and r.max_total_tokens is not None and r.max_total_tokens <= 4096)
+        if self.iteration == 1:
+            valid = valid and not self.history and r.prompt == TOOL_PROBE_PROMPT
+        else:
+            valid = valid and r.prompt == "Continue using the verified tool result." and len(self.history) == 3
+            if valid:
+                user, assistant, result = self.history
+                calls = assistant.get("tool_calls", [])
+                valid = (user == {"role": "user", "content": TOOL_PROBE_PROMPT}
+                    and set(assistant) == {"role", "content", "tool_calls"}
+                    and assistant.get("role") == "assistant" and assistant.get("content") == ""
+                    and isinstance(calls, list) and len(calls) == 1)
+                if valid:
+                    call = calls[0]
+                    try:
+                        arguments = FixtureInput.model_validate(strict_json_loads(call["function"]["arguments"]))
+                        ToolCall(call_id=call["id"], name=call["function"]["name"], arguments=arguments.model_dump())
+                        valid = (set(call) == {"id", "type", "function"} and set(call["function"]) == {"name", "arguments"}
+                            and call["type"] == "function" and call["function"]["name"] == NAME
+                            and arguments.key == "aryn-core" and result == {"role": "tool", "name": NAME,
+                                "tool_call_id": call["id"], "content": result.get("content")}
+                            and FixtureOutput.model_validate(strict_json_loads(result["content"])).model_dump()
+                                == {"key": "aryn-core", "text": "ARYN Core owns execution authorization."})
+                    except (ValueError, KeyError, TypeError):
+                        valid = False
+        if not valid:
+            raise ValueError("Only the fixed synthetic capability probe is allowed.")
+        return self
 
 
 class ToolTurnResult(BaseModel):
@@ -108,6 +151,15 @@ class ModelIdentityError(RuntimeError):
 class RuntimeGatewayError(RuntimeError):
     def __init__(self):
         super().__init__("ARYN Runtime belum siap. Routing Model Gateway dan bukti model aktual belum dapat diverifikasi.")
+
+
+class ProviderRequestError(RuntimeError):
+    """Sanitized observation, not proof of billing state or a safe retry grant."""
+    def __init__(self, code: Literal["provider_rate_limited", "provider_insufficient_credit", "provider_quota_exhausted", "provider_unavailable"]):
+        if code not in {"provider_rate_limited", "provider_insufficient_credit", "provider_quota_exhausted", "provider_unavailable"}:
+            raise ValueError("Unknown provider error code")
+        self.code = code
+        super().__init__(code)
 
 
 class ModelUnavailableError(RuntimeError):
@@ -176,6 +228,7 @@ class RunResult(BaseModel):
     requested_model: Optional[str] = None
     actual_model: Optional[str] = None
     reported_model: Optional[str] = None
+    model_evidence: Optional[ModelProbeBinding] = None
     gateway: Optional[Literal["9Router"]] = None
     runtime_backend: Optional[Literal["Hermes"]] = None
     provider: Optional[str] = None
@@ -215,6 +268,20 @@ class RuntimeAdapter(ABC):
 
     async def execute_tool_turn(self, request: ToolTurnRequest, context: SecurityContext) -> ToolTurnResult:
         raise RuntimeGatewayError()
+
+    async def require_model_candidate(self, model: str):
+        # Only adapters with an explicit exact-route candidate contract may relax readiness.
+        await self.require_model_available(model)
+
+    async def capability_verification_binding(self):
+        """Unregistered/test runtimes cannot issue live capability attestations."""
+        return None
+
+    async def record_tool_verification(self, evidence, attestation, verifier):
+        return False
+
+    def invalidate_tool_verification(self, model):
+        return None
 
     async def require_model_available(self, model: str) -> None:
         availability = await self.model_availability(model, refresh=True)

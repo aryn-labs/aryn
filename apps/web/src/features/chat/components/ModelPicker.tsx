@@ -28,7 +28,9 @@ export function ModelPicker({
         disabled={fixed || disabled || !capability?.can_send}
       >
         {fixed ? (
-          <option value={model}>{model}</option>
+          <option value={model}>
+            {capability?.models.find((item) => item.id === model)?.name ?? model}
+          </option>
         ) : (
           <>
             {!model && (

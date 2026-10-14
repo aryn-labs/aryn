@@ -19,6 +19,19 @@ async def test_discovery_success_is_sanitized():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("field", ["api_key", "accessToken", "refresh_token", "credentials", "password"])
+async def test_nested_sensitive_fields_cannot_escape_via_provider_or_presentation_metadata(field):
+    row = {"id": "ds/offline-fixture", "name": "MUST-NOT-LEAK", "provider": "MUST-NOT-LEAK",
+        "metadata": {"nested": [{field: "MUST-NOT-LEAK"}]}}
+    async with httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(200,
+            json={"object": "list", "data": [row]}))) as client:
+        snapshot = await make_adapter(client).discover_models(refresh=True)
+    assert snapshot.discovery_valid and "MUST-NOT-LEAK" not in snapshot.model_dump_json()
+    assert snapshot.models[0]["display_name"] == "Offline Fixture"
+    assert snapshot.models[0]["provider_identity_status"] == "unknown"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("payload,expected", [
     ({"object": "list", "data": [{"id": MODEL}]}, "unknown"),
     ({"object": "list", "data": []}, "unavailable"),

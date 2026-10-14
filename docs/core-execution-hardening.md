@@ -1,5 +1,260 @@
 # Core Execution Hardening
 
+## Provider preflight follow-up — 15 October 2026
+
+Baseline rechecked: `development`, HEAD
+`4994a6cc49f95deec0e2fe5b8608b0ca6e32a489`, previous 21-file local diff retained.
+See [the installed 9Router routing/retry/provenance audit](9router-gateway.md#provider-preflight-and-delivery-audit--15-october-2026).
+Live capability remains blocked on trustworthy gateway provenance, current
+metadata access and upstream resource bounds; no inference or commit is authorized.
+
+Final regression exposed an existing preview evidence presentation defect:
+`factory.preview.dispatched` and `core.run.outcome_unknown` can have identical
+clock timestamps. `AgentPreviewService.read` previously broke ties using random
+audit UUIDs, allowing a dispatched event to appear after the terminal event.
+The actual synthetic fixture database reproduced that timestamp tie. The minimal
+fix changes only the verified preview timeline projection: timestamp first,
+accepted/dispatched/stopping/terminal phase for ties, then event ID. Sequence
+numbers are contiguous presentation indices. Stored audit envelopes, timestamps,
+signatures, Core run state, permissions and execution authority are unchanged.
+
+Only `modules/core/agent_preview.py` and the existing
+`tests/integration/test_agent_canvas.py` required an additional source/test change.
+Four deterministic cases use identical signed timestamps and descending UUIDs
+for completed/failed/unknown/cancelled outcomes. Existing scope, tampering and
+terminal-state assertions remain intact. The focused canvas suite passed 22
+tests. A concurrent native Hermes test also failed before any pass marker;
+it subsequently passed when run alone in 19.96 seconds. The initial subprocess
+had no traceback or pass markers and was terminated under the unchanged
+35-second test deadline during overlapping backend/frontend/PostgreSQL work.
+Scheduling/resource contention remains the observed environmental limitation,
+not a reason to weaken the deadline or assertions. Final backend regression is
+repeated without overlapping frontend or PostgreSQL commands.
+
+Actual follow-up verification artifacts:
+`.local/ai-engine-verification/provider-preflight-20261015/`. Python 3.12.12
+matches `.python-version`. The default PATH had Node 22.14.0; frontend validation
+was repeated using the already cached Node 22.23.3 pinned by `.node-version`, with
+PATH changed only inside the child verification shell. No installation or user
+configuration change was needed.
+
+| Actual command / verification | Result on current source |
+|---|---|
+| `pytest -m 'not postgresql' --backend-shard=1/4 -q --tb=short`, then `2/4`, `3/4`, `4/4`; `ARYN_RUN_LIVE_MODEL_TESTS=0` | 1203 passed, 5 skipped; all 1208 exact test identities covered once by JUnit/manifest union; no failure/error in the final union |
+| Final partitions 1/4, 2/4, 3/4 | 300+2 skip, 301+1 skip, 300+2 skip; 590.18s, 581.98s, 557.11s |
+| Final entire partition 4/4, run alone | 302 passed, 352.80s; includes native Hermes without altered deadlines/assertions |
+| `pytest tests/integration/test_agent_canvas.py -q --tb=short` | 22 passed, including equal-timestamp phase ordering and existing tampering/scope checks |
+| `pytest tests/integration/test_hermes_9router_binding.py -q --tb=short`, run alone | 1 passed, 19.96s; HTTP/model doubles and outbound denied, not live inference |
+| `pytest tests/postgresql/test_hosted_persistence.py -k 'governed or capability_probe or model' -q --tb=short` | final source: 6 passed, 24 deselected, 44.62s; restricted writer in disposable loopback/tmpfs PostgreSQL 16.13 |
+| `npm test -- --reporter=dot`, `npm run build`, `npm run lint`, `npm run format:check` | passed under cached Node 22.23.3; existing React render and dependency/chunk warnings remain |
+| `npm test -- --reporter=json --outputFile=../../.local/ai-engine-verification/provider-preflight-20261015/frontend-results.json` | pinned Node: 125 passed, 0 failed/pending; authoritative run JSON retained separately from static test collection |
+| Ruff, repository hygiene, `git diff --check`, redacted Gitleaks diff scan | passed on the final working tree |
+
+Final backend reports are `backend-verified-1`, `backend-verified-2`,
+`backend-verified-3`, `backend-serial-4`. The earlier four-part run had the actual
+preview defect and native process deadline failure. After the preview fix, the
+concurrent fourth partition still hit the native deadline; its failed report is
+retained separately and is not counted as passing. The entire fourth partition
+was then run alone and passed. Same-source coverage is verified from actual JUnit
+identities, not a sum of unrelated focused runs. All 21 changed source/test files
+match the saved SHA-256 snapshot; documentation is excluded from that code hash.
+The final union contains all 103 governed-tool tests, 78 discovery/naming/transport
+tests, 22 canvas tests, the native boundary test, permissions/idempotency and Bench
+regression. Five skips are three unapproved live-model tests and two runtime
+session-key checks. No live/provider test is reclassified as a mocked PASS.
+
+The working tree now has 23 modified tracked files: the previous 21 are retained,
+plus the existing preview owner/test. There is no new source file, API endpoint,
+dependency, database migration or governance authority. Task PostgreSQL containers
+were stopped after exact ID/label verification. HEAD is unchanged. Remote Linux,
+remote CI, browser E2E and paid/live inference were not executed in this follow-up.
+Private normative documents are still absent: the adjacent `aryn-docs` checkout
+contains only `README.md` and `DOCUMENT_INDEX.md`.
+
+Offline implementation is COMPLETE for the tested local scope. Live verification
+is BLOCKED by the browser access policy and gateway provenance/resource contract.
+Remote CI execution is BLOCKED pending explicit commit/push authorization; local
+checks are prepared, but no new exact commit exists for remote verification.
+Roadmap Stage 1 remains PARTIAL. No inference, commit, push, merge or deployment
+is performed by this report or implied by implementation approval.
+
+## Multi-provider hardening — 15 October 2026
+
+Repository audit started on `development` at
+`4994a6cc49f95deec0e2fe5b8608b0ca6e32a489`, with the previous 14-file capability
+probe extension already present and uncommitted. Those changes were retained.
+The private normative `aryn-docs` documents were unavailable; repository rules,
+source contracts and local test evidence were used without inventing requirements.
+
+Reused owners: `NineRouterGateway` for catalog/capability receipts, `ModelRouter`
+for explicit selection, the confined Hermes transport, Core probe/claims/budgets,
+Agent Factory versions and the existing Bench suite. No second router, execution
+authority, provider service, endpoint, table, migration or dependency was added.
+No inference or credential/configuration change was performed. HEAD is unchanged;
+there is no commit/push or remote-CI claim for the local diff.
+
+This increment modifies these existing owners:
+
+- `packages/model_adapters/gateway.py`: presentation labels, collision handling,
+  separate provider metadata states, current provider/configuration-bound evidence.
+- `packages/contracts/model.py`: exact reported-model requirement for live receipt eligibility.
+- `packages/contracts/runtime.py`, `packages/runtime_adapters/hermes/adapter.py`,
+  `services/runtime/gateway_transport.py`, `modules/core/errors.py`: strict response
+  identity and bounded provider error codes without bodies, fallback or retry.
+- `modules/core/workflows/coordinator.py`: independently reject a reported model
+  that differs from the exact claimed model before any governed tool effect.
+- `apps/web/src/features/chat/components/ModelPicker.tsx` and its existing
+  `features/chat/tests/chat.test.tsx`: catalog label for a fixed selection; option
+  values and emitted selections retain IDs, including historical-ID fallback.
+- `tests/security/test_9router_discovery.py`, `test_uat_model_availability.py`, `test_9router_exact_model.py`,
+  `test_governed_tools.py` and `tests/integration/test_chat_model_verification.py`:
+  multi-provider doubles, naming/status/error/security and history compatibility.
+- This document and `docs/9router-gateway.md`: architecture/contract changes,
+  test evidence and conditional live proposal.
+
+The earlier probe changes in Core permissions/coordinator, native wrapper,
+native/HTTP integration and PostgreSQL tests remain present. In total the working
+tree contains 21 modified tracked files and no added source files.
+
+The only previous namespace test changed its acceptance expectation from allowing
+an unprefixed model to rejecting it; the assertion is stricter. Positive capability
+attestation fixtures now include provider/configuration evidence, while new
+negative cases reject its absence. No security assertion was removed or weakened.
+
+See [discovery, exact identity compatibility and the live candidate proposal](9router-gateway.md#multi-provider-discovery-and-presentation--15-october-2026).
+
+Verification artifacts for this increment are under the ignored directory
+`.local/ai-engine-verification/model-discovery-20261015/`. Commands use
+`.venv/Scripts/python.exe -m pytest` and explicitly disable live model tests.
+
+| Actual command / selection | Result |
+|---|---|
+| `ARYN_RUN_LIVE_MODEL_TESTS=0; pytest -m 'not postgresql' --backend-shard=1/4 -q --tb=short` (repeated with `2/4`, `3/4`, `4/4`, separate basetemp/JUnit/log paths) | final source: 1199 passed, 5 skipped, 0 failures/errors; union of saved manifest and actual JUnit test identities exactly covers 1204 tests without overlap |
+| `pytest tests/security/test_uat_model_availability.py tests/security/test_9router_exact_model.py tests/security/test_governed_tools.py -q --tb=short` | 149 passed before the last Core/projection guards |
+| `pytest tests/security/test_uat_model_availability.py tests/security/test_9router_exact_model.py tests/security/test_governed_tools.py tests/integration/test_chat_model_verification.py tests/security/test_runtime_provenance_verification.py tests/integration/test_hermes_9router_binding.py tests/unit/test_model_router.py -q --tb=short` | 177 passed before the last Core/projection guards; includes actual installed Hermes with outbound blocked and HTTP doubles |
+| `pytest tests/security/test_governed_tools.py -q --tb=short` | 103 passed after the Core reported-model guard |
+| `pytest tests/security/test_9router_discovery.py tests/security/test_uat_model_availability.py tests/security/test_9router_exact_model.py -q --tb=short` | 78 passed after the sensitive-metadata projection fix |
+| `pytest tests/security/test_9router_exact_model.py tests/security/test_governed_tools.py -k provider_error -q --tb=short` | 10 passed; rate limit, quota, explicit credit and unavailable are separate observations |
+| `pytest tests/integration/test_chat_model_verification.py -q --tb=short` | 10 passed; rename does not alter stored IDs, request hashes, claims or historical responses |
+| `pytest tests/postgresql/test_hosted_persistence.py -k 'governed or capability_probe or model' -q --tb=short` | 6 passed, 24 deselected, repeated after final Core guard; disposable cached PostgreSQL 16.13, restricted application writer |
+| `npm test -- --reporter=dot` in `apps/web` | 125 passed in 16 files |
+| `npm run build`, `npm run lint`, `npm run format:check` in `apps/web` | passed after formatting the new test; existing dependency/chunk build warnings remain |
+| `python -m ruff check .`, `python scripts/check_repository.py`, `git diff --check`, redacted Gitleaks stdin scan of `git diff --no-ext-diff` | passed |
+
+Initial test setup needed the parent artifact directory created before basetemp.
+The first history test incorrectly referenced a nonexistent persistence field;
+it was corrected to assert actual `RunStateModel.model`, `actual_model`, hash and
+signature fields. The original sanitization test exposed label propagation of a
+credential-shaped fixture; its assertion was preserved and the projection fixed,
+with five nested-sensitive-field cases added. Initial formatting failed, then
+passed after Prettier formatted the test. Two incomplete unsharded backend runs
+were stopped by exact process/command verification (one had the sanitization
+failure); neither is represented as a full-suite PASS. Final regression uses the
+repository's existing four Windows partitions with separate basetemp, JUnit and
+saved collection manifests; no assertion or test identity is excluded to pass.
+
+No native Hermes source/configuration was edited. Installed source revision is
+`3637c512fc3211bdccb61b7140d09ac1018508ba`. Offline model/HTTP doubles establish
+boundary behavior only, never actual provider readiness or capability.
+Task PostgreSQL containers were stopped only after exact ID/label checks.
+Remote CI and Linux execution were not run for this uncommitted working tree.
+
+Final Windows partition results: 1/4 = 299 passed, 2 skipped (501.11s);
+2/4 = 300 passed, 1 skipped (513.98s); 3/4 = 299 passed, 2 skipped (493.58s);
+4/4 = 301 passed (517.07s). Each partition selects 301 tests; PostgreSQL and
+other partitions are deselected for that invocation, not omitted from aggregate
+offline coverage. Five skips are three live-model tests lacking explicit owner
+authorization and two runtime checks without `API_SERVER_KEY`. Separate native
+Hermes boundary verification ran successfully with isolated credentials/doubles.
+
+**Implementation status: COMPLETE for this offline hardening scope. Live
+verification status: NOT VERIFIED. Overall Roadmap Stage 1 remains PARTIAL.**
+Current provider metadata refresh was blocked by the browser origin permission
+gate; it was not bypassed. The live proposal lists earlier observed routes across
+three gateway providers, each with unknown availability/capability/cost. Actual
+external routing, retry counts, exact reported model and provider configuration
+revision must be established before authoritative live capability can be issued.
+No inference, user credential/configuration change, commit, push, merge or
+deployment occurred. All previous local work remains present, HEAD unchanged.
+
+## Capability verification extension — 15 October 2026
+
+Audit baseline: clean `development`, HEAD `4994a6cc49f95deec0e2fe5b8608b0ca6e32a489`.
+The owner authorized code and isolated offline tests only. No provider inference,
+credential/configuration change, commit, push or deployment is authorized by this
+extension. Existing claim ownership, signed limits, reservation/settlement,
+permission checks, output validation and audit remain the execution authority.
+
+The explicit `tool_calling` mode of `verify_model` claims `tool_probe` in the
+existing run store. Its fixed synthetic grant is independent of agent drafts or
+published versions. Human admin/operator `model:verify` permission is checked
+before admission and every tool/continuation handoff. Normal agent admission
+cannot claim this mode through direct execution. The probe requires a structured
+single fixture proposal, validated arguments/call ID, Core execution and a
+schema-valid final continuation within two turns, one tool call and 4096 total
+tokens (further reduced by Core/org/project limits). A text answer alone fails.
+
+Terminal evidence uses the existing signed `core.run.evidence` envelope and an
+internal `model_capability_probe` receipt. It binds the observed transcript digest,
+output digest, authoritative run ID, provider/model and routing configuration;
+usage remains the actual measured cumulative usage. Unknown effects retain their
+reservation and cannot be retried by replay. Core Stop fences probe handoffs
+without inventing provider cancellation.
+
+Live registry eligibility requires real runtime/transport provenance and a
+matching provider configuration revision; isolated doubles and incomplete
+provenance never attest live support. Registry entries expire after 60 seconds
+from original completion, including on replay. Full details and the explicit
+remaining gateway metadata limitation are in [the gateway contract](9router-gateway.md).
+No schema migration, new service, public endpoint, dependency, frontend change or
+parallel evaluation engine is introduced.
+
+Offline validation on 15 October 2026 (installed native Hermes source remains
+`3637c512fc3211bdccb61b7140d09ac1018508ba`):
+
+| Command / selection | Actual result |
+|---|---|
+| `pytest tests/security/test_governed_tools.py tests/integration/test_hermes_9router_binding.py tests/integration/test_chat_model_verification.py tests/security/test_runtime_provenance_verification.py -q` | 98 passed; isolated model/HTTP doubles, actual native engine boundary with outbound sockets blocked |
+| `pytest -m 'not postgresql' -q` with `ARYN_RUN_LIVE_MODEL_TESTS=0` | 1152 passed, 5 skipped, 137 deselected; 1169.42 seconds |
+| Final `test_governed_tools.py -k 'capability_probe or capability_receipt or http_probe or expired_capability'` | 45 passed; 13.72 seconds |
+| PostgreSQL `test_hosted_persistence.py -k 'governed or capability_probe'` | 5 passed before final settlement guard |
+| Final PostgreSQL `test_hosted_persistence.py -k capability_probe` | 3 passed; 7.62 seconds, including revocation at settlement |
+| Ruff, `scripts/check_repository.py`, `git diff --check`, redacted diff Gitleaks scan | passed |
+
+Each invocation used a separate basetemp/JUnit path under the ignored
+`.local/ai-engine-verification/capability-probe-20261015/` directory. The broad
+suite was collected before the final in-transaction permission and transport-scope
+guards; the final focused and PostgreSQL selections verify those final branches.
+The five skips are three unapproved live-model tests and two runtime checks
+without a session key. Initial probe budget-fixture setup was corrected to create
+the authority budget rows; the denial assertions were retained. One initial
+focused command referenced an absent test path and collected no tests; the
+subsequent command above uses existing files.
+
+PostgreSQL verification used the cached CI-pinned 16.13 image, loopback-only
+disposable containers with tmpfs and no host mounts, migration owner separated
+from restricted application writer. Only task-owned containers were stopped
+after ID/label verification. No production data was used. Live inference and
+remote CI verification of this uncommitted extension remain unavailable; no
+real model/provider has been newly attested. The owner must separately approve
+the selected model, synthetic payload, possible charges and maximum dispatches
+before a live probe.
+
+Changed existing owners (14 tracked files, no new source files):
+
+- `modules/core/workflows/coordinator.py` and `modules/core/permissions/engine.py`: explicit human probe permission, fixed claim, shared governed loop, final transactional reauthorization and signed receipt.
+- `packages/contracts/model.py` and `packages/contracts/runtime.py`: typed probe binding/evidence and bounded private turn mode; default text contracts remain compatible.
+- `packages/model_adapters/gateway.py` and `packages/runtime_adapters/hermes/adapter.py`: verify scoped expiring receipts, invalidate changed configurations and isolate transport doubles.
+- `services/runtime/gateway_transport.py` and `services/runtime/hermes_9router.py`: capture actual provenance/revision and label injected model transports without enabling native execution.
+- `tests/security/test_governed_tools.py`, `tests/hermes_gateway_check.py`, `tests/integration/test_hermes_9router_binding.py`, `tests/postgresql/test_hosted_persistence.py`: offline positive/negative, native-boundary and restricted-writer coverage.
+- `docs/9router-gateway.md` and this document: probe contract, remaining provenance limitation and actual validation evidence.
+
+Original/current HEAD remains `4994a6cc49f95deec0e2fe5b8608b0ca6e32a489` on
+`development`; delivery leaves those 14 files modified and uncommitted. Stage 1
+remains **PARTIAL** pending separately approved live observation and any missing
+gateway/provider provenance. No model substitution or automatic promotion is
+performed when evidence is unknown.
+
 ## Governed fixture execution — 13 October 2026
 
 Audit baseline: `development`, clean working tree, HEAD

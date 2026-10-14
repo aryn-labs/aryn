@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ChatMessages } from '../components/ChatMessages'
 import { ModelPicker } from '../components/ModelPicker'
@@ -34,6 +34,38 @@ const conversation: Conversation = {
   ],
 }
 describe('Chat safety and delivery contracts', () => {
+  it('uses catalog labels for fixed and selectable models while emitting the exact ID', () => {
+    const onModel = vi.fn()
+    const capability = {
+      organization_id: scope.organization,
+      project_id: scope.project,
+      models: [
+        { id: 'ds/deepseek-flash', name: 'DeepSeek Flash', available: true },
+        { id: 'ag/gemini-2.5-pro', name: 'Gemini 2.5 Pro', available: true },
+      ],
+      can_send: true,
+      permitted: true,
+      reason: null,
+      remote_consent_required: true,
+      streaming: false as const,
+      cancellation: false as const,
+      max_message_length: 4000,
+    }
+    const { rerender } = render(
+      <ModelPicker model="ds/deepseek-flash" onModel={onModel} capability={capability} />,
+    )
+    expect(screen.getByRole('option', { name: 'DeepSeek Flash' })).toHaveValue('ds/deepseek-flash')
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'ag/gemini-2.5-pro' } })
+    expect(onModel).toHaveBeenCalledWith('ag/gemini-2.5-pro')
+    rerender(
+      <ModelPicker model="ag/gemini-2.5-pro" onModel={onModel} capability={capability} fixed />,
+    )
+    expect(screen.getByRole('option', { name: 'Gemini 2.5 Pro' })).toHaveValue('ag/gemini-2.5-pro')
+    rerender(
+      <ModelPicker model="historical/model" onModel={onModel} capability={capability} fixed />,
+    )
+    expect(screen.getByRole('option', { name: 'historical/model' })).toHaveValue('historical/model')
+  })
   it('offers catalog candidates honestly and discloses the metered connection check', () => {
     render(
       <ModelPicker

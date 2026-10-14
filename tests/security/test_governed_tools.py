@@ -21,8 +21,9 @@ from tests.conftest import bind_test_context
 
 class ToolModelDouble(IsolatedTestRuntime):
     """A labeled model double which never executes a tool itself."""
-    def __init__(self):
+    def __init__(self, provider="model-test-double"):
         super().__init__()
+        self.provider = provider
         self.turns = []
         self.proposal = {"call_id": "fixture_call", "name": fixture.NAME, "arguments": {"key": "aryn-core"}}
         self.force_proposal = False
@@ -59,16 +60,20 @@ class ToolModelDouble(IsolatedTestRuntime):
             model="another-model" if self.mismatch else turn.request.model,
             requested_model=turn.request.model, actual_model=turn.request.model, gateway="9Router", runtime_backend="Hermes",
             output="" if calls else self.output, usage=RunUsage(input_tokens=10, output_tokens=self.tokens - 10, total_tokens=self.tokens),
-            created_at=time.time(), provider="model-test-double", execution_evidence={"run_id": turn.run_id} if self.forged else None)
+            created_at=time.time(), provider=self.provider, execution_evidence={"run_id": turn.run_id} if self.forged else None)
         return ToolTurnResult(run_id=turn.run_id, iteration=turn.iteration, result=result, tool_calls=calls)
 
 
-async def published(lifecycle):
+async def published(lifecycle, *, model="mock-fast", provider="model-test-double"):
     db, ctx, _, factory, bp, _ = lifecycle
-    runtime = ToolModelDouble()
+    runtime = ToolModelDouble(provider)
+    if model != "mock-fast":
+        from packages.contracts.model import ModelSpec, ModelProviderType
+        factory.model_router.catalog[model] = ModelSpec(model_id=model, display_name="Offline fixture", provider=ModelProviderType.NINE_ROUTER)
+        factory.model_router.config.allowed_models.append(model)
     factory.bench_runner.runtime_adapter = runtime
     version = factory.create_version(ctx, bp.id, "2.0.0", "Use only explicitly granted tools; return JSON summary.",
-        "mock-fast", tool_grants=[fixture.NAME], evaluation_reference={"suite_id": "governed-fixture"},
+        model, tool_grants=[fixture.NAME], evaluation_reference={"suite_id": "governed-fixture"},
         output_contract={"format": "json", "strict": True, "schema_definition": {
             "type": "object", "properties": {"summary": {"type": "string"}}, "required": ["summary"]}})
     evaluation = await factory.evaluate_version_with_bench(ctx, version.id)
@@ -78,6 +83,28 @@ async def published(lifecycle):
     assignment = factory.assign_agent(ctx, bp.id, version.id, "Fixture verification")
     runtime.turns.clear()
     return db, ctx, runtime, factory.execution_coordinator, assignment, evaluation
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("model,provider", [("ds/offline-fixture-a", "fixture-provider-a"),
+    ("ag/offline-fixture-b", "fixture-provider-b")])
+async def test_governed_agent_and_bench_preserve_exact_model_across_catalog_rename(lifecycle, model, provider):
+    db, ctx, runtime, core, assignment, evaluation = await published(lifecycle, model=model, provider=provider)
+    from database.repositories.agent_repo import AgentRepository
+    def version_snapshot():
+        with db.session() as session:
+            row = AgentRepository(session).get_version(ctx, assignment.version_id)
+            return {column.name: getattr(row, column.name) for column in row.__table__.columns}
+    captured = version_snapshot()
+    assert evaluation.passed and evaluation.requested_model == model
+    result = await core.execute_assigned_agent_turn(assignment.id, "Read aryn-core.", ctx, "cross-provider-assigned")
+    assert result.status == RunStatus.COMPLETED and result.actual_model == result.requested_model == model
+    assert result.provider == provider and len(runtime.turns) == 2
+    core.model_router.catalog[model].display_name = "Changed catalog label"
+    assert version_snapshot() == captured
+    assert await core.get_managed_result(result.run_id, ctx) == result
+    assert await core.execute_assigned_agent_turn(assignment.id, "Read aryn-core.", ctx, "cross-provider-assigned") == result
+    assert len(runtime.turns) == 2
 
 
 @pytest.mark.asyncio
@@ -286,15 +313,20 @@ def test_shared_output_validator_rejects_invalid_json(output):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("case", ["listing", "stale", "verified", "wrong_type"])
+@pytest.mark.parametrize("case", ["listing", "stale", "verified", "wrong_type", "missing_provider", "missing_configuration"])
 async def test_model_capabilities_require_fresh_explicit_evidence(case):
     from packages.model_adapters.gateway import NineRouterGateway, GatewaySettings
-    model = {"id": "test/model", "supports_tools": True, "capabilities": {"tool_calling": "supported"}}
+    model = {"id": "test/model", "provider": "isolated-provider", "provider_configuration": "c" * 64,
+        "supports_tools": True, "capabilities": {"tool_calling": "supported"}}
     if case != "listing":
         model.update(capabilities_verified=True, capabilities_source="runtime_probe",
             capabilities_checked_at=time.time() - (100 if case == "stale" else 0))
     if case == "wrong_type":
         model["capabilities"]["tool_calling"] = True
+    if case == "missing_provider":
+        model.pop("provider")
+    if case == "missing_configuration":
+        model.pop("provider_configuration")
     async with httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(200,
             json={"object": "list", "data": [model]}))) as client:
         gateway = NineRouterGateway(GatewaySettings(), http_client=client)
@@ -508,3 +540,460 @@ async def test_hermes_adapter_tool_turn_checks_scope_and_model_provenance():
         with pytest.raises(RuntimeSecurityError):
             await adapter.execute_tool_turn(request.model_copy(update={"project_id": "foreign"}), ctx)
         assert len(posts) == 1
+
+
+def capability_probe_core(lifecycle):
+    """Offline model double + real scoped Core; never a live capability issuer."""
+    db, ctx, _, factory, _, _ = lifecycle
+    runtime = ToolModelDouble()
+    runtime.tool_capability = "unknown"
+    core = factory.execution_coordinator
+    core.runtime_adapter = runtime
+    return db, ctx, runtime, core
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("code", ["provider_rate_limited", "provider_insufficient_credit", "provider_quota_exhausted", "provider_unavailable"])
+async def test_provider_error_keeps_core_identity_reservation_and_prevents_repeated_effects(lifecycle, code):
+    from packages.contracts.runtime import ProviderRequestError
+    db, ctx, runtime, core = capability_probe_core(lifecycle)
+    async def rejected(turn):
+        raise ProviderRequestError(code)
+    runtime.before_result = rejected
+    with pytest.raises(ProviderRequestError):
+        await core.verify_model("mock-fast", ctx, "provider-error", mode="tool_calling")
+    with db.session() as session:
+        row = session.query(RunStateModel).filter_by(idempotency_key="provider-error").one()
+        assert row.model == "mock-fast" and row.status == "outcome_unknown" and row.error_code == code
+        assert row.reserved_tokens > 0 and not row.usage_settled
+    repeated = await core.verify_model("mock-fast", ctx, "provider-error", mode="tool_calling")
+    assert repeated.status == RunStatus.OUTCOME_UNKNOWN and repeated.error_code == code
+    assert len(runtime.turns) == 1 and repeated.execution_evidence is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("model,provider", [("ds/offline-fixture-a", "fixture-provider-a"),
+    ("ag/offline-fixture-b", "fixture-provider-b")])
+async def test_capability_probe_is_provider_agnostic_without_live_attestation(lifecycle, model, provider):
+    from packages.contracts.model import ModelSpec, ModelProviderType
+    from packages.model_adapters.router import ModelRouter
+    db, ctx, runtime, core = capability_probe_core(lifecycle)
+    core.model_router = ModelRouter(catalog={model: ModelSpec(model_id=model, display_name="Offline fixture",
+        provider=ModelProviderType.NINE_ROUTER)})
+    execute = runtime.execute_tool_turn
+    async def isolated_turn(turn, context):
+        result = await execute(turn, context)
+        result.result.provider = provider
+        return result
+    runtime.execute_tool_turn = isolated_turn
+    result = await core.verify_model(model, ctx, "multi-provider", mode="tool_calling")
+    assert result.status == RunStatus.COMPLETED and result.model == result.actual_model == result.requested_model == model
+    assert result.provider == provider and result.usage.total_tokens == 30
+    assert len(runtime.turns) == 2 and all(t.request.model == model for t in runtime.turns)
+    assert len(result.execution_evidence["actions"]) == 1
+    proof = result.execution_evidence["capability_probe"]
+    assert proof["model"] == model and proof["provider"] == provider and proof["binding"] is None
+    assert db.evidence_signer.verify("model_capability_probe", proof, result.execution_evidence["capability_attestation"])
+    assert await core.verify_model(model, ctx, "multi-provider", mode="tool_calling") == result
+    assert len(runtime.turns) == 2
+    assert (await runtime.model_capabilities(model)).tool_calling == "unknown"
+
+
+def test_capability_receipt_rejects_provider_change_and_cross_model_replay(lifecycle):
+    gateway, evidence, signer = capability_receipt_policy_fixture(lifecycle)
+    signature = signer.sign("model_capability_probe", evidence.model_dump(mode="json"))
+    assert gateway.record_tool_verification(evidence, signature, signer)
+    assert gateway._verified_tool_probe("different/model") is None
+    gateway._provider_identities[evidence.model] = "different-provider"
+    assert gateway._verified_tool_probe(evidence.model) is None
+    altered = evidence.model_copy(update={"model": "different/model"})
+    assert not gateway.record_tool_verification(altered, signature, signer)
+
+
+@pytest.mark.asyncio
+async def test_capability_probe_unknown_runs_fixed_tool_and_continuation_without_live_attestation(lifecycle, monkeypatch):
+    db, ctx, runtime, core = capability_probe_core(lifecycle)
+    effects = []
+    execute = fixture.execute
+    def tracked(arguments, context):
+        effects.append(context)
+        return execute(arguments, context)
+    monkeypatch.setattr(fixture, "execute", tracked)
+    issued = []
+    async def forbidden_issuer(*args):
+        issued.append(True)
+        return True
+    runtime.record_tool_verification = forbidden_issuer
+    result = await core.verify_model("mock-fast", ctx, "tool-probe", mode="tool_calling")
+    assert result.status == RunStatus.COMPLETED and result.usage.total_tokens == 30
+    assert len(runtime.turns) == 2 and len(effects) == 1 and effects[0].run_id == result.run_id
+    assert all(t.verification_mode == "tool_calling" for t in runtime.turns)
+    assert json.loads(result.output) == {"summary": "ARYN Core owns execution authorization."}
+    assert result.agent_version_id is None and result.assignment_id is None
+    assert result.effective_limits["max_turns"] == 2 and result.effective_limits["max_tool_calls"] == 1
+    proof = result.execution_evidence["capability_probe"]
+    signature = result.execution_evidence["capability_attestation"]
+    assert proof["binding"] is None
+    assert db.evidence_signer.verify("model_capability_probe", proof, signature)
+    assert not db.evidence_signer.verify("model_capability_probe", {**proof, "model": "foreign"}, signature)
+    assert (await runtime.model_capabilities("mock-fast")).tool_calling == "unknown"
+    assert not issued
+    repeated = await core.verify_model("mock-fast", ctx, "tool-probe", mode="tool_calling")
+    assert repeated == result and len(runtime.turns) == 2 and len(effects) == 1
+    assert repeated.execution_evidence["capability_probe"]["expires_at"] == proof["expires_at"]
+    assert await core.get_managed_result(result.run_id, ctx) == result
+    assert (await core.get_managed_trace(result.run_id, ctx)).available
+    with db.session() as session:
+        row = session.get(RunStateModel, result.run_id)
+        assert row.execution_mode == "tool_probe" and row.usage_settled and row.reserved_tokens == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fault", ["unknown_tool", "arguments", "extra_argument", "call_id", "two_calls",
+    "text_only", "forged", "timeout", "model", "reported_model", "continuation", "output", "provider", "usage", "run_id", "iteration"])
+async def test_capability_probe_invalid_observations_cannot_attest(lifecycle, monkeypatch, fault):
+    db, ctx, runtime, core = capability_probe_core(lifecycle)
+    effects = []
+    execute = fixture.execute
+    def tracked(arguments, context):
+        effects.append(context.run_id)
+        return execute(arguments, context)
+    monkeypatch.setattr(fixture, "execute", tracked)
+    native = runtime.execute_tool_turn
+    async def broken(turn, context):
+        if fault == "timeout":
+            raise TimeoutError()
+        if fault == "continuation" and turn.iteration == 2:
+            raise RuntimeError("Isolated continuation failure")
+        result = await native(turn, context)
+        if fault == "output":
+            result.result.output = '{"summary":"unverified"}'
+        if fault == "provider" and turn.iteration == 2:
+            result.result.provider = "different-test-provider"
+        if turn.iteration == 1:
+            if fault == "unknown_tool":
+                result.tool_calls[0].name = "terminal"
+            if fault == "arguments":
+                result.tool_calls[0].arguments = {"key": "another-key"}
+            if fault == "extra_argument":
+                result.tool_calls[0].arguments["host"] = "synthetic-only"
+            if fault == "call_id":
+                result.tool_calls[0] = ToolCall.model_construct(call_id="invalid identity", name=fixture.NAME, arguments={"key": "aryn-core"})
+            if fault == "two_calls":
+                result.tool_calls.append(result.tool_calls[0].model_copy(update={"call_id": "second"}))
+            if fault == "text_only":
+                result.tool_calls = []
+                result.result.status = RunStatus.COMPLETED
+            if fault == "forged":
+                result.result.execution_evidence = {"run_id": turn.run_id}
+            if fault == "model":
+                result.result.actual_model = "another-model"
+            if fault == "reported_model":
+                result.result.reported_model = "another-model"
+            if fault == "usage":
+                result.result.usage = RunUsage()
+            if fault == "run_id":
+                result.run_id = "foreign-run"
+            if fault == "iteration":
+                result.iteration = 2
+        return result
+    runtime.execute_tool_turn = broken
+    try:
+        result = await core.verify_model("mock-fast", ctx, "invalid-probe", mode="tool_calling")
+        assert result.status == RunStatus.FAILED
+        assert "capability_attestation" not in (result.execution_evidence or {})
+    except (PermissionDeniedError, ValueError, TimeoutError, ModelIdentityError, RuntimeError):
+        pass
+    assert len(effects) == (1 if fault in {"continuation", "output", "provider"} else 0)
+    assert (await runtime.model_capabilities("mock-fast")).tool_calling == "unknown"
+    with db.session() as session:
+        assert session.query(RunStateModel).filter_by(execution_mode="tool_probe", status="completed").count() == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("boundary", ["viewer", "agent", "foreign", "expired", "revoked"])
+async def test_capability_probe_requires_current_human_permission(lifecycle, boundary):
+    from packages.contracts.core import ActorType
+    db, ctx, runtime, core = capability_probe_core(lifecycle)
+    if boundary in {"viewer", "revoked"}:
+        with db.session(write=True) as session:
+            row = session.query(MembershipModel).filter_by(user_id=ctx.actor.actor_id).one()
+            if boundary == "viewer":
+                row.role = "viewer"
+            else:
+                row.status = "suspended"
+    elif boundary == "agent":
+        ctx = ctx.model_copy(deep=True)
+        ctx.actor.actor_type = ActorType.AGENT
+        ctx = bind_test_context(ctx)
+    elif boundary == "foreign":
+        ctx = bind_test_context(ctx.model_copy(update={"project_id": "foreign"}))
+    else:
+        ctx = core.permission_engine.identity_binder.bind_context(ctx, ttl_seconds=-1)
+    with pytest.raises(PermissionDeniedError):
+        await core.verify_model("mock-fast", ctx, "denied-probe", mode="tool_calling")
+    assert not runtime.turns
+
+
+@pytest.mark.asyncio
+async def test_capability_probe_keeps_normal_agent_admission_and_probe_payload_closed(lifecycle):
+    from packages.contracts.model import tool_probe_request
+    db, ctx, runtime, core = capability_probe_core(lifecycle)
+    with pytest.raises(PermissionDeniedError):
+        await core.verify_model("mock-fast", ctx, "invalid-mode", mode="arbitrary")
+    with pytest.raises(PermissionDeniedError):
+        await core.execute_managed_direct_turn(tool_probe_request("mock-fast", "direct-bypass"), ctx, _execution_mode="tool_probe")
+    forged = tool_probe_request("mock-fast", "forged")
+    forged.prompt = "Untrusted prompt"
+    with pytest.raises(PermissionDeniedError):
+        core._claim(forged, ctx, "tool_probe")
+    assert not runtime.turns
+    with db.session() as session:
+        assert session.query(RunStateModel).count() == 0
+
+
+@pytest.mark.asyncio
+async def test_capability_probe_does_not_authorize_normal_unknown_agent(lifecycle):
+    _, ctx, runtime, core, assignment, _ = await published(lifecycle)
+    runtime.tool_capability = "unknown"
+    runtime.turns.clear()
+    assert (await core.verify_model("mock-fast", ctx, "probe-only", mode="tool_calling")).status == RunStatus.COMPLETED
+    with pytest.raises(PermissionDeniedError):
+        await core.execute_assigned_agent_turn(assignment.id, "Read aryn-core.", ctx, "ordinary-unknown")
+    assert len(runtime.turns) == 2
+
+
+@pytest.mark.asyncio
+async def test_capability_probe_duplicate_and_stop_keep_owner_fencing(lifecycle, monkeypatch):
+    db, ctx, runtime, core = capability_probe_core(lifecycle)
+    entered, release = asyncio.Event(), asyncio.Event()
+    effects = []
+    monkeypatch.setattr(fixture, "execute", lambda *args: effects.append(True))
+    async def blocked(turn):
+        entered.set()
+        await release.wait()
+    runtime.before_result = blocked
+    task = asyncio.create_task(core.verify_model("mock-fast", ctx, "inflight-probe", mode="tool_calling"))
+    await asyncio.wait_for(entered.wait(), 3)
+    with pytest.raises(RunInProgressError):
+        await core.verify_model("mock-fast", ctx, "inflight-probe", mode="tool_calling")
+    with db.session() as session:
+        run_id = session.query(RunStateModel).filter_by(execution_mode="tool_probe").one().id
+    assert not await core.cancel_managed_run(run_id, ctx)
+    release.set()
+    with pytest.raises(PermissionDeniedError):
+        await task
+    assert not effects and len(runtime.turns) == 1
+    with db.session() as session:
+        row = session.get(RunStateModel, run_id)
+        assert row.status == "outcome_unknown" and row.reserved_tokens > 0 and not row.usage_settled
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("limit", ["tokens", "turns"])
+async def test_capability_probe_reserves_budget_before_dispatch(lifecycle, limit):
+    from modules.core.usage.engine import BudgetExceededError
+    db, ctx, runtime, core = capability_probe_core(lifecycle)
+    with db.session(write=True) as session:
+        for budget in BudgetRepository(session).authority_budgets(ctx):
+            if limit == "tokens":
+                budget.max_tokens_per_run = 20
+            else:
+                budget.max_turns = 1
+    with pytest.raises(BudgetExceededError):
+        await core.verify_model("mock-fast", ctx, "budget-probe", mode="tool_calling")
+    assert not runtime.turns
+
+
+@pytest.mark.asyncio
+async def test_http_probe_unknown_candidate_and_forged_live_origin_stay_isolated(lifecycle):
+    from packages.contracts.runtime import ToolTurnRequest, ModelUnavailableError
+    from packages.contracts.model import ModelProbeBinding, ModelProviderType, ModelSpec
+    from packages.model_adapters import ModelRouter
+    from tests.gateway_fixtures import make_adapter, standard_handler, MODEL, BASE
+    db, ctx, double, core = capability_probe_core(lifecycle)
+    posts = []
+    adapter = None
+    async def handler(request):
+        if request.url.port == 20128:
+            return httpx.Response(200, json={"object": "list", "data": [{"id": MODEL, "provider_configuration": "c" * 64}]})
+        if request.url.path == "/v1/toolsets":
+            return httpx.Response(200, json={"data": [], "governed_tool_turns": True, "tool_isolation": "read_only_fixture"})
+        if request.url.path == "/aryn/gateway":
+            return httpx.Response(200, json={"gateway": "9Router", "runtime_backend": "Hermes", "base_url": BASE,
+                "exact_model_enforced": True, "runtime_instance": "a" * 32,
+                "configuration_id": adapter.model_gateway.settings.runtime_configuration_id("a" * 32)})
+        if request.url.path == "/aryn/turn":
+            posts.append(request)
+            turn = ToolTurnRequest.model_validate_json(request.content)
+            result = await double.execute_tool_turn(turn, ctx)
+            result.result.reported_model = MODEL
+            result.result.model_evidence = ModelProbeBinding(origin="gateway_response",
+                runtime_configuration=adapter.model_gateway.settings.runtime_configuration_id("a" * 32),
+                gateway_configuration=adapter.model_gateway.settings.configuration_id, provider_configuration="c" * 64)
+            return httpx.Response(200, json=result.model_dump(mode="json"))
+        return standard_handler(request)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        adapter = make_adapter(client)
+        core.runtime_adapter = adapter
+        core.model_router = ModelRouter(catalog={MODEL: ModelSpec(provider=ModelProviderType.NINE_ROUTER,
+            model_id=MODEL, display_name=MODEL, requires_api_key=False)})
+        with pytest.raises(ModelUnavailableError):
+            await adapter.require_model_available(MODEL)
+        result = await core.verify_model(MODEL, ctx, "http-probe", mode="tool_calling")
+        assert result.status == RunStatus.COMPLETED and len(posts) == 2
+        proof = result.execution_evidence["capability_probe"]
+        assert proof["binding"]["origin"] == "isolated_test_double"
+        assert not adapter.model_gateway.record_tool_verification(proof,
+            result.execution_evidence["capability_attestation"], db.evidence_signer)
+        assert (await adapter.model_capabilities(MODEL)).tool_calling == "unknown"
+        with pytest.raises(ModelUnavailableError):
+            await adapter.require_model_available(MODEL)
+
+
+def capability_receipt_policy_fixture(lifecycle):
+    """Synthetic signed policy input, not evidence of executed model inference."""
+    from packages.contracts.model import ModelProbeEvidence, ModelProbeBinding
+    from packages.model_adapters.gateway import NineRouterGateway, GatewaySettings
+    db = lifecycle[0]
+    settings = GatewaySettings(base_url="http://127.0.0.1:9/v1", api_key="unit-scope")
+    gateway = NineRouterGateway(settings)
+    configuration = settings.runtime_configuration_id("a" * 32)
+    gateway.bind_runtime_configuration(configuration)
+    gateway._provider_configurations["test/model"] = "c" * 64
+    gateway._provider_identities["test/model"] = "unit-provider"
+    now = time.time()
+    evidence = ModelProbeEvidence(run_id="run_" + "a" * 32, model="test/model", provider="unit-provider",
+        reported_model="test/model", observed_at=now, expires_at=now + 60, tool_call_id="unit-call",
+        transcript_hash="d" * 64, output_hash="e" * 64,
+        binding=ModelProbeBinding(origin="gateway_response", runtime_configuration=configuration,
+            gateway_configuration=settings.configuration_id, provider_configuration="c" * 64))
+    return gateway, evidence, db.evidence_signer
+
+
+def test_capability_receipt_policy_accepts_only_scoped_fresh_signed_inputs(lifecycle):
+    gateway, evidence, signer = capability_receipt_policy_fixture(lifecycle)
+    signature = signer.sign("model_capability_probe", evidence.model_dump(mode="json"))
+    assert gateway.record_tool_verification(evidence, signature, signer)
+    assert gateway._verified_tool_probe("test/model") == evidence
+    assert gateway._verified_tool_probe("another/model") is None
+
+
+@pytest.mark.parametrize("fault", ["signature", "expired", "future", "ttl", "gateway", "runtime",
+    "provider_configuration", "missing_provider", "missing_configuration", "isolated", "reported_identity"])
+def test_capability_receipt_policy_rejects_unverifiable_inputs(lifecycle, fault):
+    gateway, evidence, signer = capability_receipt_policy_fixture(lifecycle)
+    if fault == "expired":
+        evidence = evidence.model_copy(update={"observed_at": time.time() - 61, "expires_at": time.time() - 1})
+    if fault == "future":
+        evidence = evidence.model_copy(update={"observed_at": time.time() + 30, "expires_at": time.time() + 60})
+    if fault == "ttl":
+        evidence = evidence.model_copy(update={"expires_at": time.time() + 120})
+    if fault == "gateway":
+        gateway.settings = gateway.settings.model_copy(update={"base_url": "http://127.0.0.1:10/v1"})
+    if fault == "runtime":
+        gateway.bind_runtime_configuration("f" * 64)
+    if fault == "provider_configuration":
+        gateway._provider_configurations[evidence.model] = "f" * 64
+    if fault == "missing_provider":
+        evidence = evidence.model_copy(update={"provider": None})
+    if fault == "reported_identity":
+        evidence = evidence.model_copy(update={"reported_model": "another/model"})
+    if fault in {"missing_configuration", "isolated"}:
+        evidence = evidence.model_copy(update={"binding": evidence.binding.model_copy(update={
+            "provider_configuration": None} if fault == "missing_configuration" else {"origin": "isolated_test_double"})})
+    signature = signer.sign("model_capability_probe", evidence.model_dump(mode="json")) if fault != "signature" else "forged"
+    assert not gateway.record_tool_verification(evidence, signature, signer)
+    assert gateway._verified_tool_probe(evidence.model) is None
+
+
+def test_capability_receipt_replay_never_renews_expiry(lifecycle, monkeypatch):
+    gateway, evidence, signer = capability_receipt_policy_fixture(lifecycle)
+    signature = signer.sign("model_capability_probe", evidence.model_dump(mode="json"))
+    assert gateway.record_tool_verification(evidence, signature, signer)
+    monkeypatch.setattr(time, "time", lambda: evidence.expires_at + 1)
+    assert not gateway.record_tool_verification(evidence, signature, signer)
+    assert gateway._verified_tool_probe(evidence.model) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("boundary", ["unsupported", "revoked", "configuration"])
+async def test_capability_probe_revalidates_before_effects(lifecycle, monkeypatch, boundary):
+    from packages.contracts.model import ModelProbeBinding
+    db, ctx, runtime, core = capability_probe_core(lifecycle)
+    effects = []
+    monkeypatch.setattr(fixture, "execute", lambda *args: effects.append(True))
+    if boundary == "unsupported":
+        runtime.tool_capability = "unsupported"
+    elif boundary == "revoked":
+        async def revoke(turn):
+            with db.session(write=True) as session:
+                session.query(MembershipModel).filter_by(user_id=ctx.actor.actor_id).one().status = "revoked"
+        runtime.before_result = revoke
+    else:
+        count = 0
+        async def changed_binding():
+            nonlocal count
+            count += 1
+            return ModelProbeBinding(origin="isolated_test_double", gateway_configuration="a" * 64,
+                runtime_configuration=("b" if count == 1 else "c") * 64)
+        runtime.capability_verification_binding = changed_binding
+    with pytest.raises(PermissionDeniedError):
+        await core.verify_model("mock-fast", ctx, "revalidate-probe", mode="tool_calling")
+    assert not effects
+    assert len(runtime.turns) <= 1
+
+
+@pytest.mark.asyncio
+async def test_expired_capability_cannot_survive_cached_availability(lifecycle, monkeypatch):
+    from packages.contracts.runtime import GatewayDiscovery
+    gateway, evidence, signer = capability_receipt_policy_fixture(lifecycle)
+    signature = signer.sign("model_capability_probe", evidence.model_dump(mode="json"))
+    assert gateway.record_tool_verification(evidence, signature, signer)
+    snapshot = GatewayDiscovery(connected=True, discovery_valid=True, models=[{
+        "model_id": evidence.model, "availability": "available", "availability_reason": "core_tool_probe_verified",
+        "availability_source": "core_runtime_probe"}])
+    async def cached(**kwargs):
+        return snapshot
+    gateway.discover = cached
+    monkeypatch.setattr(time, "time", lambda: evidence.expires_at + 1)
+    assert (await gateway.availability(evidence.model)).status == "unknown"
+
+
+@pytest.mark.asyncio
+async def test_capability_probe_permission_revoked_at_settlement_cannot_issue_receipt(lifecycle):
+    db, ctx, runtime, core = capability_probe_core(lifecycle)
+    complete = core._complete_dispatch
+    def revoked(run_id, result, context):
+        with db.session(write=True) as session:
+            session.query(MembershipModel).filter_by(user_id=ctx.actor.actor_id).one().role = "viewer"
+        return complete(run_id, result, context)
+    core._complete_dispatch = revoked
+    with pytest.raises(PermissionDeniedError):
+        await core.verify_model("mock-fast", ctx, "settlement-revoked", mode="tool_calling")
+    assert len(runtime.turns) == 2
+    with db.session() as session:
+        row = session.query(RunStateModel).filter_by(idempotency_key="settlement-revoked").one()
+        assert row.status == "outcome_unknown" and row.reserved_tokens > 0 and not row.usage_settled
+    events = core.audit_logger.get_events_for_correlation(ctx.correlation_id, ctx)
+    assert not any(e.event_type == "core.run.evidence" for e in events)
+
+
+@pytest.mark.asyncio
+async def test_isolated_transport_cannot_reuse_cached_capability_receipt(lifecycle):
+    from packages.runtime_adapters.hermes import HermesRuntimeAdapter
+    gateway, evidence, signer = capability_receipt_policy_fixture(lifecycle)
+    signature = signer.sign("model_capability_probe", evidence.model_dump(mode="json"))
+    assert gateway.record_tool_verification(evidence, signature, signer)
+    def handler(request):
+        if request.url.path == "/aryn/gateway":
+            return httpx.Response(200, json={"gateway": "9Router", "runtime_backend": "Hermes",
+                "base_url": gateway.settings.base_url, "exact_model_enforced": True,
+                "runtime_instance": "a" * 32, "configuration_id": evidence.binding.runtime_configuration})
+        return httpx.Response(200, json={"object": "list", "data": [{"id": evidence.model,
+            "provider_configuration": evidence.binding.provider_configuration}]})
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        gateway.client = client
+        adapter = HermesRuntimeAdapter(api_key="isolated-runtime-auth", http_client=client, model_gateway=gateway)
+        assert (await adapter.model_capabilities(evidence.model)).tool_calling == "unknown"
+        assert not gateway.has_tool_verifications
