@@ -322,3 +322,21 @@ def test_configured_ingress_origin_must_match_hosted_authentication_before_start
     assert not runtime.requests
     login(hosted)
     assert client.get("/api/workspace/context").status_code == 200
+
+
+def test_webhook_completed_occurrence_survives_recovery_without_duplicate_dispatch(ingress_hosted):
+    _, _, app, db, _, _, _ = ingress_hosted
+    first = send(ingress_hosted, "recovery-event")
+    assert first.status_code == 202
+    asyncio.run(app.state.automations.tick())
+    before = len(app.state.coordinator.runtime_adapter.requests)
+    app.state.automations.recover()
+    duplicate = send(ingress_hosted, "recovery-event")
+    assert duplicate.status_code == 200 and duplicate.json()["occurrence_id"] == first.json()["occurrence_id"]
+    asyncio.run(app.state.automations.tick())
+    assert len(app.state.coordinator.runtime_adapter.requests) == before
+    with db.session() as session:
+        occurrence = session.get(AutomationOccurrenceModel, first.json()["occurrence_id"])
+        ctx = app.state.binder.create_trusted_context("human", "org", "project")
+        _, verified = app.state.automations.get(session, AutomationOccurrenceModel, ctx, occurrence.id)
+        assert occurrence.status == verified["status"] == "completed"

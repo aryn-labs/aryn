@@ -83,7 +83,7 @@ class ToolTurnRequest(BaseModel):
                 raise ValueError("Fixture declarations cannot be replaced.")
         elif ([item.name for item in self.tool_declarations] != self.tool_names
                 or len(self.tool_names) != 1):
-            raise ValueError("An exact Core MCP proposal declaration is required.")
+            raise ValueError("An exact Core tool proposal declaration is required.")
         if self.verification_mode is None:
             return self
         from packages.contracts.model import TOOL_PROBE_PROMPT, TOOL_PROBE_SYSTEM

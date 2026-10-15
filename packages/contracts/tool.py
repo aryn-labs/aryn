@@ -43,7 +43,7 @@ class ToolContract(BaseModel):
 
 class ToolDeclaration(ToolContract):
     """Private Core-to-runtime proposal schema; contains no endpoint or credential."""
-    name: str = Field(pattern=r"^aryn_mcp_[a-z0-9_]{1,48}$", max_length=64)
+    name: str = Field(pattern=r"^aryn_(?:mcp|https)_[a-z0-9_]{1,48}$", max_length=64)
     input_schema: dict[str, Any]
 
     @model_validator(mode="after")
@@ -99,6 +99,8 @@ class MCPServerDefinition(ToolContract):
     @model_validator(mode="after")
     def confined_profile(self):
         loopback_endpoint(self.endpoint)
+        if not self.declaration.name.startswith("aryn_mcp_"):
+            raise ValueError("MCP requires its own tool namespace.")
         checked_schema(self.output_schema)
         properties = self.output_schema.get("properties", {})
         if (not {"organization_id", "project_id"}.issubset(self.output_schema.get("required", []))
@@ -170,3 +172,122 @@ class MCPResultEvidence(ToolContract):
     output_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
     result_bytes: int = Field(ge=0, le=32768, strict=True)
     duration_seconds: float = Field(ge=0)
+
+
+# A deliberately narrow API slice: one reviewed GET route, one bounded identifier.
+HTTPS_INPUT_SCHEMA = {"type": "object", "properties": {"key": {
+    "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9-]+$"}},
+    "required": ["key"], "additionalProperties": False}
+
+
+def https_endpoint(value):
+    """Reject aliases and ambiguous syntax; address safety is enforced at dispatch."""
+    import ipaddress
+    import re
+    url = urlsplit(value)
+    host = url.hostname or ""
+    if "%" in host:
+        raise ValueError("Scoped or encoded HTTPS hosts are unavailable.")
+    try:
+        ip = ipaddress.ip_address(host)
+        if getattr(ip, "ipv4_mapped", None):
+            raise ValueError("Mapped hosts are unavailable.")
+        canonical_host = f"[{ip}]" if ip.version == 6 else str(ip)
+    except ValueError:
+        if (len(host) > 253 or not re.fullmatch(r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}", host)
+                or host.endswith((".localhost", ".local", ".internal"))):
+            raise ValueError("HTTPS hostname must be canonical ASCII.") from None
+        canonical_host = host
+    if (url.scheme != "https" or url.username is not None or url.password is not None
+            or not url.port or not 1 <= url.port <= 65535 or url.path or url.query or url.fragment
+            or value != f"https://{canonical_host}:{url.port}"):
+        raise ValueError("An exact canonical HTTPS origin with explicit port is required.")
+    return value
+
+
+class HTTPSConnectionDefinition(ToolContract):
+    connection_id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,23}$")
+    organization_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
+    project_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
+    owner_id: str = Field(min_length=1, max_length=64)
+    endpoint: str = Field(max_length=280)
+    route: str = Field(default="/records/{key}", pattern=r"^/(?:[A-Za-z0-9_-]+/){1,8}\{key\}$", max_length=160)
+    method: Literal["GET"] = "GET"
+    declaration: ToolDeclaration
+    output_schema: dict[str, Any]
+    risk: Literal["READ_ONLY"] = "READ_ONLY"
+    enabled: bool = True
+    timeout_seconds: float = Field(default=3, ge=0.05, le=5)
+    max_response_bytes: int = Field(default=16384, ge=512, le=32768, strict=True)
+    calls_per_minute: int = Field(default=12, ge=1, le=12, strict=True)
+
+    @model_validator(mode="after")
+    def confined(self):
+        https_endpoint(self.endpoint)
+        checked_schema(self.output_schema)
+        properties = self.output_schema.get("properties", {})
+        if (not self.declaration.name.startswith("aryn_https_") or self.declaration.input_schema != HTTPS_INPUT_SCHEMA
+                or self.output_schema.get("additionalProperties") is not False
+                or not {"organization_id", "project_id"}.issubset(self.output_schema.get("required", []))
+                or properties.get("organization_id", {}).get("const") != self.organization_id
+                or properties.get("project_id", {}).get("const") != self.project_id):
+            raise ValueError("HTTPS read requires a fixed identifier schema and exact scoped output.")
+        return self
+
+    @property
+    def capability(self):
+        return f"aryn.https.{self.connection_id}.read"
+
+    @property
+    def schema_hash(self):
+        return evidence_hash({"input": self.declaration.input_schema, "output": self.output_schema})
+
+
+class HTTPSApproval(ToolContract):
+    connection: HTTPSConnectionDefinition
+    binding_id: str = Field(pattern=r"^[a-f0-9]{32}$")
+    binding_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    connection_identity: str = Field(pattern=r"^[a-f0-9]{64}$")
+    addresses: tuple[str, ...] = Field(min_length=1, max_length=8)
+    trust_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    observed_at: float
+    expires_at: float
+    attestation: str = ""
+
+    def payload(self):
+        return self.model_dump(mode="json", exclude={"attestation"})
+
+    def configuration_hash(self):
+        return evidence_hash({key: value for key, value in self.payload().items()
+            if key not in {"binding_hash", "observed_at", "expires_at"}})
+
+
+class HTTPSInvocation(MCPInvocation):
+    trace_id: str = Field(min_length=1, max_length=128)
+
+
+class HTTPSResultEvidence(ToolContract):
+    run_id: str
+    trace_id: str
+    call_id: str
+    organization_id: str
+    project_id: str
+    connection_id: str
+    tool_name: str
+    binding_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    schema_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    endpoint_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    target_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    invocation_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    input_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    output_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    response_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    http_status: Literal[200]
+    network_requests: Literal[1]
+    tls_verified: Literal[True]
+    validation: Literal["schema_valid"]
+    policy: Literal["approved_pinned_get"]
+    source: Literal["https_transport"]
+    result_bytes: int = Field(ge=0, le=32768, strict=True)
+    duration_seconds: float = Field(ge=0)
+    timeout_seconds: float = Field(gt=0, le=5)

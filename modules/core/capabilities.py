@@ -133,6 +133,17 @@ class Capabilities(SignedRecords):
                     )
                 )
             values.extend(Capability.model_validate(value) for value in self.core.mcp_tools.summaries(ctx))
+            for namespace, available, reason in (
+                ("aryn.https.adapter", True, "Structural bounded GET adapter; exact Core approval and published binding required."),
+                ("aryn.https.fixture", False, "Synthetic TLS fixture exists only in offline test composition."),
+                ("aryn.https.temporary_binding", True, "Trusted operator supplies a scoped in-memory binding; restart invalidates it."),
+                ("aryn.https.external_connectivity", False, "External API connectivity has not been verified."),
+                ("aryn.https.persistent_credentials", False, "Production secure persistent credential storage is unavailable."),
+                ("aryn.https.oauth", False, "OAuth connector integration is unavailable."),
+            ):
+                values.append(Capability(namespace=namespace, adapter="approved_pinned_https", modes=["local", "hosted"],
+                    risk="read", available=available, effective_permission=False,
+                    requirements=[reason], missing_prerequisites=[] if available else [reason], disabled_reason=reason))
             return CapabilityRegistry(
                 organization_id=ctx.organization_id,
                 project_id=ctx.project_id,

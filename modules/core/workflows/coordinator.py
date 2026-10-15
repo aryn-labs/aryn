@@ -60,6 +60,7 @@ class RunCoordinator:
         model_router: Optional[Any] = None,
         db_manager: Optional[Any] = None,
         mcp_endpoints: tuple[str, ...] = (),
+        https_endpoints: tuple[str, ...] = (),
     ) -> None:
         self._deadline_tasks = set()
         self.runtime_adapter = runtime_adapter
@@ -70,8 +71,8 @@ class RunCoordinator:
         # If db_manager is passed, pass to audit and budget engines if not explicitly provided
         self.audit_logger = audit_logger or AuditLogger(db_manager=db_manager)
         self.budget_engine = budget_engine or BudgetEngine(db_manager=db_manager)
-        from modules.core.tools import MCPTools
-        self.mcp_tools = MCPTools(self, mcp_endpoints)
+        from modules.core.tools import CoreTools
+        self.mcp_tools = CoreTools(self, mcp_endpoints, https_endpoints=https_endpoints)
 
         if model_router is None:
             mr_cls = importlib.import_module("packages.model_adapters").ModelRouter
@@ -279,7 +280,8 @@ class RunCoordinator:
                         "output_contract": agent_configuration.output_contract.model_dump(mode="json"),
                         "max_output_tokens": min(total, request.max_tokens * request.max_iterations)})
                     if mcp_bindings:
-                        limits["mcp_bindings"] = mcp_bindings
+                        limits["mcp_bindings"] = {name: value for name, value in mcp_bindings.items() if name.startswith("aryn_mcp_")}
+                        limits["https_bindings"] = {name: value for name, value in mcp_bindings.items() if name.startswith("aryn_https_")}
                 # Managed monetary dispatch requires an explicit price/ceiling contract;
                 # external gateway/BYOK/local usage is never relabelled Managed AI.
                 if spec.provider.value in {"gemini", "nous"}:
@@ -696,7 +698,8 @@ class RunCoordinator:
             elif version.status.value != "evaluating":
                 raise PermissionDeniedError("Bench authority revoked.")
             current_pins = self.mcp_tools.pins(context, version, limits["tool_grants"], session=session)
-            expected_pins = {name: value for name, value in limits.get("mcp_bindings", {}).items() if name in limits["tool_grants"]}
+            expected_pins = {name: value for name, value in {**limits.get("mcp_bindings", {}),
+                **limits.get("https_bindings", {})}.items() if name in limits["tool_grants"]}
             if current_pins != expected_pins:
                 raise PermissionDeniedError("MCP version binding changed.")
             return limits
@@ -719,6 +722,7 @@ class RunCoordinator:
         observed = None
         known_cost = True
         total_cost = 0.0
+        observed_provider = None
         try:
             caps = await self._bounded(self.runtime_adapter.capabilities(), self._remaining(run_id, context))
             if not caps.tools_confined or caps.enabled_toolsets or not caps.supports_governed_tool_turns:
@@ -744,7 +748,8 @@ class RunCoordinator:
                         raise PermissionDeniedError("Probe runtime configuration changed.")
                 limits = self._tool_authority(run_id, context, iteration)
                 prompt = request.prompt if not history else "Continue using the verified tool result."
-                declarations = [self.mcp_tools.current(context, name, limits["mcp_bindings"][name]).approval.server.declaration
+                bindings = {**limits.get("mcp_bindings", {}), **limits.get("https_bindings", {})}
+                declarations = [self.mcp_tools.current(context, name, bindings[name]).definition.declaration
                     for name in limits["tool_grants"] if name != fixture.NAME]
                 definitions = [item.definition() for item in declarations] or ([fixture.definition()] if limits["tool_grants"] else [])
                 estimate = max(1, len(json.dumps([prompt, request.system_instructions, history, definitions]).encode()) // 3)
@@ -776,6 +781,9 @@ class RunCoordinator:
                         or observed.requested_model != request.model or observed.gateway != "9Router"
                         or observed.runtime_backend != "Hermes"):
                     raise ModelIdentityError()
+                if not observed.provider or observed_provider is not None and observed.provider != observed_provider:
+                    raise ModelIdentityError()
+                observed_provider = observed.provider
                 if probe:
                     binding = observed.model_evidence
                     if probe_binding is not None and (binding is None
@@ -835,15 +843,15 @@ class RunCoordinator:
                         code = "tool_permission_denied" if call.name not in limits["tool_grants"] else None
                         mcp = None
                         if code is None and call.name != fixture.NAME:
-                            mcp = self.mcp_tools.current(context, call.name, limits.get("mcp_bindings", {}).get(call.name))
+                            mcp = self.mcp_tools.current(context, call.name, bindings.get(call.name))
                         if probe and (failure or (code is None and call.arguments != {"key": "aryn-core"})):
                             code = "tool_input_invalid" if not failure else failure
                         if call.call_id in seen_calls or tool_count > limits["max_tool_calls"] or iteration == limits["max_turns"]:
                             code = "execution_limit_exceeded"
                         self.audit_logger.record("core.tool.decision", context, run_id,
                             AuditStatus.DENIED if code else AuditStatus.ALLOWED,
-                            {"tool_name": call.name, "capability": fixture.CAPABILITY if call.name == fixture.NAME else mcp.approval.server.capability if mcp else None,
-                             "risk": fixture.RISK if call.name == fixture.NAME else mcp.approval.server.risk if mcp else None, "iteration": iteration,
+                            {"tool_name": call.name, "capability": fixture.CAPABILITY if call.name == fixture.NAME else mcp.definition.capability if mcp else None,
+                             "risk": fixture.RISK if call.name == fixture.NAME else mcp.definition.risk if mcp else None, "iteration": iteration,
                              "call_number": tool_count, "call_id": call.call_id, "error_code": code,
                              "input_hash": hashlib.sha256(json.dumps(call.arguments, sort_keys=True).encode()).hexdigest()})
                         if code:
@@ -877,12 +885,12 @@ class RunCoordinator:
                             AuditStatus.FAILED if failure else AuditStatus.COMPLETED,
                             {"call_id": call.call_id, "tool_name": call.name, "error_code": failure,
                              "output_hash": hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest(),
-                             **({"mcp_provenance": provenance} if provenance else {}),
+                             **({mcp.kind + "_provenance": provenance} if provenance else {}),
                              "duration_seconds": time.perf_counter() - started})
                         if failure:
                             break
-                        actions.append({"action_id": call.call_id, "action": "mcp.read" if mcp else "fixture.read", "tool": call.name,
-                            "capability": mcp.approval.server.capability if mcp else fixture.CAPABILITY})
+                        actions.append({"action_id": call.call_id, "action": mcp.kind + ".read" if mcp else "fixture.read", "tool": call.name,
+                            "capability": mcp.definition.capability if mcp else fixture.CAPABILITY})
                         history.append({"role": "tool", "name": call.name, "tool_call_id": call.call_id,
                             "content": json.dumps(data, sort_keys=True)})
                 if failure or not turn.tool_calls:

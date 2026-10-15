@@ -47,12 +47,15 @@ def provider(request):
     body = json.loads(request.content)
     assert request.headers["Authorization"] == "Bearer " + settings.api_key.get_secret_value()
     calls.append(body)
-    if body["model"] in {"test/tool-model", "test/mcp-tool-model"}:
+    if body["model"] in {"test/tool-model", "test/mcp-tool-model", "test/https-tool-model"}:
         from packages.tool_adapters.fixture import definition
         from packages.contracts.tool import ToolDeclaration
         declaration = ToolDeclaration(name="aryn_mcp_project_lookup", input_schema={"type": "object",
             "properties": {"key": {"enum": ["aryn-core"]}}, "required": ["key"], "additionalProperties": False})
-        selected = declaration.definition() if body["model"] == "test/mcp-tool-model" else definition()
+        if body["model"] == "test/https-tool-model":
+            from packages.contracts.tool import HTTPS_INPUT_SCHEMA
+            declaration = ToolDeclaration(name="aryn_https_project_lookup", input_schema=HTTPS_INPUT_SCHEMA)
+        selected = declaration.definition() if body["model"] != "test/tool-model" else definition()
         assert body.get("tools") == [selected]
         continued = any(m.get("role") == "tool" for m in body["messages"])
         message = {"role": "assistant", "content": '{"summary":"ARYN Core owns execution authorization."}'} if continued else {
@@ -300,6 +303,31 @@ async def check():
     assert mcp_final.result.model_evidence.origin == "isolated_test_double"
     assert len(calls) == 14 and network_attempts == []
     print("REAL_HERMES_MCP_DECLARATION_CONTINUATION_PASS")
+    from packages.contracts.tool import HTTPS_INPUT_SCHEMA
+    declaration = ToolDeclaration(name="aryn_https_project_lookup", input_schema=HTTPS_INPUT_SCHEMA)
+    https_turn = ToolTurnRequest(run_id="core_https_run", organization_id="isolated-org", project_id="isolated-project",
+        iteration=1, tool_names=[declaration.name], tool_declarations=[declaration],
+        request=RunRequest(model="test/https-tool-model", max_tokens=128, prompt="Read approved resource.",
+            metadata={"initial_prompt": "Read approved resource."}))
+    response = await dispatch("POST", "/aryn/turn", https_turn.model_dump(mode="json"))
+    assert response.status == 200, response.body
+    proposed = ToolTurnResult.model_validate_json(response.body)
+    call = proposed.tool_calls[0]
+    assert call.name == declaration.name and call.arguments == {"key": "aryn-core"}
+    https_turn.iteration = 2
+    https_turn.history = [{"role": "user", "content": https_turn.request.prompt},
+        {"role": "assistant", "content": "", "tool_calls": [{"id": call.call_id, "type": "function",
+            "function": {"name": call.name, "arguments": json.dumps(call.arguments)}}]},
+        {"role": "tool", "name": call.name, "tool_call_id": call.call_id, "content": json.dumps(data)}]
+    https_turn.request.prompt = "Continue using the verified tool result."
+    response = await dispatch("POST", "/aryn/turn", https_turn.model_dump(mode="json"))
+    assert response.status == 200, response.body
+    final = ToolTurnResult.model_validate_json(response.body)
+    assert final.result.status.value == "completed" and not final.tool_calls
+    assert final.result.actual_model == "test/https-tool-model"
+    assert json.loads(final.result.output) == {"summary": data["text"]}
+    assert len(calls) == 16 and network_attempts == []
+    print("REAL_HERMES_HTTPS_DECLARATION_CONTINUATION_PASS")
     import logging
     logging.getLogger("runtime.security.probe").warning("credential %s gateway %s", os.environ["API_SERVER_KEY"], settings.api_key.get_secret_value())
     await api.disconnect()

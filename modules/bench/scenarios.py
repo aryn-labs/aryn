@@ -143,10 +143,34 @@ def governed_mcp_suite():
     return BenchSuiteDefinition.model_validate(value)
 
 
+def governed_https_suite():
+    """Existing Bench engine/graders, one synthetic TLS resource and a denied case."""
+    value = governed_mcp_suite().model_dump(mode="json")
+    value.update(suite_id="governed-https", name="Governed HTTPS fixture read",
+        description="Pinned TLS GET through Core with synthetic credentials; no external API verification.")
+    for scenario in value["scenarios"]:
+        scenario["scenario_id"] = scenario["scenario_id"].replace("mcp", "https")
+        scenario["name"] = scenario["scenario_id"]
+        scenario["prompt"] = scenario["prompt"].replace("aryn_mcp_", "aryn_https_")
+        scenario["description"] = scenario["prompt"]
+        scenario["runtime_requirements"]["write_isolation"] = "read_only_https_fixture"
+        granted = bool(scenario["allowed_tools"])
+        scenario["allowed_tools"] = ["aryn_https_project_lookup"] if granted else []
+        scenario["allowed_actions"] = ["https.read"] if granted else []
+        scenario["allowed_capabilities"] = ["aryn.https.project_demo.read"] if granted else []
+        for grader in scenario["graders"]:
+            if grader["type"] == "tool_selection":
+                grader["expected_tools"] = list(scenario["allowed_tools"])
+    value["scenario_ids"] = [scenario["scenario_id"] for scenario in value["scenarios"]]
+    value["required_scenarios"] = list(value["scenario_ids"])
+    value["suite_hash"] = ""
+    return BenchSuiteDefinition.model_validate(value)
+
+
 def get_bench_suite_registry():
     global BENCH_SUITE_REGISTRY
     if BENCH_SUITE_REGISTRY is None:
-        BENCH_SUITE_REGISTRY = BenchSuiteRegistry([_research_suite(), governed_fixture_suite(), governed_mcp_suite()])
+        BENCH_SUITE_REGISTRY = BenchSuiteRegistry([_research_suite(), governed_fixture_suite(), governed_mcp_suite(), governed_https_suite()])
     return BENCH_SUITE_REGISTRY
 
 

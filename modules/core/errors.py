@@ -5,6 +5,7 @@ storage. Arbitrary unlabelled secrets cannot be inferred from natural language.
 """
 import hashlib
 import re
+import base64
 
 _KEY = re.compile(r"api.?key|secret|password|auth.?token|^auth$|^authorization$|credential|bearer|access.?token", re.I)
 _CONTENT = {"prompt", "system_prompt", "system_instructions", "output", "raw_response", "raw_trace"}
@@ -34,7 +35,12 @@ def sanitize(value, *, audit=False, credentials=()):
     if isinstance(value, str):
         for credential in credentials:
             if credential:
-                value = value.replace(credential, "[REDACTED]")
+                raw = credential.encode()
+                # Reflections in common wire encodings are still credentials.
+                forms = {credential, raw.hex(), base64.b64encode(raw).decode(), base64.urlsafe_b64encode(raw).decode()}
+                forms.update(item.rstrip("=") for item in tuple(forms))
+                for form in sorted(forms, key=len, reverse=True):
+                    value = value.replace(form, "[REDACTED]")
         for pattern, replacement in _PATTERNS:
             value = pattern.sub(replacement, value)
     return value

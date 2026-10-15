@@ -88,6 +88,14 @@ class BenchRunner:
                 if self.coordinator is None or caps.enabled_toolsets or not caps.supports_governed_tool_turns:
                     raise QualityGateFailedError("MCP fixture evaluation requires confined Core tool mediation.")
                 self.coordinator.mcp_tools.pins(context, version, set(version.tool_grants))
+            if scenario.runtime_requirements.write_isolation == "read_only_https_fixture":
+                if self.coordinator is None or caps.enabled_toolsets or not caps.supports_governed_tool_turns:
+                    raise QualityGateFailedError("HTTPS fixture evaluation requires confined Core tool mediation.")
+                pins = self.coordinator.mcp_tools.pins(context, version, set(version.tool_grants))
+                if any(not self.coordinator.mcp_tools.current(context, name, binding).https
+                        or type(self.coordinator.mcp_tools.current(context, name, binding).adapter.trust).__module__ != "tests.https_fixture"
+                        for name, binding in pins.items()):
+                    raise QualityGateFailedError("HTTPS evaluation is limited to the isolated test fixture.")
         await bounded(self.runtime_adapter.require_model_available(version.model), max(0, preflight_deadline - time.monotonic()))
         result = BenchEvaluationResult(
             evaluation_id=f"eval_{uuid.uuid4().hex[:16]}", blueprint_id=version.blueprint_id,
