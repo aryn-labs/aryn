@@ -31,7 +31,7 @@ Core governance/persistence, Agent Factory, Bench, and the Hermes adapter are im
 
 ## Quality and delivery
 
-Development pushes and reviewed PRs run backend checks on Linux/Windows, live PostgreSQL with a restricted writer, security/dependency scans, native Hermes boundary checks, frontend tests/build and isolated browser E2E. Successful development gates produce commit-bound review artifacts; there is no automatic production deployment or release. See [CI contracts, commands and repository settings](docs/ci-delivery.md) and [actual validation evidence](docs/ci-validation.md).
+`main` is the active solo development branch; `development` is retained as a historical reference. Pushes to either branch and PRs targeting either branch run backend checks on Linux/Windows, live PostgreSQL with a restricted writer, security/dependency scans, native Hermes boundary checks, frontend tests/build and isolated browser E2E. Successful push gates produce commit-bound review artifacts; there is no automatic production deployment or release. See [CI contracts, commands and repository settings](docs/ci-delivery.md) and [actual validation evidence](docs/ci-validation.md).
 
 Use Python/Node versions in `.python-version`/`.node-version`, `uv sync --frozen --extra dev`, and `npm ci --ignore-scripts --prefix apps/web`. Python dependency resolution is committed in `uv.lock`. Install the hosted PostgreSQL driver with `--extra postgresql`; migration owner and application writer must remain separate.
 

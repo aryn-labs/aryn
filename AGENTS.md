@@ -8,5 +8,5 @@
 6. Any replay/evaluation must use isolated/mocked write adapters. Record actual model/provider and evaluation version.
 7. Do not add paid vendors, outbound uploads, silent model fallback, auto-publishing, or Local/Cloud sync without explicit approval.
 8. Keep PRD P0 IDs and tests traceable. For every implemented behavior include positive AND relevant negative tests. Do not fabricate PASS evidence.
-9. Work on `development` or feature branches; no push/merge into `main` unless the owner requests it.
+9. Use `main` for solo development, or an owner-requested feature branch. Audit the working tree and run relevant local checks before committing. Commit/push only within the owner's authorization, then verify required CI on the exact SHA. Preserve `development` as a historical reference; never force-push or discard existing work.
 10. Inspect existing code before editing. Report modifications, tests actually run, outstanding risks and API/contract changes.

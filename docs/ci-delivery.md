@@ -1,9 +1,23 @@
 # CI, PostgreSQL verification and delivery
 
-CI runs on `development` pushes, pull requests targeting `development`/`main`, and
+`main` is the active branch for owner-authorized solo development. CI runs on pushes
+to `main` and the retained `development` branch, PRs targeting either branch, and
 workflow dispatch. It does not merge, release, deploy or modify either branch.
-`development` is the integration branch; promotion to stable `main` requires an
-owner-reviewed PR. Actual validation evidence is in [CI validation](ci-validation.md).
+Actual validation evidence is in [CI validation](ci-validation.md).
+
+Before each solo commit, audit HEAD, the working tree and remote divergence, review
+the scoped diff, and run relevant local tests and security/configuration checks.
+Commit/push requires owner authorization. A push to `main` must pass every required
+gate on its exact SHA before being called validated delivery; a successful push
+also produces the review artifact. A failed or incomplete run is not delivery proof.
+
+For the initial transition, validate the configuration commit on `development`
+first. Recheck both remote SHAs and ancestry, then fast-forward `main` to that exact
+validated commit without squash, rebase, force-push or a merge commit. The resulting
+`main` push must automatically pass all 14 jobs and produce its own run-bound
+artifact, even though the SHA is shared with the development run. Only then make
+`main` active locally. Retain `development` as a historical reference, not a second
+active development branch. Divergence, conflicts or failed CI stop the transition.
 
 ## Reproducible quality gates
 
@@ -184,20 +198,18 @@ These artifacts are review candidates, **not** production releases, SLSA attesta
 VPS installers or Windows installers. They retain 14 days; a successful job also
 produces GitHub's artifact digest. `aryn-infra` will own actual deployment.
 
-The repository owner should configure branch rules for `development` and `main`:
-require PR review (at least one reviewer), dismiss stale approvals, require approval
-after the most recent push, require `Required Quality Gates` and all platform/security
-checks above, require conversations resolved, block force pushes/deletion and disallow
-admin/direct-push bypass for stable `main`. Require checks from GitHub Actions, enable
-up-to-date checks/merge queue only after validating the chosen workflow event contract.
-Do not enable merge queue yet: `merge_group` is not configured in this workflow.
-Stable `main` should only accept reviewed promotion PRs; this work does not change settings.
+The solo workflow permits direct owner-authorized pushes to `main`; PRs remain
+available for scoped review. Every delivery still requires `Required Quality Gates`
+and all platform/security checks above. Do not bypass existing branch rules or use
+force-push/deletion. GitHub protection settings are separate owner decisions; source
+cannot enforce them. At the transition audit, `main` was already the default branch
+and both branches had protection disabled. This transition changes neither setting.
+Do not enable merge queue: `merge_group` is not configured in this workflow.
 
-At initial audit, both branches had protection disabled. Source cannot enforce GitHub
-Settings. Dependabot config targets `development` for weekly Actions, uv and npm PRs,
-with three open PRs per ecosystem and no auto-merge. Dependabot configuration and
-dispatch UI activation depend on the default branch containing the configuration;
-the owner must land it through a controlled PR, not an agent change to `main`.
+Dependabot targets `main` for weekly Actions, uv and npm PRs, retaining three open
+PRs per ecosystem and no auto-merge. This keeps new maintenance work on the active
+branch. Its configuration becomes available on the default branch through the
+validated fast-forward; `development` receives no new dependency update targets.
 Target-branch version updates do not replace default-branch security updates; see
 [Dependabot options](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference).
 Future release preparation must use manual approval in `aryn-infra`; there is no
@@ -242,4 +254,5 @@ identities and JUnit execution evidence. `Required Quality Gates` checks identic
 collections/commits, all five runners, disjoint complete Windows coverage, full Linux
 coverage and executed case counts; a green subset or interrupted suite cannot pass.
 Backend logs include per-case progress, durations and a 120s diagnostic stack dump
-for a stalled case. The 20-minute per-runner limit remains unchanged.
+for a stalled case. Backend limits remain 20 minutes for Linux and 30 minutes for
+each Windows shard.
