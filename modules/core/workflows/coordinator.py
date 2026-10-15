@@ -59,6 +59,7 @@ class RunCoordinator:
         audit_logger: Optional[AuditLogger] = None,
         model_router: Optional[Any] = None,
         db_manager: Optional[Any] = None,
+        mcp_endpoints: tuple[str, ...] = (),
     ) -> None:
         self._deadline_tasks = set()
         self.runtime_adapter = runtime_adapter
@@ -69,6 +70,8 @@ class RunCoordinator:
         # If db_manager is passed, pass to audit and budget engines if not explicitly provided
         self.audit_logger = audit_logger or AuditLogger(db_manager=db_manager)
         self.budget_engine = budget_engine or BudgetEngine(db_manager=db_manager)
+        from modules.core.tools import MCPTools
+        self.mcp_tools = MCPTools(self, mcp_endpoints)
 
         if model_router is None:
             mr_cls = importlib.import_module("packages.model_adapters").ModelRouter
@@ -261,8 +264,9 @@ class RunCoordinator:
                     agent_configuration.verify_integrity(require_canonical=True)
                     validate_output_contract(agent_configuration.output_contract)
                     grants = set(agent_configuration.tool_grants)
-                    if grants - {NAME} or not agent_configuration.tool_policy.deny_by_default:
+                    if not agent_configuration.tool_policy.deny_by_default:
                         raise PermissionDeniedError("Unregistered tools or non-denying policy.")
+                    mcp_bindings = self.mcp_tools.pins(context, agent_configuration, grants, session=active)
                     if allowed_tools is not None:
                         grants &= set(allowed_tools)
                     request.max_iterations = min(request.max_iterations,
@@ -274,6 +278,8 @@ class RunCoordinator:
                         "agent_payload_hash": agent_configuration.payload_hash,
                         "output_contract": agent_configuration.output_contract.model_dump(mode="json"),
                         "max_output_tokens": min(total, request.max_tokens * request.max_iterations)})
+                    if mcp_bindings:
+                        limits["mcp_bindings"] = mcp_bindings
                 # Managed monetary dispatch requires an explicit price/ceiling contract;
                 # external gateway/BYOK/local usage is never relabelled Managed AI.
                 if spec.provider.value in {"gemini", "nous"}:
@@ -689,6 +695,10 @@ class RunCoordinator:
                 active.known_good(context, version.id)
             elif version.status.value != "evaluating":
                 raise PermissionDeniedError("Bench authority revoked.")
+            current_pins = self.mcp_tools.pins(context, version, limits["tool_grants"], session=session)
+            expected_pins = {name: value for name, value in limits.get("mcp_bindings", {}).items() if name in limits["tool_grants"]}
+            if current_pins != expected_pins:
+                raise PermissionDeniedError("MCP version binding changed.")
             return limits
 
     async def _execute_governed_turns(self, request, context, claimed):
@@ -734,8 +744,10 @@ class RunCoordinator:
                         raise PermissionDeniedError("Probe runtime configuration changed.")
                 limits = self._tool_authority(run_id, context, iteration)
                 prompt = request.prompt if not history else "Continue using the verified tool result."
-                estimate = max(1, len(json.dumps([prompt, request.system_instructions, history,
-                    [fixture.definition()] if limits["tool_grants"] else []]).encode()) // 3)
+                declarations = [self.mcp_tools.current(context, name, limits["mcp_bindings"][name]).approval.server.declaration
+                    for name in limits["tool_grants"] if name != fixture.NAME]
+                definitions = [item.definition() for item in declarations] or ([fixture.definition()] if limits["tool_grants"] else [])
+                estimate = max(1, len(json.dumps([prompt, request.system_instructions, history, definitions]).encode()) // 3)
                 remaining_output = min(request.max_tokens, limits["max_total_tokens"] - usage.total_tokens - estimate,
                     limits["max_output_tokens"] - usage.output_tokens)
                 if remaining_output <= 0 or usage.input_tokens + estimate > limits["max_input_tokens"]:
@@ -753,7 +765,8 @@ class RunCoordinator:
                 turn = await self._bounded(self.runtime_adapter.execute_tool_turn(ToolTurnRequest(
                     run_id=run_id, organization_id=context.organization_id, project_id=context.project_id,
                     iteration=iteration, request=step_request, history=history,
-                    tool_names=limits["tool_grants"], verification_mode="tool_calling" if probe else None), context), self._remaining(run_id, context))
+                    tool_names=limits["tool_grants"], tool_declarations=declarations,
+                    verification_mode="tool_calling" if probe else None), context), self._remaining(run_id, context))
                 turn = ToolTurnResult.model_validate(turn.model_dump(mode="json"))
                 observed = turn.result
                 if turn.run_id != run_id or turn.iteration != iteration or observed.execution_evidence is not None:
@@ -819,15 +832,18 @@ class RunCoordinator:
                     for call in turn.tool_calls:
                         limits = self._tool_authority(run_id, context, iteration)
                         tool_count += 1
-                        code = "tool_permission_denied" if call.name != fixture.NAME or call.name not in limits["tool_grants"] else None
+                        code = "tool_permission_denied" if call.name not in limits["tool_grants"] else None
+                        mcp = None
+                        if code is None and call.name != fixture.NAME:
+                            mcp = self.mcp_tools.current(context, call.name, limits.get("mcp_bindings", {}).get(call.name))
                         if probe and (failure or (code is None and call.arguments != {"key": "aryn-core"})):
                             code = "tool_input_invalid" if not failure else failure
                         if call.call_id in seen_calls or tool_count > limits["max_tool_calls"] or iteration == limits["max_turns"]:
                             code = "execution_limit_exceeded"
                         self.audit_logger.record("core.tool.decision", context, run_id,
                             AuditStatus.DENIED if code else AuditStatus.ALLOWED,
-                            {"tool_name": call.name, "capability": fixture.CAPABILITY if call.name == fixture.NAME else None,
-                             "risk": fixture.RISK if call.name == fixture.NAME else None, "iteration": iteration,
+                            {"tool_name": call.name, "capability": fixture.CAPABILITY if call.name == fixture.NAME else mcp.approval.server.capability if mcp else None,
+                             "risk": fixture.RISK if call.name == fixture.NAME else mcp.approval.server.risk if mcp else None, "iteration": iteration,
                              "call_number": tool_count, "call_id": call.call_id, "error_code": code,
                              "input_hash": hashlib.sha256(json.dumps(call.arguments, sort_keys=True).encode()).hexdigest()})
                         if code:
@@ -835,12 +851,20 @@ class RunCoordinator:
                             break
                         seen_calls.add(call.call_id)
                         started = time.perf_counter()
+                        provenance = None
                         try:
                             verified_context = ToolExecutionContext(run_id=run_id, organization_id=context.organization_id,
                                 project_id=context.project_id, deadline_at=time.time() + self._remaining(run_id, context),
                                 call_number=tool_count)
-                            data = fixture.execute(call.arguments, verified_context)
-                            data = fixture.FixtureOutput.model_validate(data).model_dump()
+                            if mcp is None:
+                                data = fixture.execute(call.arguments, verified_context)
+                                data = fixture.FixtureOutput.model_validate(data).model_dump()
+                            else:
+                                def reauthorize(step=iteration, name=call.name, binding=mcp.approval.binding_hash):
+                                    self._tool_authority(run_id, context, step)
+                                    self.mcp_tools.current(context, name, binding)
+                                data, provenance = await self._bounded(self.mcp_tools.invoke(context, call,
+                                    verified_context, mcp.approval.binding_hash, reauthorize), self._remaining(run_id, context))
                         except ValueError:
                             failure = "tool_input_invalid"
                             data = None
@@ -853,11 +877,12 @@ class RunCoordinator:
                             AuditStatus.FAILED if failure else AuditStatus.COMPLETED,
                             {"call_id": call.call_id, "tool_name": call.name, "error_code": failure,
                              "output_hash": hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest(),
+                             **({"mcp_provenance": provenance} if provenance else {}),
                              "duration_seconds": time.perf_counter() - started})
                         if failure:
                             break
-                        actions.append({"action_id": call.call_id, "action": "fixture.read", "tool": fixture.NAME,
-                            "capability": fixture.CAPABILITY})
+                        actions.append({"action_id": call.call_id, "action": "mcp.read" if mcp else "fixture.read", "tool": call.name,
+                            "capability": mcp.approval.server.capability if mcp else fixture.CAPABILITY})
                         history.append({"role": "tool", "name": call.name, "tool_call_id": call.call_id,
                             "content": json.dumps(data, sort_keys=True)})
                 if failure or not turn.tool_calls:

@@ -1,5 +1,214 @@
 # Core Execution Hardening
 
+## Stage 2 Milestone A — governed local MCP, 15 October 2026
+
+Baseline: `development`, `1e4ae73261f7aa6a1b4ba264f84028682093c4a0`, clean
+working tree before this work. The Stage 1 CI result belongs to that committed
+baseline; it does not verify subsequent Stage 2 changes. Private PRD,
+architecture, technology ADR and security documents remain unavailable: the
+sibling documentation checkout contains an index, not those normative sources.
+
+### Audit and ownership
+
+| Component | Audited status before change | Reused / extension | Gap / security boundary |
+|---|---|---|---|
+| Capability projection | EXISTING & USABLE | `Capabilities.read` | Projection alone never grants a tool |
+| Version / assignment | EXISTING & USABLE | Immutable `AgentVersion.metadata`, canonical payload hash and active assignment | Bind exact MCP approval hash without changing historical formats |
+| Core authorization | EXISTING & USABLE | `RunCoordinator._claim`, `_tool_authority`, current effective permissions | Human `tool:register` added only for organization admins; run actors retain `run:create` |
+| Tool dispatcher | PARTIAL | `_execute_governed_turns` | Former fixture-only path now dispatches one explicitly approved MCP alias |
+| MCP registration / transport | MISSING | New responsibility owners `modules/core/tools.py`, `packages/tool_adapters/mcp.py`, `packages/contracts/tool.py` | Session-scoped approvals, strict local HTTP profile; no public registration API |
+| Credentials / OAuth | MISSING for connectors | In-memory `SecretStr` supplied by trusted composition | No vault, plaintext persistence, OAuth login or restoration; restart denies old bindings |
+| HTTP API connector | MISSING | Existing model transport is a confinement pattern only | No arbitrary URL tool and no generic API adapter added |
+| Webhook | EXISTING & USABLE, limited | Existing `WebhookIngress` / automation owner | Bearer credential hash, TLS, exact approved config, deduplication, expiry, rate limit, rotation/revocation; provider-specific signature adapters absent |
+| Network egress | PARTIAL | Exact endpoint guard in MCP adapter | Only explicitly allowlisted `127.0.0.1:<port>/mcp`; external TLS, DNS and redirects denied |
+| Evidence / persistence | EXISTING & USABLE | Signed Core audit, execution record, effective-limits JSON | No migration or second evidence store |
+| Bench | EXISTING & USABLE | Existing runner / graders / suite registry | Separate strict `read_only_mcp_fixture` profile preserves fixture and Research Safety contracts |
+| Limits / recovery | EXISTING & USABLE | Core budget, owner fence, claim idempotency, deadlines and cancellation | Adapter additionally bounds protocol requests, bytes, attempts and tool calls |
+
+### Registration and execution contract
+
+Trusted backend composition supplies an explicit `mcp_endpoints` allowlist to the
+existing coordinator. The default is empty. `core.mcp_tools.register` requires a
+current authenticated human organization admin in the exact project, matching
+owner, enabled server and owner-classified `READ_ONLY` risk. Other risk classes
+are rejected; MCP annotations are not authorization. Discovery uses the official
+SDK and verifies server name/version, protocol and exact input/output schemas.
+Server descriptions are never copied into model instructions.
+
+The approval is Core-signed and binds server, endpoint, scope, owner, tool alias,
+remote tool, schemas, policy limits, an approval nonce and a keyed credential
+identity. Raw credentials are not included. Registration replacement requires
+revocation; atomic registration prevents competing aliases retaining authority
+for the same server. Rotation/re-registration changes the binding, so existing
+published versions cannot silently acquire the replacement connection.
+
+`AgentVersion.metadata.mcp_bindings` maps its single MCP grant to that exact
+approval hash. Existing version serialization and historical signatures are
+unchanged. Factory evaluates, approves, publishes and assigns through existing
+Core/Bench gates. No draft automatically receives a grant. Per-call Core checks
+revalidate the actor, owner, immutable version, active assignment, claim, budget,
+deadline and binding, including after discovery immediately before `tools/call`
+and after the response. Authorization is repeated at the physical HTTP dispatch
+boundary as well, so revocation while the SDK queues a call prevents transmission.
+The server does not choose ARYN scope or permissions.
+
+`Agent proposal → Core policy/grant check → signed invocation → official MCP
+ClientSession → approved fixture endpoint → validated structured result → Core
+audit/provenance → bounded model continuation → schema-validated final output`.
+
+Hermes receives only the Core-authored alias/input declaration and validated
+result data. It receives neither endpoint nor credential. Native toolsets remain
+disabled, native execution remains prohibited, and each Hermes turn still has
+`max_iterations=1`; Core owns the multi-turn loop and exact model identity. The
+model capability probe remains the existing fixture-only probe, not a second MCP
+probe or a live-provider attestation.
+
+### Transport, dependency and limits
+
+Pinned official `mcp==1.30.0` (MIT, maintained 1.x line) is used rather than a
+handwritten protocol. Protocol is exactly `2025-11-25`. This release reuses the
+existing httpx stack; adopting the separate newer httpx2 stack is outside this
+slice. Its wheel SHA-256 was checked against PyPI:
+`666edb5009503e1047c9d60346a756f94b261f05cc2625f23d41c728ffc484d0`.
+Lock additions: mcp, httpx-sse and pydantic-settings (MIT), python-dotenv and
+sse-starlette (BSD-3-Clause), python-multipart (Apache-2.0), Windows pywin32 (PSF).
+No pre-existing locked package version was changed. SDK imports are lazy and
+remain outside the native Hermes process.
+
+The supported transport profile is authenticated **stateless JSON Streamable
+HTTP over approved literal loopback only**. No stdio/process launch, OAuth
+discovery, SSE, redirects, proxy/environment credentials or retry is enabled.
+The SDK handles JSON-RPC; the httpx guard enforces exact destination/method,
+protocol method allowlist, at most eight physical HTTP requests per session and
+at most one `tools/call`. Repeated dispatch is rejected before networking.
+Default response limit is 16,384 bytes, configurable up to 32,768; both declared
+and streamed sizes are bounded, compression and non-JSON responses rejected.
+Per-session timeout is at most five seconds and cannot exceed the Core deadline.
+Per-connection read attempts are at most twelve per minute (failure consumes an
+attempt). Approval lifetime is at most 300 seconds; availability observation
+older than 60 seconds denies admission. A session has at most 128 retained
+invocation identities, then denies further calls. These bounds are local MCP
+bounds, not claims about external model billing.
+
+Input/output use existing strict JSON/schema validators, including refusal of
+external schema references. Output must contain exact organization/project
+constants and match both MCP structured content and its single text JSON
+representation. Remote errors, malformed/oversized results, schema/server drift,
+credential-bearing output and foreign scope fail closed. Timeout/cancellation
+preserve existing `outcome_unknown` and reservation semantics; unknown effects
+are never automatically retried. Actual protocol request ID, request count,
+binding/schema/endpoint/input/output digests, scoped server identity, bytes and
+measured duration enter signed Core audit. No token or cost estimate is fabricated.
+
+Approval observation and expiry use a single captured clock value, avoiding a
+sub-millisecond lifetime overflow on high-resolution Linux clocks. The positive
+protocol test advances the clock on every read to verify this on Windows too.
+The timeout test measures the adapter boundary under its normal three-second
+policy, separately from Core claim/settlement database work, while retaining the
+five-second adapter maximum, unknown-state reservation and no-retry assertions.
+
+### Scope and follow-up gates
+
+`tests/mcp_fixture.py` owns a disposable official-SDK server and synthetic data;
+`tests/integration/test_mcp_tools.py` owns actual protocol/Core/Factory/Bench
+acceptance and negative cases. These two test modules and the three responsibility
+owners above are the only new source files. Existing native Hermes and PostgreSQL
+tests are extended. Model responses and their token usage are explicitly test
+doubles, never proof of live provider support. See the verification results below
+for actual commands; external MCP connectivity and live model inference are separate
+unverified gates.
+
+Milestone B proposal (approval required before implementation): explicit fixed
+HTTPS resource/method adapters, DNS/IP destination enforcement, redirect refusal,
+bounded requests/responses, encrypted scoped server-side credential lifecycle and
+connection revision/revocation. Reuse existing webhook admission, queues, owner,
+deduplication and audit; add provider-specific signature validation only to that
+ingress. Provider sequence/watermark ordering is not supplied by current bearer
+ingress and needs a connector-specific contract. Local Windows credential storage
+and Hosted encrypted secret storage require separate approved lifecycle designs;
+neither is implicitly provided by the current in-memory test connection.
+MCP events, automation tool grants and workflow restrictions remain
+unchanged. No generic HTTP tool, second scheduler, vault or OAuth placeholder is
+introduced by Milestone A.
+
+Milestone C proposed order: GitHub selected-repository read-only GitHub App;
+Telegram authenticated inbound updates with explicit user/chat-project mapping;
+Google Workspace user-consented read-only retrieval after OAuth state, callback,
+vault and revocation controls; WhatsApp official Business Platform only, after
+webhook verification and consent policy. Sending messages/email, writes, merges
+and production account access require separate policy and approval. Each connector
+needs its own scopes, resource allowlist, tests and external-access approval.
+Official references: [GitHub permissions](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/choosing-permissions-for-a-github-app),
+[Telegram webhooks](https://core.telegram.org/bots/api#setwebhook),
+[Google OAuth](https://developers.google.com/identity/protocols/oauth2/web-server).
+Meta's official documentation returned HTTP 429/inaccessible during this audit;
+WhatsApp scope/API details remain a follow-up, not an audited integration claim.
+
+Residual limits: ephemeral approvals/rate counters and in-memory secret handling;
+no persisted connector inventory or encrypted connector vault; local stateless
+JSON only, one MCP grant per version; no external MCP, OAuth, API connector,
+messaging, frontend feature, migration or live inference in the implementation
+scope. Delivery requires separate owner authorization.
+The existing Stage 1 provider provenance/retry blocker is not removed by offline
+MCP verification.
+
+### Offline verification and delivery state
+
+Environment: Windows, Python 3.12.12, official MCP 1.30.0, httpx 0.28.1,
+cached Node 22.23.3, disposable loopback/tmpfs PostgreSQL 16.13. Native Hermes
+is the installed interpreter under an isolated HOME/config with model HTTP
+doubles and outbound sockets denied. The fixture uses the actual SDK server,
+client, JSON-RPC initialization/discovery/call and real loopback HTTP; model
+responses and their token counts are explicitly synthetic doubles.
+
+| Actual command / check | Observed result |
+|---|---|
+| `uv run --frozen pytest tests/integration/test_mcp_tools.py -q --tb=short` | 63 passed before the last single-clock correction; positive protocol test repeated after that correction: 1 passed. All 63 are also passed on final source in the complete backend run below |
+| `uv run --frozen --extra dev pytest -m 'not postgresql' --backend-shard=N/4 -q --tb=short --durations=8 -o faulthandler_timeout=120`, N=1,2,3 then 4 alone | Final source: 1266 passed, 5 skipped, zero failures/errors; 1271 exact test identities covered once |
+| Final backend partitions 1/4, 2/4, 3/4, 4/4 | 316+2 skip / 317+1 skip / 316+2 skip / 317; 482.65s / 467.71s / 512.49s / 335.70s |
+| Final-source JUnit subsets | MCP 63 passed; existing governed execution/probe 103 passed; native Hermes boundary 1 passed in 13.23s |
+| `uv run --frozen pytest tests/postgresql -q --tb=short` | 142 passed. This complete run preceded the final MCP dispatch-fence/single-clock corrections; it is not labelled a complete final-source PostgreSQL run |
+| `uv run --frozen pytest tests/postgresql/test_hosted_persistence.py -k 'mcp or governed or capability_probe or model' -q --tb=short` | Final corrected source: 8 passed, 24 deselected, 65.81s; restricted writer, actual MCP protocol, signed settlement/replay and duplicate/stop fencing |
+| `npm run format:check`, `npm run lint`, `npm test -- --reporter=json --outputFile=../../.local/mcp-verification-20261015/frontend.json`, `npm run typecheck`, `npm run build` | Passed; 125 frontend tests, zero failure/pending; no frontend source changes |
+| `uv run --frozen ruff check .`, `uv lock --check --offline`, `python scripts/check_repository.py`, actionlint, `git diff --check` | Passed |
+| `pip-audit --skip-editable --format json` and `scripts/check_dependency_audit.py` | No known vulnerabilities; complete inventory of 87 distributions verified |
+| `npm audit --audit-level=high --json` | Zero advisories at every severity |
+| Redacted Gitleaks directory scan over all 21 changed/new source files | No leaks; includes the five untracked modules/tests, not merely `git diff` |
+
+The five skips are three unauthorized live model tests and two live local-runtime
+health/capability checks without the required API server credential. No live
+request was authorized or executed. The earlier timeout assertion incorrectly
+included Core database work; its failed report is retained and is not counted
+as passing. Superseded batches were interrupted after source corrections, then
+all four final partitions were run against the same 19-file source/contract/
+test/lock snapshot. Documentation is outside that code snapshot.
+
+Final artifacts: `.local/mcp-verification-20261015/backend-verified-[1-4].xml`,
+`backend-verified-selection.json`, `source-verified-sha256.json`,
+`verification-summary.json`, `postgres-clock-verified.xml`, frontend/audit JSON.
+Exact JUnit identity sets match each disjoint partition and the complete manifest.
+Source aggregate SHA-256:
+`30be842d253ce90a936318ef2df873ef19f94535f2f93115d432add44a9bfdb1`.
+The disposable PostgreSQL container was removed after verification.
+
+Contract changes are additive: private `ToolTurnRequest.tool_declarations`;
+human-admin-only `tool:register`; strict MCP approval/invocation/provenance
+contracts; `read_only_mcp_fixture` Bench profile/suite; version metadata and
+captured-limit MCP binding maps. Existing run/audit envelopes, historical version
+formats and model capability receipts are unchanged. No public endpoint,
+database table/migration, frontend feature, fallback or native toolset is added.
+
+**Milestone A COMPLETE — OFFLINE VERIFIED**, limited to the approved local
+stateless JSON read-only profile. External MCP connectivity and live provider
+tool-calling remain **NOT VERIFIED**. Secure API/Webhook connectivity is
+**PARTIAL** (existing webhook only), third-party connectors are **NOT STARTED**,
+and Stage 2 overall remains **PARTIAL**. At completion of the local verification
+above, Linux/remote CI had not been run and the change was uncommitted. Branch
+and HEAD were still the baseline; 16 existing files were modified and five
+necessary responsibility/test modules added. No commit, push, merge, deployment,
+real credential change or external account access had occurred. Subsequent
+authorized delivery must be verified against its exact commit SHA.
+
 ## Provider preflight follow-up — 15 October 2026
 
 Baseline rechecked: `development`, HEAD

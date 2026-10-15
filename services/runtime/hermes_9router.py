@@ -286,9 +286,16 @@ def build_adapter(settings, runtime_key, port=None):
                                   **callbacks)
             if receipt.tool_names is not None:
                 from packages.tool_adapters.fixture import NAME, definition
-                if receipt.tool_names not in {(), (NAME,)}:
+                if receipt.tool_declarations:
+                    from packages.contracts.tool import ToolDeclaration
+                    declarations = [ToolDeclaration.model_validate(value) for value in receipt.tool_declarations]
+                    if tuple(value.name for value in declarations) != receipt.tool_names:
+                        raise RuntimeError("Governed MCP declaration differs.")
+                    agent.tools = [value.definition() for value in declarations]
+                elif receipt.tool_names not in {(), (NAME,)}:
                     raise RuntimeError("Unregistered governed tool definition.")
-                agent.tools = [definition()] if receipt.tool_names else []
+                else:
+                    agent.tools = [definition()] if receipt.tool_names else []
                 agent.valid_tool_names = set(receipt.tool_names)
             agent._hermes_api_runtime = {"provider": "custom", "model": model, "route_source": "aryn_9router"}
             return agent
@@ -300,7 +307,7 @@ def build_adapter(settings, runtime_key, port=None):
             body = await request.json()
             try:
                 turn = ToolTurnRequest.model_validate(body)
-                if turn.tool_names not in [[], [NAME]] or turn.request.session_id:
+                if (turn.tool_names not in [[], [NAME]] and not turn.tool_declarations) or turn.request.session_id:
                     raise ValueError("Invalid governed turn.")
                 # Only paired Core-produced assistant/tool history, never native session ingress.
                 if turn.history:
@@ -324,6 +331,7 @@ def build_adapter(settings, runtime_key, port=None):
             except (ValueError, TypeError):
                 return web.json_response({"error": {"code": "invalid_governed_turn"}}, status=422)
             receipt = ModelReceipt(turn.request.model, tool_names=tuple(turn.tool_names),
+                tool_declarations=tuple(value.model_dump(mode="json") for value in turn.tool_declarations),
                 transport={"temperature": turn.request.temperature, "max_tokens": turn.request.max_tokens})
             receipt.session_id = "aryn_" + uuid.uuid4().hex
             token = TURN.set(receipt)

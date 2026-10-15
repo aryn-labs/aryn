@@ -38,6 +38,7 @@ class PermissionEngine:
             "division:manage",
             "run:create",
             "model:verify",
+            "tool:register",
             "run:read",
             "run:cancel",
             "run:trace",
@@ -77,6 +78,7 @@ class PermissionEngine:
 
     # Actions strictly reserved for human actors; autonomous agents are forbidden
     HUMAN_ONLY_ACTIONS: Set[str] = {
+        "tool:register",
         "model:verify",
         "project:create",
         "project:update",
@@ -269,7 +271,7 @@ class PermissionEngine:
             else:
                 effective_role = org_role
 
-        if action in {"project:create", "project:update", "division:manage", "version:approve", "bench:accept_baseline", "agent:rollback"} and org_role != "admin":
+        if action in {"project:create", "project:update", "division:manage", "version:approve", "bench:accept_baseline", "agent:rollback", "tool:register"} and org_role != "admin":
             return PolicyDecision(allowed=False, reason="Active organization admin authority is required.", matched_rules=["RULE_ORG_ADMIN_REQUIRED"])
 
         if action == "version:publish" and org_role not in {"admin", "operator"}:

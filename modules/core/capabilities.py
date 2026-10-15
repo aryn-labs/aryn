@@ -132,6 +132,7 @@ class Capabilities(SignedRecords):
                         ],
                     )
                 )
+            values.extend(Capability.model_validate(value) for value in self.core.mcp_tools.summaries(ctx))
             return CapabilityRegistry(
                 organization_id=ctx.organization_id,
                 project_id=ctx.project_id,

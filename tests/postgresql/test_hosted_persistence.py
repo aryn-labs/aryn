@@ -31,6 +31,7 @@ from packages.contracts.agent import AgentVersion, VersionIntegrityError
 from packages.contracts.runtime import RunRequest
 from tests.integration.test_agent_registry_rollback import publications
 from tests.postgresql.conftest import migrate_to
+from tests.mcp_fixture import mcp_server as mcp_server
 
 pytestmark = pytest.mark.postgresql
 
@@ -503,3 +504,29 @@ async def test_capability_probe_stop_fences_restricted_writer(hosted_lifecycle, 
 async def test_capability_probe_settlement_revocation_with_restricted_writer(hosted_lifecycle):
     from tests.security.test_governed_tools import test_capability_probe_permission_revoked_at_settlement_cannot_issue_receipt
     await test_capability_probe_permission_revoked_at_settlement_cannot_issue_receipt(hosted_lifecycle)
+
+
+@pytest.mark.asyncio
+async def test_mcp_protocol_signed_settlement_and_replay_with_restricted_writer(hosted_lifecycle, mcp_server):
+    import json
+    from tests.integration.test_mcp_tools import published_mcp
+    db, ctx, runtime, core, assignment, approval, _ = await published_mcp(hosted_lifecycle, mcp_server)
+    result = await core.execute_assigned_agent_turn(assignment.id, "Read the scoped MCP resource.", ctx, "postgres-mcp")
+    assert result.status.value == "completed" and result.execution_claim_verified
+    assert len(mcp_server.calls) == 1 and len(runtime.turns) == 2
+    assert await core.get_managed_result(result.run_id, ctx) == result
+    assert (await core.get_managed_trace(result.run_id, ctx)).available
+    assert await core.execute_assigned_agent_turn(assignment.id, "Read the scoped MCP resource.", ctx, "postgres-mcp") == result
+    assert len(mcp_server.calls) == 1 and len(runtime.turns) == 2
+    with db.session() as session:
+        row = RunStateRepository(session).get_run(ctx, result.run_id)
+        assert row.usage_settled and row.reserved_tokens == 0 and row.total_tokens == 30
+        assert json.loads(row.effective_limits_json)["mcp_bindings"] == {approval.server.declaration.name: approval.binding_hash}
+        assert BudgetRepository(session).get_budget(ctx).reserved_tokens == 0
+        assert not session.execute(text("SELECT rolsuper FROM pg_roles WHERE rolname=current_user")).scalar()
+
+
+@pytest.mark.asyncio
+async def test_mcp_duplicate_and_stop_fencing_with_restricted_writer(hosted_lifecycle, mcp_server):
+    from tests.integration.test_mcp_tools import test_duplicate_claim_and_cancellation_do_not_dispatch_mcp
+    await test_duplicate_claim_and_cancellation_do_not_dispatch_mcp(hosted_lifecycle, mcp_server)

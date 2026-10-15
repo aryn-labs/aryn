@@ -47,13 +47,17 @@ def provider(request):
     body = json.loads(request.content)
     assert request.headers["Authorization"] == "Bearer " + settings.api_key.get_secret_value()
     calls.append(body)
-    if body["model"] == "test/tool-model":
+    if body["model"] in {"test/tool-model", "test/mcp-tool-model"}:
         from packages.tool_adapters.fixture import definition
-        assert body.get("tools") == [definition()]
+        from packages.contracts.tool import ToolDeclaration
+        declaration = ToolDeclaration(name="aryn_mcp_project_lookup", input_schema={"type": "object",
+            "properties": {"key": {"enum": ["aryn-core"]}}, "required": ["key"], "additionalProperties": False})
+        selected = declaration.definition() if body["model"] == "test/mcp-tool-model" else definition()
+        assert body.get("tools") == [selected]
         continued = any(m.get("role") == "tool" for m in body["messages"])
         message = {"role": "assistant", "content": '{"summary":"ARYN Core owns execution authorization."}'} if continued else {
             "role": "assistant", "content": None, "tool_calls": [{"id": "native_fixture_call", "type": "function",
-                "function": {"name": "aryn_fixture_lookup", "arguments": '{"key":"aryn-core"}'}}]}
+                "function": {"name": selected["function"]["name"], "arguments": '{"key":"aryn-core"}'}}]}
         return httpx.Response(200, json={"id": "native-tool-step", "model": body["model"], "created": 1,
             "choices": [{"index": 0, "message": message, "finish_reason": "stop" if continued else "tool_calls"}],
             "usage": {"prompt_tokens": 7, "completion_tokens": 4, "total_tokens": 11}})
@@ -259,6 +263,43 @@ async def check():
     assert probe_final.result.model_evidence.runtime_configuration == proposed.result.model_evidence.runtime_configuration
     assert network_attempts == [] and len(calls) == 12
     print("REAL_HERMES_FIXED_CAPABILITY_PROBE_PASS")
+    # Actual installed Hermes consumes Core declarations but never imports or
+    # dispatches MCP. Protocol integration is tested separately through Core.
+    from packages.contracts.tool import ToolDeclaration
+    declaration = ToolDeclaration(name="aryn_mcp_project_lookup", input_schema={"type": "object",
+        "properties": {"key": {"enum": ["aryn-core"]}}, "required": ["key"], "additionalProperties": False})
+    mcp_turn = ToolTurnRequest(run_id="core_mcp_run", organization_id="isolated-org", project_id="isolated-project",
+        iteration=1, tool_names=[declaration.name], tool_declarations=[declaration],
+        request=RunRequest(model="test/mcp-tool-model", max_tokens=128, prompt="Read approved MCP resource.",
+            metadata={"initial_prompt": "Read approved MCP resource."}))
+    invalid = mcp_turn.model_dump(mode="json")
+    invalid["tool_names"] = ["terminal"]
+    assert (await dispatch("POST", "/aryn/turn", invalid)).status == 422
+    invalid = mcp_turn.model_dump(mode="json")
+    invalid["tool_declarations"] = []
+    assert (await dispatch("POST", "/aryn/turn", invalid)).status == 422
+    assert len(calls) == 12
+    response = await dispatch("POST", "/aryn/turn", mcp_turn.model_dump(mode="json"))
+    assert response.status == 200, response.body
+    mcp_proposed = ToolTurnResult.model_validate_json(response.body)
+    call = mcp_proposed.tool_calls[0]
+    assert call.name == declaration.name and call.arguments == {"key": "aryn-core"}
+    assert mcp_proposed.result.status.value == "running" and len(calls) == 13
+    mcp_turn.iteration = 2
+    mcp_turn.history = [{"role": "user", "content": mcp_turn.request.prompt},
+        {"role": "assistant", "content": "", "tool_calls": [{"id": call.call_id, "type": "function",
+            "function": {"name": call.name, "arguments": json.dumps(call.arguments)}}]},
+        {"role": "tool", "name": call.name, "tool_call_id": call.call_id, "content": json.dumps(data)}]
+    mcp_turn.request.prompt = "Continue using the verified tool result."
+    response = await dispatch("POST", "/aryn/turn", mcp_turn.model_dump(mode="json"))
+    assert response.status == 200, response.body
+    mcp_final = ToolTurnResult.model_validate_json(response.body)
+    assert mcp_final.result.status.value == "completed" and not mcp_final.tool_calls
+    assert json.loads(mcp_final.result.output) == {"summary": data["text"]}
+    assert mcp_final.result.actual_model == "test/mcp-tool-model"
+    assert mcp_final.result.model_evidence.origin == "isolated_test_double"
+    assert len(calls) == 14 and network_attempts == []
+    print("REAL_HERMES_MCP_DECLARATION_CONTINUATION_PASS")
     import logging
     logging.getLogger("runtime.security.probe").warning("credential %s gateway %s", os.environ["API_SERVER_KEY"], settings.api_key.get_secret_value())
     await api.disconnect()

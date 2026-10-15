@@ -84,6 +84,10 @@ class BenchRunner:
                 raise QualityGateFailedError("Bench requires verified mocked write isolation.")
             if scenario.runtime_requirements.write_isolation == "read_only_fixture" and caps.details.get("tool_isolation") != "read_only_fixture":
                 raise QualityGateFailedError("Bench requires verified read-only fixture isolation.")
+            if scenario.runtime_requirements.write_isolation == "read_only_mcp_fixture":
+                if self.coordinator is None or caps.enabled_toolsets or not caps.supports_governed_tool_turns:
+                    raise QualityGateFailedError("MCP fixture evaluation requires confined Core tool mediation.")
+                self.coordinator.mcp_tools.pins(context, version, set(version.tool_grants))
         await bounded(self.runtime_adapter.require_model_available(version.model), max(0, preflight_deadline - time.monotonic()))
         result = BenchEvaluationResult(
             evaluation_id=f"eval_{uuid.uuid4().hex[:16]}", blueprint_id=version.blueprint_id,

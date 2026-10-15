@@ -25,6 +25,7 @@ class ModelReceipt:
     dispatch_lock: object = field(default_factory=threading.Lock, repr=False)
     transport: object = field(default=None, repr=False)
     tool_names: tuple[str, ...] | None = None
+    tool_declarations: tuple = ()
     tool_calls: list[ToolCall] = field(default_factory=list)
     usage: RunUsage | None = None
     evidence_origin: str = "unavailable"
@@ -72,7 +73,14 @@ class ExactGatewayTransport(httpx.BaseTransport):
                 return self._reject(request, "gateway_route_mismatch")
         else:
             from packages.tool_adapters.fixture import NAME, definition
-            expected = [definition()] if self.receipt.tool_names == (NAME,) else []
+            if self.receipt.tool_declarations:
+                from packages.contracts.tool import ToolDeclaration
+                declarations = [ToolDeclaration.model_validate(value) for value in self.receipt.tool_declarations]
+                if tuple(value.name for value in declarations) != self.receipt.tool_names:
+                    return self._reject(request, "gateway_tool_schema_mismatch")
+                expected = [value.definition() for value in declarations]
+            else:
+                expected = [definition()] if self.receipt.tool_names == (NAME,) else []
             if body.get("tools", []) != expected:
                 return self._reject(request, "gateway_tool_schema_mismatch")
         with self.receipt.dispatch_lock:

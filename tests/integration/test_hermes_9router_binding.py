@@ -46,3 +46,4 @@ def test_installed_hermes_executes_via_guarded_gateway_double(tmp_path):
     assert "REAL_HERMES_CONFINED_ROUTES_PASS" in output
     assert "REAL_HERMES_GOVERNED_PROPOSAL_CONTINUATION_PASS" in output
     assert "REAL_HERMES_FIXED_CAPABILITY_PROBE_PASS" in output
+    assert "REAL_HERMES_MCP_DECLARATION_CONTINUATION_PASS" in output

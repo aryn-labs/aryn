@@ -1,5 +1,16 @@
 # Generic Bench Evaluation Engine
 
+15 October 2026: `governed-mcp` 1.0.0 adds the narrowly scoped
+`read_only_mcp_fixture` isolation profile to the existing runner and suite registry.
+It requires the current Core-approved `aryn_mcp_project_lookup` binding and actual
+local MCP protocol transport. Authorized selection must produce one `mcp.read`
+action in `aryn.mcp.project_demo.project_lookup.read`; the no-grant scenario must
+produce none. Existing schema, identity, permission, integrity and resource
+graders remain authoritative. The original `read_only_fixture` profile is still
+fixture-only; neither profile admits live write adapters. Model doubles cannot
+attest live providers, and replay does not invoke MCP. See the Stage 2 contract
+and limits in [Core execution hardening](core-execution-hardening.md).
+
 13 October 2026 extension: the existing registry also contains `governed-fixture`
 1.0.0. It requires the isolated read-only fixture boundary, schema/identity/
 integrity/resource/action graders and an exact tool-selection grader. The

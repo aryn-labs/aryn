@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from packages.contracts.core import SecurityContext
 from packages.contracts.model import ModelProbeBinding
+from packages.contracts.tool import ToolDeclaration
 
 
 class RunStatus(str, Enum):
@@ -70,18 +71,26 @@ class ToolTurnRequest(BaseModel):
     iteration: int = Field(ge=1, le=3, strict=True)
     request: RunRequest
     tool_names: List[str] = Field(max_length=1)
+    tool_declarations: List[ToolDeclaration] = Field(default_factory=list, max_length=1)
     history: List[Dict[str, Any]] = Field(default_factory=list, max_length=8)
     verification_mode: Optional[Literal["tool_calling"]] = None
 
     @model_validator(mode="after")
     def bounded_probe(self):
+        from packages.tool_adapters.fixture import NAME
+        if self.tool_names in [[], [NAME]]:
+            if self.tool_declarations:
+                raise ValueError("Fixture declarations cannot be replaced.")
+        elif ([item.name for item in self.tool_declarations] != self.tool_names
+                or len(self.tool_names) != 1):
+            raise ValueError("An exact Core MCP proposal declaration is required.")
         if self.verification_mode is None:
             return self
         from packages.contracts.model import TOOL_PROBE_PROMPT, TOOL_PROBE_SYSTEM
         from packages.contracts.bench import strict_json_loads
         from packages.tool_adapters.fixture import NAME, FixtureInput, FixtureOutput
         r = self.request
-        valid = (self.tool_names == [NAME] and self.iteration <= 2 and r.max_iterations == 2
+        valid = (self.tool_names == [NAME] and not self.tool_declarations and self.iteration <= 2 and r.max_iterations == 2
             and r.max_tool_calls == 1 and r.max_tokens <= 128 and r.timeout_seconds <= 60
             and r.temperature == 0 and r.system_instructions == TOOL_PROBE_SYSTEM and not r.session_id
             and r.metadata == {"initial_prompt": TOOL_PROBE_PROMPT}

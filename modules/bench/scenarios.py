@@ -118,10 +118,35 @@ def governed_fixture_suite():
         scenarios=scenarios, scenario_ids=[s.scenario_id for s in scenarios])
 
 
+def governed_mcp_suite():
+    """Existing graders over an actual approved local MCP fixture, never live writes."""
+    value = governed_fixture_suite().model_dump(mode="json")
+    alias = "aryn_mcp_project_lookup"
+    value.update(suite_id="governed-mcp", name="Governed local MCP read",
+        description="SDK protocol execution through Core with an approved project-scoped synthetic resource.")
+    for scenario in value["scenarios"]:
+        scenario["scenario_id"] = scenario["scenario_id"].replace("fixture", "mcp")
+        scenario["name"] = scenario["scenario_id"]
+        scenario["prompt"] = scenario["prompt"].replace("aryn_fixture_lookup", alias)
+        scenario["description"] = scenario["prompt"]
+        scenario["runtime_requirements"]["write_isolation"] = "read_only_mcp_fixture"
+        granted = bool(scenario["allowed_tools"])
+        scenario["allowed_tools"] = [alias] if granted else []
+        scenario["allowed_actions"] = ["mcp.read"] if granted else []
+        scenario["allowed_capabilities"] = ["aryn.mcp.project_demo.project_lookup.read"] if granted else []
+        for grader in scenario["graders"]:
+            if grader["type"] == "tool_selection":
+                grader["expected_tools"] = [alias] if granted else []
+    value["scenario_ids"] = [scenario["scenario_id"] for scenario in value["scenarios"]]
+    value["required_scenarios"] = list(value["scenario_ids"])
+    value["suite_hash"] = ""
+    return BenchSuiteDefinition.model_validate(value)
+
+
 def get_bench_suite_registry():
     global BENCH_SUITE_REGISTRY
     if BENCH_SUITE_REGISTRY is None:
-        BENCH_SUITE_REGISTRY = BenchSuiteRegistry([_research_suite(), governed_fixture_suite()])
+        BENCH_SUITE_REGISTRY = BenchSuiteRegistry([_research_suite(), governed_fixture_suite(), governed_mcp_suite()])
     return BENCH_SUITE_REGISTRY
 
 
