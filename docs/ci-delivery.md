@@ -39,6 +39,26 @@ Live model tests remain opt-in and CI fixes the opt-in to `0`. Missing live runt
 credentials remain explicit skips. The dedicated native runtime check cannot skip
 when its source/interpreter is configured; it does not submit paid inference.
 
+### Windows backend performance investigation
+
+Compare identical test identities in each shard's JUnit and selection manifest,
+including incomplete execution after cancellation. JUnit totals include setup,
+call and teardown; the remote `--durations=15` log resolves only the slowest phases.
+Use a scoped local Pytest reporting plugin for complete phase/fixture profiling;
+do not interpret missing remote phase data as zero duration. Runner/storage variance
+must be distinguished from a persistently expensive partition before rebalancing.
+The sorted round-robin selector and complete, disjoint coverage gate remain unchanged.
+
+The Studio SQLite fixture now uses the lifecycle fixture's explicit DDL transaction
+for its disposable schema, retaining every table, index, protection trigger and
+foreign key. Regression tests compare the complete schema against `init_db`, check
+SQLite integrity and foreign keys, and inject a mid-DDL failure to verify atomic
+rollback and engine disposal. App-startup failure also disposes the engine. This
+optimization does not change production initialization, migration execution,
+application transactions, independent durable history commitments or PostgreSQL.
+Measure the resulting shard durations before proposing a timeout change; local
+improvements do not establish a remote CI pass or a guaranteed hosted-runner bound.
+
 ## Lint and security policy
 
 Repository-owned Ruff configuration gates `E4`, `E7`, `E9`, `F`, `B` across all Python

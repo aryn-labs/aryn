@@ -3,12 +3,13 @@ import secrets
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import text
+from sqlalchemy import event, text
 
 from database.connection import DatabaseManager, create_db_engine, init_db
 from database.repositories.organization_repo import OrganizationRepository
 from database.schema import (
     AgentAssignmentModel,
+    Base,
     RunStateModel,
     UsageBudgetModel,
 )
@@ -29,17 +30,92 @@ PREFIX = f"/api/projects/{DEV_PROJECT}"
 @pytest.fixture
 def studio(tmp_path):
     db = DatabaseManager(create_db_engine(f"sqlite:///{tmp_path / 'studio.sqlite3'}"))
-    init_db(db.engine)
-    runtime = IsolatedTestRuntime()
-    app = create_app(db, runtime, testing=True)
-    with TestClient(app, base_url=ORIGIN, client=("127.0.0.1", 50000)) as client:
-        response = client.post("/api/session", json={}, headers={"Origin": ORIGIN})
-        assert response.status_code == 200
-        client.headers.update(
-            {"Origin": ORIGIN, "X-CSRF-Token": response.json()["csrf"]}
-        )
-        yield client, db, runtime, app
-    db.engine.dispose()
+    try:
+        # Match lifecycle's disposable SQLite setup: legacy sqlite3 otherwise
+        # autocommits every table/index/trigger, with a durable write per DDL.
+        # This changes only fixture initialization, never application sessions.
+        with db.engine.begin() as connection:
+            connection.exec_driver_sql("BEGIN")
+            Base.metadata.create_all(connection)
+        runtime = IsolatedTestRuntime()
+        app = create_app(db, runtime, testing=True)
+        with TestClient(app, base_url=ORIGIN, client=("127.0.0.1", 50000)) as client:
+            response = client.post("/api/session", json={}, headers={"Origin": ORIGIN})
+            assert response.status_code == 200
+            client.headers.update(
+                {"Origin": ORIGIN, "X-CSRF-Token": response.json()["csrf"]}
+            )
+            yield client, db, runtime, app
+    finally:
+        db.engine.dispose()
+
+
+def test_studio_disposable_schema_retains_protections_in_one_transaction(tmp_path, monkeypatch):
+    make_engine = create_db_engine
+    engine = create_db_engine(f"sqlite:///{tmp_path / 'studio.sqlite3'}")
+    statements = []
+    commits = []
+    disposed = []
+
+    @event.listens_for(engine, "after_cursor_execute")
+    def observe_ddl(connection, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().upper().startswith("CREATE"):
+            statements.append((statement, connection.connection.driver_connection.in_transaction))
+
+    event.listen(engine, "commit", lambda connection: commits.append(True))
+    event.listen(engine, "engine_disposed", lambda disposed_engine: disposed.append(True))
+    monkeypatch.setattr(__name__ + ".create_db_engine", lambda url: engine)
+
+    def inspect_schema(db, runtime, *, testing):
+        # Inspect before bootstrap writes, then deliberately stop app startup.
+        assert testing
+        reference = make_engine(f"sqlite:///{tmp_path / 'reference.sqlite3'}")
+        try:
+            init_db(reference)
+            query = "SELECT type,name,tbl_name,sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY type,name"
+            with reference.connect() as expected, db.engine.connect() as actual:
+                assert actual.exec_driver_sql(query).all() == expected.exec_driver_sql(query).all()
+                assert actual.exec_driver_sql("PRAGMA foreign_keys").scalar() == 1
+                assert actual.exec_driver_sql("PRAGMA foreign_key_check").all() == []
+                assert actual.exec_driver_sql("PRAGMA integrity_check").scalar() == "ok"
+            assert statements and all(in_transaction for _, in_transaction in statements)
+            assert len(commits) == 1
+        finally:
+            reference.dispose()
+        raise RuntimeError("isolated app startup failure")
+
+    monkeypatch.setattr(__name__ + ".create_app", inspect_schema)
+    fixture = studio.__wrapped__(tmp_path)
+    with pytest.raises(RuntimeError, match="isolated app startup failure"):
+        next(fixture)
+    assert disposed == [True]
+
+
+def test_studio_disposable_schema_failure_rolls_back_and_disposes(tmp_path, monkeypatch):
+    engine = create_db_engine(f"sqlite:///{tmp_path / 'studio.sqlite3'}")
+    creates = []
+    disposed = []
+    event.listen(engine, "engine_disposed", lambda disposed_engine: disposed.append(True))
+
+    @event.listens_for(engine, "after_cursor_execute")
+    def interrupt_schema(connection, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().upper().startswith("CREATE"):
+            creates.append(statement)
+            if len(creates) == 2:
+                raise RuntimeError("isolated DDL failure")
+
+    monkeypatch.setattr(__name__ + ".create_db_engine", lambda url: engine)
+    fixture = studio.__wrapped__(tmp_path)
+    with pytest.raises(RuntimeError, match="isolated DDL failure"):
+        next(fixture)
+    assert len(creates) == 2 and disposed == [True]
+    try:
+        with engine.connect() as connection:
+            assert connection.exec_driver_sql("SELECT name FROM sqlite_master WHERE sql IS NOT NULL").all() == []
+            assert connection.exec_driver_sql("PRAGMA foreign_keys").scalar() == 1
+            assert connection.exec_driver_sql("PRAGMA integrity_check").scalar() == "ok"
+    finally:
+        engine.dispose()
 
 
 def draft(client, slug="research-test"):
