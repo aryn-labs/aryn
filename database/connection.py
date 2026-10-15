@@ -8,7 +8,7 @@ from __future__ import annotations
 import os
 import sqlite3
 import threading
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from typing import Generator
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import Engine
@@ -81,6 +81,12 @@ class DatabaseManager:
             self.engine._aryn_evidence_signer = evidence_signer
         self.permission_engine = getattr(self.engine, "_aryn_permission_engine", None)
         self.approval_authority = getattr(self.engine, "_aryn_approval_authority", None)
+        # A local reader must see the DB row and independent history head from
+        # the same completed transaction. Share the lock across managers using
+        # this engine, including reads, before taking SQLite's writer lock.
+        with self._history_lock:
+            if self.engine.dialect.name == "sqlite" and not hasattr(self.engine, "_aryn_session_lock"):
+                self.engine._aryn_session_lock = threading.RLock()
 
     @property
     def evidence_signer(self):
@@ -101,6 +107,15 @@ class DatabaseManager:
 
     @contextmanager
     def session(self, write: bool = False) -> Generator[Session, None, None]:
+        # Never hold a session across an await or external I/O. This SQLite boundary
+        # includes prepare/commit/finish; abandoned durable intents still fail
+        # closed through the unchanged independent commitment verification.
+        with getattr(self.engine, "_aryn_session_lock", nullcontext()):
+            with self._session(write) as session:
+                yield session
+
+    @contextmanager
+    def _session(self, write: bool) -> Generator[Session, None, None]:
         session: Session = self.session_factory()
         session.info["write"] = write
         session.info["db_manager"] = self

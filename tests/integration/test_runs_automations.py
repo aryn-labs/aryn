@@ -75,10 +75,10 @@ def test_automation_agent_projection_lineage_private_modes_search_cursor_and_sto
     )
     with db.session() as session:
         bench = session.query(RunStateModel).filter_by(execution_mode="bench").first()
-        if bench:
-            assert (
-                client.get(PREFIX + "/executions/agent/" + bench.id).status_code == 404
-            )
+        bench_id = bench.id if bench else None
+    # Complete the database snapshot before blocking on another request thread.
+    if bench_id:
+        assert client.get(PREFIX + "/executions/agent/" + bench_id).status_code == 404
 
 
 def test_workflow_parent_projection_excludes_internal_core_tasks(workflow):

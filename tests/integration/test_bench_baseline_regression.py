@@ -2,6 +2,8 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import threading
+import time
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import text
@@ -138,6 +140,22 @@ async def test_passing_aggregate_cannot_hide_required_or_policy_critical_regress
 
 @pytest.mark.asyncio
 async def test_metric_policy_blocks_even_when_all_graders_pass(lifecycle, monkeypatch):
+    from modules.bench import runner
+
+    # Measure controlled runtime elapsed time for this policy test. Real Core
+    # transactions/scheduling cannot invert the baseline/candidate difference.
+    # Replace only Bench's module binding, never the process/asyncio clock.
+    elapsed = 0.0
+    original = SelectiveRuntime.execute_direct_turn
+
+    async def timed(self, request, context):
+        nonlocal elapsed
+        result = await original(self, request, context)
+        elapsed += self.latency
+        return result
+
+    monkeypatch.setattr(SelectiveRuntime, "execute_direct_turn", timed)
+    monkeypatch.setattr(runner, "time", SimpleNamespace(monotonic=time.monotonic, perf_counter=lambda: elapsed))
     suite = generic_suite(regression_policy=RegressionPolicy(max_latency_increase_seconds=0.05, max_token_increase=1))
     db, ctx, runtime, factory, bp, version, _, baseline = await accepted(lifecycle, monkeypatch, suite)
     next_version = candidate(factory, ctx, bp)

@@ -674,6 +674,13 @@ menagih lebih dari cap**, bukan hard tokenizer quota, dan bukan Managed AI billi
    budget reservation, signed claim dan audit initiation commit **sebelum** runtime dispatch.
    Tidak ada lock database dipegang sepanjang inference. SQLite writes memakai BEGIN
    IMMEDIATE; PostgreSQL budget rows memakai FOR UPDATE, org `*` lalu project.
+   Sesi SQLite sinkron pada engine yang sama berbagi reentrant lock dari awal sesi
+   hingga `history.prepare` / DB commit / `history.finish` selesai. Read tidak dapat
+   mencampurkan row lama dengan head baru atau mengamati intent commit yang masih
+   aktif. Lock ini hanya koordinasi thread lokal, tidak menggantikan owner fencing
+   atau verifikasi signature/freshness. Jangan menahan sesi melintasi `await` atau I/O eksternal.
+   Intent yang tertinggal setelah crash/ACK gagal tetap ditolak tanpa recovery otomatis;
+   PostgreSQL tetap memakai boundary locking dan verifikasi existing.
 5. Setelah capabilities/model-availability await, Core memeriksa owner, state, deadline dan
    membership lagi sebelum dispatch. Factory approval/publication/assignment mengunci version sebelum membership;
    approval signatures/current approver authority direvalidate dalam session mutation.

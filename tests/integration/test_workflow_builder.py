@@ -1,10 +1,18 @@
 """Workflow Studio adapter contracts over real Core and disposable storage."""
 import asyncio
 import copy
+import json
 import time
+import threading
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
+from contextlib import contextmanager
 
 import pytest
+from httpx import Response
+from database.connection import DatabaseManager
 from database.repositories.organization_repo import OrganizationRepository
+from modules.core.errors import sanitize
+from modules.core.history import HistoryUnverifiedError
 from services.api.studio import DEV_ORG, DEV_ACTOR
 
 from tests.integration.test_studio_api import studio as studio, PREFIX, DEV_PROJECT
@@ -39,9 +47,27 @@ def test_search_literal_scope_and_revision_conflict(workflow):
     assert client.get(PREFIX + "/workflows", params={"q": "not present"}).json() == {"items": [], "next": None}
 
 
+def poll_run(client, identifier, phase):
+    response = client.get(PREFIX + "/workflow-runs/" + identifier)
+    try:
+        body = response.json()
+    except ValueError:
+        body = {"message": "Non-JSON response body omitted"}
+    credentials = getattr(client.app.state.workflows.db, "protected_credentials", ())
+    # Only the public error envelope enters diagnostics, never prompts, outputs,
+    # headers/cookies or arbitrary nested data returned by a failed dependency.
+    public = {key: body[key] for key in ("error_code", "message", "correlation_id", "run_id") if isinstance(body, dict) and key in body}
+    diagnostic = sanitize({"http_status": response.status_code, "phase": phase,
+        "workflow_run_id": identifier, "body": public}, credentials=credentials)
+    detail = json.dumps(diagnostic, ensure_ascii=True)[:2048]
+    if response.status_code != 200 or not isinstance(body, dict) or "status" not in body:
+        pytest.fail(detail, pytrace=False)
+    return body
+
+
 def finish(client, identifier):
     for _ in range(200):
-        run = client.get(PREFIX + "/workflow-runs/" + identifier).json()
+        run = poll_run(client, identifier, "completion")
         if run["status"] != "running":
             return run
         time.sleep(0.01)
@@ -65,7 +91,7 @@ def test_async_admission_real_checkpoint_and_idempotent_start(workflow):
     identifier = response.json()["id"]
     observed = None
     for _ in range(100):
-        observed = client.get(PREFIX + "/workflow-runs/" + identifier).json()
+        observed = poll_run(client, identifier, "admission_checkpoint")
         if any(t["core_run_id"] for t in observed["tasks"]):
             break
         time.sleep(0.01)
@@ -79,6 +105,88 @@ def test_async_admission_real_checkpoint_and_idempotent_start(workflow):
     done = finish(client, identifier)
     assert done["status"] == "waiting_review"
     assert done["traversed_edges"] == [e["id"] for e in version["graph"]["edges"][:-1]]
+
+
+@pytest.mark.parametrize("status", [401, 403, 409, 500, 200])
+def test_polling_diagnostics_are_bounded_and_exclude_secrets(studio, monkeypatch, status):
+    client, db, _, _ = studio
+    secret = "synthetic-registered-diagnostic-secret"
+    db.protected_credentials = (*db.protected_credentials, secret)
+    response = Response(status, json={"error_code": "synthetic_failure", "message": f"Bearer fake-token {secret} " + "x" * 5000,
+        "credential": "synthetic-hidden-credential", "output": "synthetic-private-output"})
+    monkeypatch.setattr(client, "get", lambda *args: response)
+    with pytest.raises(pytest.fail.Exception) as failure:
+        poll_run(client, "workflow_run_synthetic", "completion")
+    diagnostic = str(failure.value)
+    assert len(diagnostic) <= 2048
+    assert f'"http_status": {status}' in diagnostic and '"phase": "completion"' in diagnostic
+    assert "synthetic_failure" in diagnostic and "workflow_run_synthetic" in diagnostic
+    assert "[REDACTED]" in diagnostic
+    assert all(value not in diagnostic for value in (secret, "fake-token", "synthetic-hidden-credential", "synthetic-private-output"))
+
+
+@pytest.mark.parametrize("shared_manager", [False, True])
+def test_workflow_read_during_live_commit_waits_for_verified_history(workflow, monkeypatch, shared_manager):
+    client, db, _, _, _, _ = workflow
+    run = start(workflow, "concurrent-review-read")
+    artifact = client.get(PREFIX + "/outputs/" + run["artifact_id"]).json()
+    prepared, release, reading = threading.Event(), threading.Event(), threading.Event()
+    store = db.history_commitments
+    original_prepare = store.prepare
+    original_session = DatabaseManager(db.engine).session if shared_manager else db.session
+
+    def held_prepare(*args):
+        token = original_prepare(*args)
+        prepared.set()
+        assert release.wait(10), "Test did not release the live commit"
+        return token
+
+    @contextmanager
+    def observed_session(write=False):
+        if not write and prepared.is_set() and not release.is_set():
+            reading.set()
+        with original_session(write=write) as session:
+            yield session
+
+    monkeypatch.setattr(store, "prepare", held_prepare)
+    monkeypatch.setattr(db, "session", observed_session)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        writer = pool.submit(client.post, PREFIX + f"/workflow-runs/{run['id']}/review",
+            json={"digest": artifact["digest"], "decision": "accepted", "reason": "Inspect isolated artifact"})
+        try:
+            assert prepared.wait(10), "Writer did not reach durable prepare"
+            reader = pool.submit(poll_run, client, run["id"], "concurrent_commit")
+            assert reading.wait(10), "Reader did not enter the workflow route"
+            # A live commit is neither stale evidence nor an abandoned intent.
+            # The reader must wait; it must not observe an unverified snapshot.
+            with pytest.raises(FutureTimeout):
+                reader.result(timeout=0.1)
+        finally:
+            release.set()
+        assert writer.result(timeout=10).status_code == 200
+        done = reader.result(timeout=10)
+    assert done["status"] == "completed"
+    assert all(task["status"] == "completed" for task in done["tasks"])
+    assert [task["core_run_id"] for task in done["tasks"]] == [task["core_run_id"] for task in run["tasks"]]
+    assert store.read()["pending"] is None
+
+
+def test_workflow_abandoned_commit_still_fails_closed(workflow, monkeypatch):
+    client, db, _, _, _, _ = workflow
+    run = start(workflow, "abandoned-review-commit")
+    artifact = client.get(PREFIX + "/outputs/" + run["artifact_id"]).json()
+
+    def failed_ack(token):
+        raise OSError("Synthetic failure after DB commit before commitment ACK")
+
+    monkeypatch.setattr(db.history_commitments, "finish", failed_ack)
+    response = client.post(PREFIX + f"/workflow-runs/{run['id']}/review",
+        json={"digest": artifact["digest"], "decision": "accepted", "reason": "Inspect isolated artifact"})
+    assert response.status_code == 500 and response.json()["error_code"] == "execution_failed"
+    response = client.get(PREFIX + f"/workflow-runs/{run['id']}")
+    assert response.status_code == 409 and response.json()["error_code"] == "http_409"
+    with pytest.raises(HistoryUnverifiedError, match="unresolved"):
+        db.history_commitments.read()
 
 
 @pytest.mark.parametrize("decision", ["accepted", "rejected"])
