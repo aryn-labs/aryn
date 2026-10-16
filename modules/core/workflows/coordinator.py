@@ -88,7 +88,7 @@ class RunCoordinator:
         from database.repositories.audit_repo import AuditRepository
         evidence = None
         session = object_session(row)
-        if session is not None and row.execution_mode in {"governed_agent", "tool_probe"} and row.status in {"completed", "failed"}:
+        if session is not None and row.execution_mode in {"governed_agent", "tool_probe", "github_uat"} and row.status in {"completed", "failed"}:
             captured = session.query(AuditEventModel).filter_by(resource_id=row.id,
                 organization_id=row.organization_id, project_id=row.project_id,
                 event_type="core.run.evidence").all()
@@ -194,16 +194,54 @@ class RunCoordinator:
                    "organization_id": context.organization_id, "project_id": context.project_id}
         return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest()
 
+    def _github_uat_binding(self, context, plan, *, session=None):
+        """Fixed human diagnostic authority; never a publication or model grant."""
+        from packages.contracts.tool import GitHubIssueConnectionDefinition, GITHUB_API_ORIGIN, GITHUB_ISSUE_TOOL
+        from packages.runtime_adapters.github_uat import GitHubUATModelDouble
+        self.permission_engine.enforce("tool:register", context, context.organization_id, context.project_id, session=session)
+        self.permission_engine.enforce("model:verify", context, context.organization_id, context.project_id, session=session)
+        if (type(self.runtime_adapter) is not GitHubUATModelDouble
+                or type(self.runtime_adapter.issue_number) is not int or self.runtime_adapter.issue_number != plan.issue_number):
+            raise PermissionDeniedError("Operator UAT requires its exact isolated model double.")
+        entry = self.mcp_tools.current(context, GITHUB_ISSUE_TOOL, session=session)
+        spec = entry.definition
+        if (not isinstance(spec, GitHubIssueConnectionDefinition)
+                or spec.repository_owner + "/" + spec.repository_name != plan.repository
+                or spec.owner_id != context.actor.actor_id or spec.method != "GET" or spec.calls_per_minute != 1):
+            raise PermissionDeniedError("Operator UAT connection differs from the fixed read profile.")
+        # Production trust accepts only the official origin. Existing test-owned
+        # fixture trust is injected by offline tests, never by an environment flag.
+        entry.adapter.trust.check_service_origin(spec.endpoint, GITHUB_API_ORIGIN)
+        return {GITHUB_ISSUE_TOOL: entry.approval.binding_hash}
+
+    async def execute_github_uat(self, plan, context):
+        """Explicit human-only UAT, reusing governed execution and signed settlement."""
+        from packages.contracts.tool import GitHubUATPlan
+        plan = GitHubUATPlan.model_validate(plan.model_dump(mode="python", warnings=False))
+        self._github_uat_binding(context, plan)
+        request = plan.request()
+        claimed = self._claim(request, context, "github_uat")
+        return await self._execute_governed_turns(request, context, claimed)
+
     def _claim(self, request, context, mode, session=None, assignment_provenance=None, agent_configuration=None, allowed_tools=None):
         """Unique insert commits before runtime dispatch. Only its owner may execute."""
         self._fence()
         probe = mode == "tool_probe"
+        uat = mode == "github_uat"
+        uat_plan = None
+        if uat:
+            from packages.contracts.tool import GitHubUATPlan
+            uat_plan = GitHubUATPlan.model_validate(request.metadata.get("github_operator_uat"))
+            if (request != uat_plan.request() or agent_configuration is not None
+                    or assignment_provenance is not None or allowed_tools is not None):
+                raise PermissionDeniedError("Only the fixed human operator UAT request may claim UAT authority.")
+            self._github_uat_binding(context, uat_plan, session=session)
         if probe:
             from packages.contracts.model import tool_probe_request
             if request != tool_probe_request(request.model, request.idempotency_key) or not request.idempotency_key:
                 raise PermissionDeniedError("Only the fixed capability probe may claim probe authority.")
             self.permission_engine.enforce("model:verify", context, context.organization_id, context.project_id, session=session)
-        if not probe and agent_configuration is None and (request.max_iterations != 1 or request.max_tool_calls):
+        if not probe and not uat and agent_configuration is None and (request.max_iterations != 1 or request.max_tool_calls):
             raise PermissionDeniedError("Multi-step authority requires a captured agent version.")
         from database.repositories.exceptions import DuplicateEntityError
         from database.repositories.run_state_repo import RunStateRepository
@@ -258,6 +296,16 @@ class RunCoordinator:
                         raise BudgetExceededError("Capability probe requires two authorized turns.")
                     limits.update({"probe_mode": "tool_calling", "max_turns": 2, "max_tool_calls": 1,
                         "tool_grants": [NAME], "output_contract": tool_probe_output_contract().model_dump(mode="json"),
+                        "max_output_tokens": min(total, request.max_tokens * 2)})
+                if uat:
+                    from packages.contracts.tool import GITHUB_ISSUE_TOOL
+                    if min(self.budget_engine.default_rule.max_turns, *[b.max_turns for b in budgets]) < 2:
+                        raise BudgetExceededError("Operator UAT requires two authorized turns.")
+                    pins = self._github_uat_binding(context, uat_plan, session=active)
+                    limits.update({"github_operator_uat": uat_plan.model_dump(mode="json"),
+                        "execution_source": "human_operator_with_isolated_model_double",
+                        "max_turns": 2, "max_tool_calls": 1, "tool_grants": [GITHUB_ISSUE_TOOL],
+                        "https_bindings": pins, "output_contract": uat_plan.output_contract(),
                         "max_output_tokens": min(total, request.max_tokens * 2)})
                 if agent_configuration is not None:
                     from packages.tool_adapters.fixture import NAME
@@ -421,7 +469,7 @@ class RunCoordinator:
                 AuditStatus.COMPLETED if target == "completed" else AuditStatus.CANCELLED if target == "cancelled" else AuditStatus.FAILED,
                 {"requested_model": row.model, "actual_model": row.actual_model, "provider": row.actual_provider,
                  "usage_availability": row.usage_availability, "usage": usage.model_dump(), "error_code": row.error_code}, session=session)
-            if result.execution_evidence is not None and row.execution_mode in {"governed_agent", "tool_probe"}:
+            if result.execution_evidence is not None and row.execution_mode in {"governed_agent", "tool_probe", "github_uat"}:
                 if row.execution_mode == "tool_probe" and target == "completed":
                     from packages.contracts.model import ModelProbeEvidence
                     captured = result.execution_evidence["capability_probe"]
@@ -438,7 +486,7 @@ class RunCoordinator:
                      "output_hash": hashlib.sha256((row.output or "").encode()).hexdigest()}, session=session)
             stored = self.stored_result(row)
             # Preserve operational Bench observations with the captured Core run ID.
-            if result.execution_evidence is not None and row.execution_mode not in {"governed_agent", "tool_probe"}:
+            if result.execution_evidence is not None and row.execution_mode not in {"governed_agent", "tool_probe", "github_uat"}:
                 stored.execution_evidence = sanitize({**result.execution_evidence, "run_id": run_id} if result.execution_evidence.get("run_id") == result.run_id else result.execution_evidence)
             return stored
 
@@ -685,6 +733,19 @@ class RunCoordinator:
                         or limits.get("output_contract") != tool_probe_output_contract().model_dump(mode="json")):
                     raise PermissionDeniedError("Capability probe authority is stale.")
                 return limits
+            if row.execution_mode == "github_uat":
+                from packages.contracts.tool import GitHubUATPlan, GITHUB_ISSUE_TOOL
+                plan = GitHubUATPlan.model_validate(limits.get("github_operator_uat"))
+                pins = self._github_uat_binding(context, plan, session=session)
+                if (row.status not in {"started", "running"} or self._remaining(run_id, context) <= 0
+                        or row.model != "mock-fast" or row.provider != "mock"
+                        or row.assignment_id or row.agent_version_id or limits.get("max_turns") != 2
+                        or limits.get("max_tool_calls") != 1 or iteration > 2
+                        or limits.get("tool_grants") != [GITHUB_ISSUE_TOOL] or limits.get("https_bindings") != pins
+                        or limits.get("max_cost_usd") != 0 or limits.get("timeout_seconds", 31) > 30
+                        or limits.get("output_contract") != plan.output_contract()):
+                    raise PermissionDeniedError("Captured operator UAT authority differs.")
+                return limits
             version = AgentVersion.from_stored(AgentRepository(session).get_version(context, limits["agent_version_id"]))
             if (version.payload_hash != limits["agent_payload_hash"] or row.status not in {"started", "running"}
                     or self._remaining(run_id, context) <= 0 or iteration > limits["max_turns"]):
@@ -717,6 +778,7 @@ class RunCoordinator:
             return captured
         run_id = captured.run_id
         probe = captured.effective_limits.get("probe_mode") == "tool_calling"
+        uat = "github_operator_uat" in captured.effective_limits
         probe_steps, probe_binding = [], None
         usage = RunUsage(input_tokens=0, output_tokens=0, total_tokens=0)
         history, actions, seen_calls = [], [], set()
@@ -786,6 +848,8 @@ class RunCoordinator:
                 if not observed.provider or observed_provider is not None and observed.provider != observed_provider:
                     raise ModelIdentityError()
                 observed_provider = observed.provider
+                if uat and observed.provider != "github-uat-model-double":
+                    raise ModelIdentityError()
                 if probe:
                     binding = observed.model_evidence
                     if probe_binding is not None and (binding is None
@@ -820,6 +884,7 @@ class RunCoordinator:
                          "duration_seconds": time.perf_counter() - step_started}, session=session)
                 self._tool_authority(run_id, context, iteration)
                 failure = None
+                failure_stage = None
                 if (usage.total_tokens > limits["max_total_tokens"] or usage.input_tokens > limits["max_input_tokens"]
                         or usage.output_tokens > limits["max_output_tokens"] or measured.output_tokens > remaining_output
                         or total_cost > limits["max_cost_usd"]):
@@ -829,6 +894,15 @@ class RunCoordinator:
                         raise RuntimeError("Final turn is not completed.")
                     if probe and (iteration != 2 or tool_count != 1):
                         failure = "capability_probe_failed"
+                    if uat and (iteration != 2 or tool_count != 1):
+                        failure = "tool_failed"
+                    elif uat:
+                        from packages.contracts.bench import strict_json_loads
+                        verified_data = strict_json_loads(history[-1]["content"])
+                        selected = {key: verified_data[key] for key in
+                            ("repository", "issue_number", "state", "source", "content_trust")}
+                        if strict_json_loads(observed.output) != selected:
+                            failure = "tool_input_invalid"
                 else:
                     if observed.status != RunStatus.RUNNING:
                         raise RuntimeError("Tool proposal must remain pending.")
@@ -843,6 +917,8 @@ class RunCoordinator:
                         limits = self._tool_authority(run_id, context, iteration)
                         tool_count += 1
                         code = "tool_permission_denied" if call.name not in limits["tool_grants"] else None
+                        if uat and code is None and call.arguments != {"issue_number": limits["github_operator_uat"]["issue_number"]}:
+                            code = "tool_input_invalid"
                         mcp = None
                         if code is None and call.name != fixture.NAME:
                             mcp = self.mcp_tools.current(context, call.name, bindings.get(call.name))
@@ -881,14 +957,18 @@ class RunCoordinator:
                         except GitHubResponseError as exc:
                             failure = exc.code
                             data = None
-                        except LookupError:
+                        except LookupError as error:
+                            from packages.tool_adapters.https import HTTPSBoundaryError
                             failure = "tool_failed"
+                            if isinstance(error, HTTPSBoundaryError):
+                                failure_stage = error.stage
                             data = None
                         self._tool_authority(run_id, context, iteration)
                         # The result is created locally, schema validated, hashed and audited before continuation.
                         self.audit_logger.record("core.tool.result", context, run_id,
                             AuditStatus.FAILED if failure else AuditStatus.COMPLETED,
                             {"call_id": call.call_id, "tool_name": call.name, "error_code": failure,
+                             **({"failure_stage": failure_stage} if failure_stage else {}),
                              "output_hash": hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest(),
                              **({mcp.kind + "_provenance": provenance} if provenance else {}),
                              "duration_seconds": time.perf_counter() - started})
@@ -902,6 +982,7 @@ class RunCoordinator:
                     final = observed.model_copy(update={"status": RunStatus.FAILED if failure else RunStatus.COMPLETED,
                         "usage": usage, "error_code": failure, "execution_evidence": {
                             "run_id": run_id, "trace_complete": True, "actions": actions,
+                            **({"failure_stage": failure_stage} if failure_stage else {}),
                             "resources": {"iterations": iteration, "tool_call_attempts": tool_count}}})
                     if probe and not failure:
                         binding = observed.model_evidence
@@ -997,7 +1078,7 @@ class RunCoordinator:
         if stored.status in {RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELLED, RunStatus.OUTCOME_UNKNOWN}:
             return stored.status == RunStatus.CANCELLED
         if not runtime_id:
-            if mode in {"governed_agent", "tool_probe"}:
+            if mode in {"governed_agent", "tool_probe", "github_uat"}:
                 # A model thread may still be in flight. Fence future tool/turn
                 # admission immediately without inventing provider cancellation.
                 from database.repositories.run_state_repo import RunStateRepository
@@ -1047,7 +1128,7 @@ class RunCoordinator:
 
     async def get_managed_trace(self, run_id: str, context: SecurityContext) -> RuntimeTrace:
         stored, runtime_id, mode = self._owned_run(run_id, context, "run:trace")
-        if mode in {"governed_agent", "tool_probe"} and stored.execution_evidence is not None:
+        if mode in {"governed_agent", "tool_probe", "github_uat"} and stored.execution_evidence is not None:
             return RuntimeTrace(run_id=run_id, available=True, events=stored.execution_evidence["actions"],
                 raw_trace={"complete": stored.execution_evidence["trace_complete"], "source": "signed_core_audit"})
         if mode != "async" or not runtime_id:

@@ -46,11 +46,17 @@ See [Bench engine contracts and validation](docs/bench-engine.md).
 
 See [secure HTTPS connectivity contracts and offline validation](docs/secure-https-connectivity.md)
 for the Core-approved bounded GET adapter, temporary credential bindings and TLS
-fixture boundary. External API connectivity and connector OAuth remain unverified.
+fixture boundary. General external API compatibility and connector OAuth remain
+unverified; the limited owner-executed GitHub UAT is recorded separately below.
 
 See [GitHub issue connectivity](docs/github-issue-connectivity.md) for the selected
 repository read-only connector and its offline TLS fixture contract. Production
 GitHub API access and credentials remain unverified.
+
+See [owner-executed GitHub UAT preparation](docs/github-live-uat.md) for the
+explicit local-file/CLI gates and limited human operator Core profile. The owner
+reported a verified live read of issue #10; its scope and evidence limitations are
+documented there. Published-agent Bench gates are unchanged.
 
 Authentication defaults to fail closed. Local launchers explicitly select `ARYN_AUTH_MODE=local-development`; production requires `ARYN_AUTH_MODE=oidc`, verified issuer/subject provisioning and current Core membership. Runtime exposes only confined text/run operations; native jobs, cron, sessions administration and profile/plugin ingress are unavailable. See [deployment security and configuration](docs/deployment-security.md) and [actual validation evidence](docs/deployment-validation.md).
 

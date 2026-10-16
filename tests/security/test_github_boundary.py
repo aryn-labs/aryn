@@ -198,3 +198,38 @@ async def test_diagnostic_redaction_survives_revocation(lifecycle, github_server
     logging.getLogger("aryn.github.test").warning("Synthetic reflection %s", secret)
     assert secret not in caplog.text and "[REDACTED]" in caplog.text
     assert secret not in json.dumps(core.audit_logger.get_events_for_correlation(ctx.correlation_id, ctx), default=str)
+
+
+async def test_official_origin_cannot_bypass_fixture_bench_publication(lifecycle, github_server, monkeypatch):
+    """Production registration is not approval to run an offline fixture suite live."""
+    from modules.bench.quality_gate import QualityGateFailedError
+    from tests.integration.test_github_tools import GitHubModelDouble
+    db, ctx, _, factory, blueprint, _ = lifecycle
+    core = factory.execution_coordinator
+    trust = HTTPSTrust((GITHUB_API_ORIGIN,))
+    resolutions = []
+    async def offline_dns(endpoint):
+        assert endpoint == GITHUB_API_ORIGIN
+        resolutions.append(endpoint)
+        return ("140.82.114.5",)  # Synthetic DNS observation; never physically connected.
+    monkeypatch.setattr(trust, "resolve", offline_dns)
+    async def no_connection(*args, **kwargs):
+        pytest.fail("Fixture admission must deny before any external socket connection.")
+    monkeypatch.setattr(asyncio.get_running_loop(), "sock_connect", no_connection)
+    core.mcp_tools = CoreTools(core, https_trust=trust)
+    runtime = GitHubModelDouble()
+    factory.bench_runner.runtime_adapter = core.runtime_adapter = runtime
+    approval = await core.mcp_tools.register(ctx,
+        definition(github_server, ctx, endpoint=GITHUB_API_ORIGIN), github_server.secret)
+    try:
+        version = factory.create_version(ctx, blueprint.id, "5.0.0", "Read only the approved issue.", "mock-fast",
+            tool_grants=[ALIAS], metadata={"https_bindings": {ALIAS: approval.binding_hash}},
+            evaluation_reference={"suite_id": "governed-github"})
+        with pytest.raises(QualityGateFailedError, match="limited to the isolated test fixture"):
+            await factory.evaluate_version_with_bench(ctx, version.id)
+        with pytest.raises(QualityGateFailedError, match="no passing Bench evaluation"):
+            factory.approve_version(ctx, version.id)
+        assert resolutions == [GITHUB_API_ORIGIN] and not runtime.turns and not github_server.requests
+        assert db.evidence_signer.verify("https_connection_approval", approval.payload(), approval.attestation)
+    finally:
+        core.mcp_tools.revoke(ctx, approval.connection.connection_id)

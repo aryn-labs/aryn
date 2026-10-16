@@ -26,7 +26,9 @@ from packages.tool_adapters.github import GitHubResponseError
 
 
 class HTTPSBoundaryError(LookupError):
-    def __init__(self):
+    def __init__(self, stage="unverified"):
+        self.stage = stage if stage in {"authorization", "destination", "connect", "tls", "network",
+            "response_headers", "response_body", "response_validation"} else "unverified"
         super().__init__("Approved HTTPS read could not be verified.")
 
 
@@ -134,13 +136,14 @@ class HTTPSAdapter:
                 or self.trust.identity() != approval.trust_hash
                 or not verifier("https_connection_approval", approval.payload(), approval.attestation)
                 or not verifier("https_tool_call", invocation.payload(), invocation.attestation)):
-            raise HTTPSBoundaryError()
+            raise HTTPSBoundaryError("authorization")
         reauthorize()
         if time.time() >= min(invocation.deadline_at, approval.expires_at):
             raise TimeoutError("Approved HTTPS deadline expired.")
 
     async def invoke(self, arguments, invocation, verifier, reauthorize):
         writer, sock = None, None
+        stage = "authorization"
         try:
             invocation = HTTPSInvocation.model_validate_json(invocation.model_dump_json())
             arguments = strict_json_loads(json.dumps(arguments, allow_nan=False))
@@ -171,6 +174,7 @@ class HTTPSAdapter:
                 if time.monotonic() >= dispatch_deadline:
                     raise TimeoutError("Approved HTTPS deadline expired.")
             async with asyncio.timeout(seconds):
+                stage = "destination"
                 addresses = await self.trust.resolve(spec.endpoint)
                 if addresses != approval.addresses:
                     raise HTTPSBoundaryError()
@@ -181,15 +185,18 @@ class HTTPSAdapter:
                 sock = socket.socket(socket.AF_INET6 if ":" in address else socket.AF_INET, socket.SOCK_STREAM)
                 sock.setblocking(False)
                 guard()
+                stage = "connect"
                 await asyncio.get_running_loop().sock_connect(sock, (address, url.port))
                 peer = sock.getpeername()
                 if self.trust.check_address(peer[0]) != address or peer[1] != url.port:
                     raise HTTPSBoundaryError()
                 guard()
+                stage = "tls"
                 reader, writer = await asyncio.open_connection(sock=sock, ssl=self.trust.context,
                     server_hostname=url.hostname, limit=8192, ssl_handshake_timeout=max(.001, seconds))
                 sock = None  # TLS transport now owns it, including cancellation cleanup.
                 guard()
+                stage = "network"
                 from packages.tool_adapters.github import HEADERS
                 service_headers = HEADERS if github else "Accept: application/json\r\n"
                 request = (f"GET {route} HTTP/1.1\r\nHost: {url.netloc}\r\n"
@@ -199,6 +206,7 @@ class HTTPSAdapter:
                 await writer.drain()
                 # A deliberately small HTTP profile. Ambiguous framing, streaming
                 # and compressed responses are denied rather than decoded.
+                stage = "response_headers"
                 header = await reader.readuntil(b"\r\n\r\n")
                 if len(header) > 8192:
                     raise HTTPSBoundaryError()
@@ -224,11 +232,13 @@ class HTTPSAdapter:
                         or headers.get("content-type", "").lower() not in {"application/json", "application/json; charset=utf-8"}
                         or not re.fullmatch(r"[0-9]{1,8}", length) or not 0 < int(length) <= spec.max_response_bytes):
                     raise HTTPSBoundaryError()
+                stage = "response_body"
                 raw = await reader.readexactly(int(length))
                 if await reader.read(1):
                     # This one-shot Connection: close profile accepts no trailing
                     # body, pipelined response or understated Content-Length.
                     raise HTTPSBoundaryError()
+                stage = "response_validation"
                 data = strict_json_loads(raw.decode("utf-8"))
                 if sanitize(data, credentials=(self._secret.get_secret_value(),)) != data:
                     raise HTTPSBoundaryError()
@@ -256,9 +266,11 @@ class HTTPSAdapter:
                 return data, result
         except (TimeoutError, asyncio.CancelledError, GitHubResponseError):
             raise
-        except Exception:
+        except Exception as error:
             # Never copy request, response, TLS or upstream exception text.
-            raise HTTPSBoundaryError() from None
+            if isinstance(error, HTTPSBoundaryError) and error.stage != "unverified":
+                stage = error.stage
+            raise HTTPSBoundaryError(stage) from None
         finally:
             if writer:
                 writer.close()
