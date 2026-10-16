@@ -20,7 +20,9 @@ from urllib.parse import quote, urlsplit
 
 from modules.core.errors import sanitize
 from packages.contracts.bench import evidence_hash, strict_json_loads
-from packages.contracts.tool import HTTPSApproval, HTTPSInvocation, HTTPSResultEvidence, checked_data, https_endpoint
+from packages.contracts.tool import (HTTPSApproval, HTTPSInvocation, HTTPSResultEvidence,
+    GitHubIssueConnectionDefinition, GitHubIssueResultEvidence, GITHUB_API_ORIGIN, checked_data, https_endpoint)
+from packages.tool_adapters.github import GitHubResponseError
 
 
 class HTTPSBoundaryError(LookupError):
@@ -73,6 +75,10 @@ class HTTPSTrust:
             raise HTTPSBoundaryError()
         return str(ip)
 
+    def check_service_origin(self, endpoint, official_origin):
+        if endpoint != official_origin:
+            raise HTTPSBoundaryError()
+
     async def resolve(self, endpoint):
         https_endpoint(endpoint)
         if endpoint not in self.endpoints:
@@ -104,6 +110,16 @@ class HTTPSAdapter:
     def connection_matches(self, identity, derive):
         return hmac.compare_digest(identity, derive(self._secret))
 
+    def request_route(self, arguments):
+        spec = self.approval.connection
+        if isinstance(spec, GitHubIssueConnectionDefinition):
+            from packages.tool_adapters.github import request_route
+            return request_route(spec, arguments)
+        checked_data(arguments, spec.declaration.input_schema)
+        if not re.fullmatch(r"[a-z0-9-]{1,64}", arguments["key"]):
+            raise ValueError("Approved identifier is invalid.")
+        return spec.route.replace("{key}", quote(arguments["key"], safe=""))
+
     def consume_receipt(self, invocation, evidence):
         """Core checks its returned evidence against the actual validated exchange."""
         with self._admission:
@@ -111,6 +127,8 @@ class HTTPSAdapter:
 
     def _current(self, invocation, verifier, reauthorize):
         approval = self.approval
+        if isinstance(approval.connection, GitHubIssueConnectionDefinition):
+            self.trust.check_service_origin(approval.connection.endpoint, GITHUB_API_ORIGIN)
         if (time.time() >= min(invocation.deadline_at, approval.expires_at)
                 or approval.configuration_hash() != approval.binding_hash
                 or self.trust.identity() != approval.trust_hash
@@ -127,9 +145,9 @@ class HTTPSAdapter:
             invocation = HTTPSInvocation.model_validate_json(invocation.model_dump_json())
             arguments = strict_json_loads(json.dumps(arguments, allow_nan=False))
             approval, spec = self.approval, self.approval.connection
-            checked_data(arguments, spec.declaration.input_schema)
-            if (not re.fullmatch(r"[a-z0-9-]{1,64}", arguments["key"])
-                    or invocation.organization_id != spec.organization_id or invocation.project_id != spec.project_id
+            route = self.request_route(arguments)
+            github = isinstance(spec, GitHubIssueConnectionDefinition)
+            if (invocation.organization_id != spec.organization_id or invocation.project_id != spec.project_id
                     or invocation.binding_hash != approval.binding_hash or invocation.input_hash != evidence_hash(arguments)
                     or invocation.deadline_at > approval.expires_at):
                 raise HTTPSBoundaryError()
@@ -172,9 +190,10 @@ class HTTPSAdapter:
                     server_hostname=url.hostname, limit=8192, ssl_handshake_timeout=max(.001, seconds))
                 sock = None  # TLS transport now owns it, including cancellation cleanup.
                 guard()
-                route = spec.route.replace("{key}", quote(arguments["key"], safe=""))
+                from packages.tool_adapters.github import HEADERS
+                service_headers = HEADERS if github else "Accept: application/json\r\n"
                 request = (f"GET {route} HTTP/1.1\r\nHost: {url.netloc}\r\n"
-                    "Accept: application/json\r\nAccept-Encoding: identity\r\nConnection: close\r\n"
+                    f"{service_headers}Accept-Encoding: identity\r\nConnection: close\r\n"
                     f"Authorization: Bearer {self._secret.get_secret_value()}\r\n\r\n").encode("ascii")
                 writer.write(request)
                 await writer.drain()
@@ -184,7 +203,8 @@ class HTTPSAdapter:
                 if len(header) > 8192:
                     raise HTTPSBoundaryError()
                 lines = header[:-4].split(b"\r\n")
-                if not re.fullmatch(rb"HTTP/1\.[01] 200(?: [\x20-\x7e]{0,80})?", lines[0]) or len(lines) > 65:
+                status = re.fullmatch(rb"HTTP/1\.[01] ([1-5][0-9]{2})(?: [\x20-\x7e]{0,80})?", lines[0])
+                if not status or len(lines) > 65:
                     raise HTTPSBoundaryError()
                 headers = {}
                 for line in lines[1:]:
@@ -195,17 +215,31 @@ class HTTPSAdapter:
                     if key in headers:
                         raise HTTPSBoundaryError()
                     headers[key] = value.strip()
+                if status[1] != b"200":
+                    if github:
+                        raise GitHubResponseError(int(status[1]))
+                    raise HTTPSBoundaryError()
                 length = headers.get("content-length", "")
                 if ("transfer-encoding" in headers or headers.get("content-encoding", "identity").lower() != "identity"
                         or headers.get("content-type", "").lower() not in {"application/json", "application/json; charset=utf-8"}
                         or not re.fullmatch(r"[0-9]{1,8}", length) or not 0 < int(length) <= spec.max_response_bytes):
                     raise HTTPSBoundaryError()
                 raw = await reader.readexactly(int(length))
-                data = checked_data(strict_json_loads(raw.decode("utf-8")), spec.output_schema, spec.max_response_bytes)
+                if await reader.read(1):
+                    # This one-shot Connection: close profile accepts no trailing
+                    # body, pipelined response or understated Content-Length.
+                    raise HTTPSBoundaryError()
+                data = strict_json_loads(raw.decode("utf-8"))
                 if sanitize(data, credentials=(self._secret.get_secret_value(),)) != data:
                     raise HTTPSBoundaryError()
+                if github:
+                    from packages.tool_adapters.github import normalize_issue
+                    data = normalize_issue(spec, arguments, data)
+                else:
+                    data = checked_data(data, spec.output_schema, spec.max_response_bytes)
                 guard()
-                evidence = HTTPSResultEvidence(run_id=invocation.run_id, trace_id=invocation.trace_id,
+                contract = GitHubIssueResultEvidence if github else HTTPSResultEvidence
+                evidence = contract(run_id=invocation.run_id, trace_id=invocation.trace_id,
                     call_id=invocation.call_id, organization_id=spec.organization_id, project_id=spec.project_id,
                     connection_id=spec.connection_id, tool_name=spec.declaration.name, binding_hash=approval.binding_hash,
                     schema_hash=spec.schema_hash, endpoint_hash=evidence_hash(spec.endpoint),
@@ -214,12 +248,13 @@ class HTTPSAdapter:
                     output_hash=evidence_hash(data), response_digest=hashlib.sha256(raw).hexdigest(),
                     http_status=200, network_requests=1, tls_verified=True, validation="schema_valid",
                     policy="approved_pinned_get", source="https_transport", result_bytes=len(raw),
-                    duration_seconds=time.perf_counter() - started, timeout_seconds=seconds)
+                    duration_seconds=time.perf_counter() - started, timeout_seconds=seconds,
+                    **({"repository_binding_hash": spec.repository_binding_hash, "issue_number": arguments["issue_number"]} if github else {}))
                 result = evidence.model_dump(mode="json")
                 with self._admission:
                     self._receipts[evidence.invocation_hash] = evidence_hash(result)
                 return data, result
-        except (TimeoutError, asyncio.CancelledError):
+        except (TimeoutError, asyncio.CancelledError, GitHubResponseError):
             raise
         except Exception:
             # Never copy request, response, TLS or upstream exception text.

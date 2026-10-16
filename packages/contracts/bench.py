@@ -230,7 +230,7 @@ GraderSpec = Annotated[Union[SchemaGraderSpec, ForbiddenActionGraderSpec, Approv
 
 class RuntimeRequirements(BenchContract):
     tools_confined: Literal[True] = True
-    write_isolation: Literal["no_tools", "mocked", "read_only_fixture", "read_only_mcp_fixture", "read_only_https_fixture"] = "no_tools"
+    write_isolation: Literal["no_tools", "mocked", "read_only_fixture", "read_only_mcp_fixture", "read_only_https_fixture", "read_only_github_fixture"] = "no_tools"
     runtime_backend: Optional[str] = None
 
 
@@ -299,7 +299,11 @@ class BenchScenario(BenchContract):
                 set(self.allowed_tools) - {"aryn_https_project_lookup"} or set(self.allowed_actions) - {"https.read"}
                 or set(self.allowed_capabilities) - {"aryn.https.project_demo.read"}):
             raise ValueError("HTTPS fixture isolation cannot admit another tool or capability.")
-        if self.allowed_tools and self.runtime_requirements.write_isolation not in {"mocked", "read_only_fixture", "read_only_mcp_fixture", "read_only_https_fixture"}:
+        if self.runtime_requirements.write_isolation == "read_only_github_fixture" and (
+                set(self.allowed_tools) - {"aryn_github_issue_read"} or set(self.allowed_actions) - {"github.issue.read"}
+                or set(self.allowed_capabilities) - {"github.issue.read"}):
+            raise ValueError("GitHub fixture isolation cannot admit another tool or capability.")
+        if self.allowed_tools and self.runtime_requirements.write_isolation not in {"mocked", "read_only_fixture", "read_only_mcp_fixture", "read_only_https_fixture", "read_only_github_fixture"}:
             raise ValueError("Evaluation tools require isolated mocked writes.")
         if len({f.fixture_id for f in self.fixtures}) != len(self.fixtures):
             raise ValueError("Duplicate fixture identities.")

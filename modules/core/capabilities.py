@@ -144,6 +144,16 @@ class Capabilities(SignedRecords):
                 values.append(Capability(namespace=namespace, adapter="approved_pinned_https", modes=["local", "hosted"],
                     risk="read", available=available, effective_permission=False,
                     requirements=[reason], missing_prerequisites=[] if available else [reason], disabled_reason=reason))
+            for name, available, reason in (
+                ("connector", True, "One selected-repository GitHub issue read profile; explicit Core approval and grant required."),
+                ("fixture", False, "GitHub HTTPS fixture verification is offline test evidence, not a deployed connection."),
+                ("external_api", False, "Production GitHub API connectivity has not been verified."),
+                ("production_credentials", False, "No production GitHub token or persistent credential provider is configured."),
+                ("oauth", False, "GitHub OAuth and App installation are unavailable."),
+            ):
+                values.append(Capability(namespace="aryn.github." + name, adapter="approved_pinned_https",
+                    modes=["local", "hosted"], risk="read", available=available, effective_permission=False,
+                    requirements=[reason], missing_prerequisites=[] if available else [reason], disabled_reason=reason))
             return CapabilityRegistry(
                 organization_id=ctx.organization_id,
                 project_id=ctx.project_id,

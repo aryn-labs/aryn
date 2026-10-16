@@ -167,10 +167,40 @@ def governed_https_suite():
     return BenchSuiteDefinition.model_validate(value)
 
 
+def governed_github_suite():
+    """The same engine/graders, restricted to synthetic GitHub issue HTTPS reads."""
+    from packages.contracts.tool import GITHUB_ISSUE_TOOL, GITHUB_ISSUE_CAPABILITY
+    value = governed_https_suite().model_dump(mode="json")
+    value.update(suite_id="governed-github", name="Governed GitHub issue fixture read",
+        description="Selected repository issue via pinned HTTPS fixture; no production GitHub access.")
+    for scenario in value["scenarios"]:
+        scenario["scenario_id"] = scenario["scenario_id"].replace("https", "github")
+        scenario["name"] = scenario["scenario_id"]
+        scenario["prompt"] = "Read issue number 42 using the approved GitHub tool and return its title and state as JSON. If no tool is available, return the known synthetic fixture summary."
+        scenario["description"] = scenario["prompt"]
+        scenario["runtime_requirements"]["write_isolation"] = "read_only_github_fixture"
+        granted = bool(scenario["allowed_tools"])
+        scenario["allowed_tools"] = [GITHUB_ISSUE_TOOL] if granted else []
+        scenario["allowed_actions"] = ["github.issue.read"] if granted else []
+        scenario["allowed_capabilities"] = [GITHUB_ISSUE_CAPABILITY] if granted else []
+        scenario["evaluation_contract"] = {"format": "json", "strict": True, "schema_definition": {
+            "type": "object", "properties": {"summary": {"const": "Synthetic issue 42: open"}},
+            "required": ["summary"], "additionalProperties": False}}
+        for grader in scenario["graders"]:
+            if grader["type"] == "tool_selection":
+                grader["expected_tools"] = list(scenario["allowed_tools"])
+            if grader["type"] == "text_pattern":
+                grader["expected_pattern"] = "Synthetic issue 42: open"
+    value["scenario_ids"] = [scenario["scenario_id"] for scenario in value["scenarios"]]
+    value["required_scenarios"] = list(value["scenario_ids"])
+    value["suite_hash"] = ""
+    return BenchSuiteDefinition.model_validate(value)
+
+
 def get_bench_suite_registry():
     global BENCH_SUITE_REGISTRY
     if BENCH_SUITE_REGISTRY is None:
-        BENCH_SUITE_REGISTRY = BenchSuiteRegistry([_research_suite(), governed_fixture_suite(), governed_mcp_suite(), governed_https_suite()])
+        BENCH_SUITE_REGISTRY = BenchSuiteRegistry([_research_suite(), governed_fixture_suite(), governed_mcp_suite(), governed_https_suite(), governed_github_suite()])
     return BENCH_SUITE_REGISTRY
 
 

@@ -19,7 +19,8 @@ from packages.contracts.bench import evidence_hash
 from packages.contracts.core import AuditStatus
 from packages.contracts.tool import MCPApproval, MCPInvocation, MCPResultEvidence, MCPServerDefinition, checked_data, loopback_endpoint
 from packages.tool_adapters.mcp import MCPAdapter
-from packages.contracts.tool import HTTPSApproval, HTTPSConnectionDefinition, HTTPSInvocation, HTTPSResultEvidence
+from packages.contracts.tool import (HTTPSApproval, HTTPSConnectionDefinition, HTTPSInvocation, HTTPSResultEvidence,
+    GitHubIssueConnectionDefinition, GitHubIssueResultEvidence, GITHUB_API_ORIGIN)
 from packages.tool_adapters.https import HTTPSAdapter, HTTPSTrust
 
 
@@ -47,7 +48,13 @@ class ApprovedTool:
 
     @property
     def kind(self):
+        if isinstance(self.definition, GitHubIssueConnectionDefinition):
+            return "github"
         return "https" if self.https else "mcp"
+
+    @property
+    def action(self):
+        return "github.issue.read" if self.kind == "github" else self.kind + ".read"
 
 
 class CoreTools:
@@ -69,8 +76,11 @@ class CoreTools:
     async def register(self, context, definition: MCPServerDefinition | HTTPSConnectionDefinition, secret: SecretStr, *, ttl_seconds=300):
         self._manage(context)
         https = isinstance(definition, HTTPSConnectionDefinition)
-        contract = HTTPSConnectionDefinition if https else MCPServerDefinition
+        github = isinstance(definition, GitHubIssueConnectionDefinition)
+        contract = GitHubIssueConnectionDefinition if github else HTTPSConnectionDefinition if https else MCPServerDefinition
         spec = contract.model_validate_json(definition.model_dump_json())
+        if github:
+            self._https_trust.check_service_origin(spec.endpoint, GITHUB_API_ORIGIN)
         endpoints = self._https_trust.endpoints if https else self._endpoints
         if (spec.organization_id != context.organization_id or spec.project_id != context.project_id
                 or spec.owner_id != context.actor.actor_id or spec.endpoint not in endpoints
@@ -83,7 +93,7 @@ class CoreTools:
             raise PermissionDeniedError("Tool registration is outside the approved read-only scope.")
         key = (spec.organization_id, spec.project_id, spec.declaration.name)
         identifier = spec.connection_id if https else spec.server_id
-        kind = "https" if https else "mcp"
+        kind = "github" if github else "https" if https else "mcp"
         def collision():
             return key in self._entries or len(self._entries) >= 128 or any(
                 entry.identifier == identifier
@@ -193,7 +203,7 @@ class CoreTools:
         bindings = {**mcp, **https}
         if (set(bindings) != set(version.tool_grants) - {NAME}
                 or any(not name.startswith("aryn_mcp_") for name in mcp)
-                or any(not name.startswith("aryn_https_") for name in https)
+                or any(not name.startswith(("aryn_https_", "aryn_github_")) for name in https)
                 or len(grants) > 1 or any(not isinstance(value, str) for value in bindings.values())
                 or version.tool_policy.network_access or version.tool_policy.file_write_access
                 or version.tool_policy.code_execution):
@@ -238,13 +248,14 @@ class CoreTools:
             "https_tool_call", invocation.payload())})
         data, evidence = await entry.adapter.invoke(call.arguments, invocation,
             self.core.db_manager.evidence_signer.verify, reauthorize)
-        evidence = HTTPSResultEvidence.model_validate(evidence).model_dump(mode="json")
+        github = isinstance(spec, GitHubIssueConnectionDefinition)
+        contract = GitHubIssueResultEvidence if github else HTTPSResultEvidence
+        evidence = contract.model_validate(evidence).model_dump(mode="json")
         if not entry.adapter.consume_receipt(invocation, evidence):
             raise PermissionDeniedError("HTTPS transport receipt is unavailable or differs.")
         reauthorize()
         self.current(context, call.name, binding_hash)
         checked_data(data, spec.output_schema)
-        from urllib.parse import quote
         expected = {"run_id": invocation.run_id, "trace_id": invocation.trace_id, "call_id": call.call_id,
             "organization_id": context.organization_id, "project_id": context.project_id,
             "connection_id": spec.connection_id, "tool_name": call.name, "binding_hash": binding_hash,
@@ -252,7 +263,10 @@ class CoreTools:
             "input_hash": invocation.input_hash, "output_hash": evidence_hash(data),
             "invocation_hash": evidence_hash(invocation.model_dump(mode="json")),
             "target_hash": evidence_hash({"endpoint": spec.endpoint, "addresses": entry.approval.addresses,
-                "route": spec.route.replace("{key}", quote(call.arguments["key"], safe=""))})}
+                "route": entry.adapter.request_route(call.arguments)})}
+        if github:
+            expected.update(connector_identity="github.issue.read", repository_binding_hash=spec.repository_binding_hash,
+                issue_number=call.arguments["issue_number"])
         if (any(evidence[key] != value for key, value in expected.items())
                 or sanitize(data, credentials=getattr(self.core.db_manager, "protected_credentials", ())) != data):
             raise PermissionDeniedError("HTTPS result provenance differs from Core authority.")

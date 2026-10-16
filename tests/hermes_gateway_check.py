@@ -47,7 +47,7 @@ def provider(request):
     body = json.loads(request.content)
     assert request.headers["Authorization"] == "Bearer " + settings.api_key.get_secret_value()
     calls.append(body)
-    if body["model"] in {"test/tool-model", "test/mcp-tool-model", "test/https-tool-model"}:
+    if body["model"] in {"test/tool-model", "test/mcp-tool-model", "test/https-tool-model", "test/github-tool-model"}:
         from packages.tool_adapters.fixture import definition
         from packages.contracts.tool import ToolDeclaration
         declaration = ToolDeclaration(name="aryn_mcp_project_lookup", input_schema={"type": "object",
@@ -55,12 +55,17 @@ def provider(request):
         if body["model"] == "test/https-tool-model":
             from packages.contracts.tool import HTTPS_INPUT_SCHEMA
             declaration = ToolDeclaration(name="aryn_https_project_lookup", input_schema=HTTPS_INPUT_SCHEMA)
+        if body["model"] == "test/github-tool-model":
+            from packages.contracts.tool import GITHUB_ISSUE_TOOL, GITHUB_ISSUE_INPUT
+            declaration = ToolDeclaration(name=GITHUB_ISSUE_TOOL, input_schema=GITHUB_ISSUE_INPUT)
         selected = declaration.definition() if body["model"] != "test/tool-model" else definition()
         assert body.get("tools") == [selected]
         continued = any(m.get("role") == "tool" for m in body["messages"])
-        message = {"role": "assistant", "content": '{"summary":"ARYN Core owns execution authorization."}'} if continued else {
+        summary = "Synthetic issue 42: open" if body["model"] == "test/github-tool-model" else "ARYN Core owns execution authorization."
+        arguments = '{"issue_number":42}' if body["model"] == "test/github-tool-model" else '{"key":"aryn-core"}'
+        message = {"role": "assistant", "content": json.dumps({"summary": summary})} if continued else {
             "role": "assistant", "content": None, "tool_calls": [{"id": "native_fixture_call", "type": "function",
-                "function": {"name": selected["function"]["name"], "arguments": '{"key":"aryn-core"}'}}]}
+                "function": {"name": selected["function"]["name"], "arguments": arguments}}]}
         return httpx.Response(200, json={"id": "native-tool-step", "model": body["model"], "created": 1,
             "choices": [{"index": 0, "message": message, "finish_reason": "stop" if continued else "tool_calls"}],
             "usage": {"prompt_tokens": 7, "completion_tokens": 4, "total_tokens": 11}})
@@ -328,6 +333,33 @@ async def check():
     assert json.loads(final.result.output) == {"summary": data["text"]}
     assert len(calls) == 16 and network_attempts == []
     print("REAL_HERMES_HTTPS_DECLARATION_CONTINUATION_PASS")
+    from packages.contracts.tool import GITHUB_ISSUE_TOOL, GITHUB_ISSUE_INPUT
+    declaration = ToolDeclaration(name=GITHUB_ISSUE_TOOL, input_schema=GITHUB_ISSUE_INPUT)
+    github_turn = ToolTurnRequest(run_id="core_github_run", organization_id="isolated-org", project_id="isolated-project",
+        iteration=1, tool_names=[declaration.name], tool_declarations=[declaration],
+        request=RunRequest(model="test/github-tool-model", max_tokens=128, prompt="Read approved issue 42.",
+            metadata={"initial_prompt": "Read approved issue 42."}))
+    response = await dispatch("POST", "/aryn/turn", github_turn.model_dump(mode="json"))
+    assert response.status == 200, response.body
+    proposed = ToolTurnResult.model_validate_json(response.body)
+    call = proposed.tool_calls[0]
+    assert call.name == declaration.name and call.arguments == {"issue_number": 42}
+    assert proposed.result.status.value == "running"
+    github_turn.iteration = 2
+    github_turn.history = [{"role": "user", "content": github_turn.request.prompt},
+        {"role": "assistant", "content": "", "tool_calls": [{"id": call.call_id, "type": "function",
+            "function": {"name": call.name, "arguments": json.dumps(call.arguments)}}]},
+        {"role": "tool", "name": call.name, "tool_call_id": call.call_id,
+            "content": json.dumps({"title": "Synthetic issue 42", "state": "open", "content_trust": "untrusted", "source": "github_https_fixture"})}]
+    github_turn.request.prompt = "Continue using the verified tool result."
+    response = await dispatch("POST", "/aryn/turn", github_turn.model_dump(mode="json"))
+    assert response.status == 200, response.body
+    final = ToolTurnResult.model_validate_json(response.body)
+    assert final.result.status.value == "completed" and not final.tool_calls
+    assert final.result.actual_model == "test/github-tool-model"
+    assert json.loads(final.result.output) == {"summary": "Synthetic issue 42: open"}
+    assert len(calls) == 18 and network_attempts == []
+    print("REAL_HERMES_GITHUB_DECLARATION_CONTINUATION_PASS")
     import logging
     logging.getLogger("runtime.security.probe").warning("credential %s gateway %s", os.environ["API_SERVER_KEY"], settings.api_key.get_secret_value())
     await api.disconnect()

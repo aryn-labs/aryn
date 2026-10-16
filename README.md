@@ -48,6 +48,10 @@ See [secure HTTPS connectivity contracts and offline validation](docs/secure-htt
 for the Core-approved bounded GET adapter, temporary credential bindings and TLS
 fixture boundary. External API connectivity and connector OAuth remain unverified.
 
+See [GitHub issue connectivity](docs/github-issue-connectivity.md) for the selected
+repository read-only connector and its offline TLS fixture contract. Production
+GitHub API access and credentials remain unverified.
+
 Authentication defaults to fail closed. Local launchers explicitly select `ARYN_AUTH_MODE=local-development`; production requires `ARYN_AUTH_MODE=oidc`, verified issuer/subject provisioning and current Core membership. Runtime exposes only confined text/run operations; native jobs, cron, sessions administration and profile/plugin ingress are unavailable. See [deployment security and configuration](docs/deployment-security.md) and [actual validation evidence](docs/deployment-validation.md).
 
 References: ARYN-PRD-001, ARYN-ARCH-001, ARYN-TECH-001, ARYN-SEC-001 and ARYN-PLAN-001 in private `aryn-docs`.

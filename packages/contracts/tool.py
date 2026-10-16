@@ -43,7 +43,7 @@ class ToolContract(BaseModel):
 
 class ToolDeclaration(ToolContract):
     """Private Core-to-runtime proposal schema; contains no endpoint or credential."""
-    name: str = Field(pattern=r"^aryn_(?:mcp|https)_[a-z0-9_]{1,48}$", max_length=64)
+    name: str = Field(pattern=r"^aryn_(?:mcp|https|github)_[a-z0-9_]{1,48}$", max_length=64)
     input_schema: dict[str, Any]
 
     @model_validator(mode="after")
@@ -243,8 +243,62 @@ class HTTPSConnectionDefinition(ToolContract):
         return evidence_hash({"input": self.declaration.input_schema, "output": self.output_schema})
 
 
+GITHUB_ISSUE_TOOL = "aryn_github_issue_read"
+GITHUB_ISSUE_CAPABILITY = "github.issue.read"
+GITHUB_API_ORIGIN = "https://api.github.com:443"
+GITHUB_ISSUE_INPUT = {"type": "object", "properties": {"issue_number": {
+    "type": "integer", "minimum": 1, "maximum": 2147483647}},
+    "required": ["issue_number"], "additionalProperties": False}
+
+
+def github_issue_output(organization_id, project_id, owner, repository):
+    """Core scope is an envelope, never a requirement on the upstream API."""
+    properties = {"organization_id": {"const": organization_id}, "project_id": {"const": project_id},
+        "repository": {"const": owner + "/" + repository}, "kind": {"const": "issue"},
+        "issue_number": {"type": "integer", "minimum": 1, "maximum": 2147483647},
+        "title": {"type": "string", "minLength": 1, "maxLength": 256},
+        "state": {"enum": ["open", "closed"]}, "url": {"type": "string", "maxLength": 256},
+        "body_excerpt": {"type": "string", "maxLength": 1024}, "body_truncated": {"type": "boolean"},
+        "content_trust": {"const": "untrusted"},
+        "source": {"enum": ["github_https_fixture", "github_https"]}}
+    return {"type": "object", "properties": properties, "required": list(properties), "additionalProperties": False}
+
+
+class GitHubIssueConnectionDefinition(HTTPSConnectionDefinition):
+    """One selected repository and one operation using the existing HTTPS owner."""
+    repository_owner: str = Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$", max_length=39)
+    repository_name: str = Field(pattern=r"^[a-z0-9](?:[a-z0-9._-]{0,98}[a-z0-9])?$", max_length=100)
+    response_profile: Literal["github_issue_2022-11-28/1"] = "github_issue_2022-11-28/1"
+    route: str = Field(max_length=256)
+
+    @model_validator(mode="after")
+    def confined(self):
+        https_endpoint(self.endpoint)
+        if (self.declaration.name != GITHUB_ISSUE_TOOL or self.declaration.input_schema != GITHUB_ISSUE_INPUT
+                or self.route != f"/repos/{self.repository_owner}/{self.repository_name}/issues/{{key}}"
+                or self.output_schema != github_issue_output(self.organization_id, self.project_id,
+                    self.repository_owner, self.repository_name)):
+            raise ValueError("GitHub requires an exact repository, issue-number proposal and normalized output.")
+        checked_schema(self.output_schema)
+        return self
+
+    @property
+    def capability(self):
+        return GITHUB_ISSUE_CAPABILITY
+
+    @property
+    def repository_binding_hash(self):
+        return evidence_hash({"organization_id": self.organization_id, "project_id": self.project_id,
+            "endpoint": self.endpoint, "owner": self.repository_owner, "repository": self.repository_name})
+
+    @property
+    def schema_hash(self):
+        return evidence_hash({"input": self.declaration.input_schema, "output": self.output_schema,
+            "response_profile": self.response_profile})
+
+
 class HTTPSApproval(ToolContract):
-    connection: HTTPSConnectionDefinition
+    connection: GitHubIssueConnectionDefinition | HTTPSConnectionDefinition
     binding_id: str = Field(pattern=r"^[a-f0-9]{32}$")
     binding_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
     connection_identity: str = Field(pattern=r"^[a-f0-9]{64}$")
@@ -291,3 +345,9 @@ class HTTPSResultEvidence(ToolContract):
     result_bytes: int = Field(ge=0, le=32768, strict=True)
     duration_seconds: float = Field(ge=0)
     timeout_seconds: float = Field(gt=0, le=5)
+
+
+class GitHubIssueResultEvidence(HTTPSResultEvidence):
+    connector_identity: Literal["github.issue.read"] = "github.issue.read"
+    repository_binding_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    issue_number: int = Field(ge=1, le=2147483647, strict=True)

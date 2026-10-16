@@ -281,7 +281,7 @@ class RunCoordinator:
                         "max_output_tokens": min(total, request.max_tokens * request.max_iterations)})
                     if mcp_bindings:
                         limits["mcp_bindings"] = {name: value for name, value in mcp_bindings.items() if name.startswith("aryn_mcp_")}
-                        limits["https_bindings"] = {name: value for name, value in mcp_bindings.items() if name.startswith("aryn_https_")}
+                        limits["https_bindings"] = {name: value for name, value in mcp_bindings.items() if name.startswith(("aryn_https_", "aryn_github_"))}
                 # Managed monetary dispatch requires an explicit price/ceiling contract;
                 # external gateway/BYOK/local usage is never relabelled Managed AI.
                 if spec.provider.value in {"gemini", "nous"}:
@@ -408,7 +408,8 @@ class RunCoordinator:
             row.error_code = "execution_limit_exceeded" if breach else "execution_evidence_unknown" if target == "outcome_unknown" else "runtime_failed" if target == "failed" else None
             if invalid_output and target == "failed":
                 row.error_code = "invalid_output"
-            elif target == "failed" and result.error_code in {"tool_permission_denied", "tool_input_invalid", "tool_failed", "execution_limit_exceeded", "capability_probe_failed"}:
+            elif target == "failed" and result.error_code in {"tool_permission_denied", "tool_input_invalid", "tool_failed", "execution_limit_exceeded", "capability_probe_failed",
+                    "github_unauthorized", "github_forbidden", "github_issue_not_found", "github_rate_limited", "github_service_error", "github_response_rejected"}:
                 row.error_code = result.error_code
             # Settle even a confirmed partial failure, but never a missing usage estimate.
             BudgetRepository(session).settle(context, row, usage)
@@ -707,6 +708,7 @@ class RunCoordinator:
     async def _execute_governed_turns(self, request, context, claimed):
         from packages.contracts.runtime import ToolTurnRequest, ToolTurnResult, ToolExecutionContext
         from packages.tool_adapters import fixture
+        from packages.tool_adapters.github import GitHubResponseError
         import time
         owner, captured = claimed
         if not owner:
@@ -876,6 +878,9 @@ class RunCoordinator:
                         except ValueError:
                             failure = "tool_input_invalid"
                             data = None
+                        except GitHubResponseError as exc:
+                            failure = exc.code
+                            data = None
                         except LookupError:
                             failure = "tool_failed"
                             data = None
@@ -889,7 +894,7 @@ class RunCoordinator:
                              "duration_seconds": time.perf_counter() - started})
                         if failure:
                             break
-                        actions.append({"action_id": call.call_id, "action": mcp.kind + ".read" if mcp else "fixture.read", "tool": call.name,
+                        actions.append({"action_id": call.call_id, "action": mcp.action if mcp else "fixture.read", "tool": call.name,
                             "capability": mcp.definition.capability if mcp else fixture.CAPABILITY})
                         history.append({"role": "tool", "name": call.name, "tool_call_id": call.call_id,
                             "content": json.dumps(data, sort_keys=True)})

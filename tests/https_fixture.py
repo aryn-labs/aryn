@@ -34,6 +34,11 @@ class FixtureTrust(HTTPSTrust):
             raise HTTPSBoundaryError()
         return address
 
+    def check_service_origin(self, endpoint, official_origin):
+        # Test-only trusted composition: one literal loopback origin and test CA.
+        if endpoint not in self.endpoints or not endpoint.startswith("https://127.0.0.1:"):
+            raise HTTPSBoundaryError()
+
 
 def definition(state, ctx, **updates):
     return HTTPSConnectionDefinition(connection_id="project_demo", organization_id=ctx.organization_id,
@@ -62,7 +67,7 @@ async def https_server(tmp_path, monkeypatch):
     tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     tls.minimum_version = ssl.TLSVersion.TLSv1_2
     tls.load_cert_chain(ca, private)
-    state = SimpleNamespace(mode="ok", requests=[], secret=SecretStr(secrets.token_hex(32)), entered=asyncio.Event(),
+    state = SimpleNamespace(mode="ok", payload_factory=None, requests=[], secret=SecretStr(secrets.token_hex(32)), entered=asyncio.Event(),
         release=asyncio.Event(), tasks=set())
 
     async def handle(reader, writer):
@@ -73,7 +78,9 @@ async def https_server(tmp_path, monkeypatch):
             # Verify the synthetic secret but never retain it in fixture evidence.
             assert b"Authorization: Bearer " + state.secret.get_secret_value().encode() + b"\r\n" in request
             state.requests.append({"line": request.split(b"\r\n", 1)[0].decode(),
-                "tls": writer.get_extra_info("ssl_object").version()})
+                "tls": writer.get_extra_info("ssl_object").version(),
+                "service_headers": [line.decode("ascii") for line in request.split(b"\r\n")
+                    if line.startswith((b"Accept:", b"X-GitHub-Api-Version:", b"User-Agent:"))]})
             state.entered.set()
             mode = state.mode
             if mode == "wait":
@@ -90,6 +97,8 @@ async def https_server(tmp_path, monkeypatch):
                 data["project_id"] = "foreign"
             if mode == "extra":
                 data["permissions"] = ["host.network"]
+            if state.payload_factory:
+                data = state.payload_factory(mode)
             body = json.dumps(data, sort_keys=True).encode()
             status, content_type, extra = 200, "application/json", ""
             if mode == "malformed":
@@ -104,6 +113,14 @@ async def https_server(tmp_path, monkeypatch):
                 content_type = "text/html"
             if mode == "error":
                 status = 503
+            if mode in {"unauthorized", "forbidden", "not_found", "rate_limited"}:
+                status = {"unauthorized": 401, "forbidden": 403, "not_found": 404, "rate_limited": 429}[mode]
+                extra = "Retry-After: 1\r\nX-RateLimit-Remaining: 0\r\n"
+            if mode == "incomplete":
+                body = body[:8]
+                writer.write(f"HTTP/1.1 200 Fixture\r\nContent-Type: application/json\r\nContent-Length: {len(body) + 100}\r\n\r\n".encode() + body)
+                await writer.drain()
+                return
             if mode == "redirect":
                 status, extra = 302, "Location: https://169.254.169.254:443/records/key\r\n"
             if mode == "compressed":
@@ -112,6 +129,15 @@ async def https_server(tmp_path, monkeypatch):
                 extra = "Transfer-Encoding: chunked\r\n"
             if mode == "duplicate_header":
                 extra = "Content-Type: application/json\r\n"
+            if mode == "duplicate_length":
+                extra = f"Content-Length: {len(body)}\r\n"
+            if mode == "bad_header":
+                extra = "X-Injected: first\nsecond\r\n"
+            if mode == "trailing_response":
+                extra = ""
+                writer.write(f"HTTP/1.1 200 Fixture\r\nContent-Type: application/json\r\nContent-Length: {len(body)}\r\n\r\n".encode() + body + b"unframed")
+                await writer.drain()
+                return
             if mode == "header_overflow":
                 extra = "X-Padding: " + "a" * 9000 + "\r\n"
             if mode == "disconnect":
