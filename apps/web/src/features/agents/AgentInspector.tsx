@@ -4,6 +4,18 @@ import { Trash2, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { Capabilities, Draft, Graph, Lifecycle, NodeType } from './api'
 import { nodeRegistry } from './registry'
+import { z } from '@/lib/types/validation'
+
+const nativeBindingSchema = z.object({
+  binding_hash: z.string(),
+  expires_at: z.number(),
+  connection: z.object({
+    connection_id: z.string(),
+    tool_name: z.string(),
+    declaration: z.object({ name: z.string() }),
+    arguments: z.record(z.string(), z.unknown()),
+  }),
+})
 
 export function AgentInspector({
   selected,
@@ -385,14 +397,121 @@ export function AgentInspector({
           )}
           {section === 'tools' && (
             <>
+              {(capabilities.toolsets ?? []).map((toolset) => {
+                const selectedToolsets =
+                  (draft.metadata.hermes as { toolsets?: string[] } | undefined)?.toolsets ?? []
+                const hasMember = toolset.tools.some((tool) =>
+                  draft.tool_grants.includes('aryn_native_' + tool),
+                )
+                return (
+                  <label className="af-check" key={toolset.name}>
+                    <input
+                      type="checkbox"
+                      checked={selectedToolsets.includes(toolset.name)}
+                      disabled={readOnly || !hasMember}
+                      onChange={(event) =>
+                        onChange({
+                          ...draft,
+                          metadata: {
+                            ...draft.metadata,
+                            hermes: {
+                              ...(draft.metadata.hermes as Record<string, unknown> | undefined),
+                              toolsets: event.target.checked
+                                ? [...selectedToolsets, toolset.name]
+                                : selectedToolsets.filter((name) => name !== toolset.name),
+                            },
+                          },
+                        })
+                      }
+                    />
+                    Toolset: {toolset.name} · explicitly granted members only
+                  </label>
+                )
+              })}
+              {(capabilities.skills ?? []).map((skill) => {
+                const assigned =
+                  (
+                    draft.metadata.hermes as
+                      { skills?: { name: string; content_hash: string }[] } | undefined
+                  )?.skills ?? []
+                return (
+                  <label className="af-check" key={skill.name}>
+                    <input
+                      type="checkbox"
+                      checked={assigned.some((item) => item.name === skill.name)}
+                      disabled={readOnly || !skill.content_hash}
+                      onChange={(event) => {
+                        const skills = event.target.checked
+                          ? [...assigned, { name: skill.name, content_hash: skill.content_hash! }]
+                          : assigned.filter((item) => item.name !== skill.name)
+                        onChange({
+                          ...draft,
+                          metadata: {
+                            ...draft.metadata,
+                            hermes: {
+                              ...(draft.metadata.hermes as Record<string, unknown> | undefined),
+                              skills,
+                            },
+                          },
+                        })
+                      }}
+                    />
+                    Skill: {skill.name} · pinned content integrity · grants unchanged
+                  </label>
+                )
+              })}
+              {capabilities.tools
+                .map((value) => nativeBindingSchema.safeParse(value))
+                .filter((value) => value.success)
+                .map((value) => {
+                  const binding = value.data!
+                  const name = binding.connection.declaration.name
+                  return (
+                    <label className="af-check" key={binding.binding_hash}>
+                      <input
+                        type="checkbox"
+                        checked={draft.tool_grants.includes(name)}
+                        disabled={readOnly || binding.expires_at * 1000 <= Date.now()}
+                        onChange={(event) => {
+                          const grants = event.target.checked
+                            ? [...draft.tool_grants, name]
+                            : draft.tool_grants.filter((tool) => tool !== name)
+                          const bindings = {
+                            ...(draft.metadata.native_bindings as
+                              Record<string, string> | undefined),
+                          }
+                          if (event.target.checked) bindings[name] = binding.binding_hash
+                          else delete bindings[name]
+                          onChange({
+                            ...draft,
+                            tool_grants: grants,
+                            tool_policy: { ...draft.tool_policy, tool_grants: grants },
+                            metadata: {
+                              ...draft.metadata,
+                              native_bindings: bindings,
+                              hermes: {
+                                ...(draft.metadata.hermes as Record<string, unknown> | undefined),
+                                environment: 'isolated_worker',
+                              },
+                            },
+                          })
+                        }}
+                      />
+                      {name} · isolated workspace · exact human approval
+                      <code>{JSON.stringify(binding.connection.arguments)}</code>
+                    </label>
+                  )
+                })}
               <p className="af-note">
                 <ShieldCheck size={18} />
-                {t('agents.toolUnavailable')}
+                {capabilities.tools.length
+                  ? 'Native actions require current Core approval, published version grants, and an isolated worker.'
+                  : t('agents.toolUnavailable')}
               </p>
               <dl className="af-detail-list">
                 <dt>{t('agents.tools')}</dt>
-                <dd>0</dd>
-                <dt>Network / File write / Code execution</dt>
+                <dd>{draft.tool_grants.length}</dd>
+                <dt>Unconfined host network / File write / Code execution</dt>
                 <dd>{t('agents.unavailable')}</dd>
               </dl>
               <div className="af-field">

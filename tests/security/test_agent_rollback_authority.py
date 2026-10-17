@@ -1,4 +1,6 @@
 """AF-07: no unsafe activation through browser, repository or historical evidence."""
+from tests.model_fixtures import offline_model_router
+
 import pytest
 from sqlalchemy import text
 
@@ -173,7 +175,7 @@ async def test_run_identity_tampering_rejected(lifecycle, field):
     from modules.core.workflows.coordinator import RunCoordinator
     from database.repositories.run_state_repo import RunStateRepository
     db, ctx, runtime, _, _, _, _, assignment, _ = await publications(lifecycle)
-    run = await RunCoordinator(runtime, db_manager=db).execute_assigned_agent_turn(assignment.id, "Captured version", ctx, "captured-version-request")
+    run = await RunCoordinator(runtime, db_manager=db, model_router=offline_model_router()).execute_assigned_agent_turn(assignment.id, "Captured version", ctx, "captured-version-request")
     with db.engine.begin() as connection:
         connection.execute(text(f"UPDATE run_states SET {field}='tampered' WHERE id=:id"), {"id": run.run_id})
     with db.session() as session:

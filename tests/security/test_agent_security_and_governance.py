@@ -11,6 +11,8 @@ Verifies:
 Complies with ARYN-ARCH-001 Section 04, 05, 06 and ARYN-SEC-001.
 """
 
+from tests.model_fixtures import offline_model_router
+
 import asyncio
 import pytest
 from database.connection import DatabaseManager, create_db_engine
@@ -128,7 +130,7 @@ def test_unauthorized_publish_is_denied(multi_tenant_db, alpha_admin_context):
     ctx_admin = alpha_admin_context
     flawed_runtime = FlawedRuntimeAdapter()
     bench_runner = BenchRunner(runtime_adapter=flawed_runtime)
-    service = AgentFactoryService(db_manager=multi_tenant_db, bench_runner=bench_runner)
+    service = AgentFactoryService(db_manager=multi_tenant_db, bench_runner=bench_runner, model_router=offline_model_router())
 
     bp = service.create_blueprint(ctx_admin, "Safety Agent", "safety-agent")
     v = service.create_version(
@@ -158,7 +160,7 @@ def test_cross_tenant_blueprint_and_assignment_denial(multi_tenant_db, alpha_adm
     ctx_alpha = alpha_admin_context
     flawed_runtime = FlawedRuntimeAdapter()
     bench_runner = BenchRunner(runtime_adapter=flawed_runtime)
-    service = AgentFactoryService(db_manager=multi_tenant_db, bench_runner=bench_runner)
+    service = AgentFactoryService(db_manager=multi_tenant_db, bench_runner=bench_runner, model_router=offline_model_router())
 
     # Blueprint created in Alpha
     bp = service.create_blueprint(ctx_alpha, "Alpha Secret Agent", "alpha-secret-agent")
@@ -184,7 +186,7 @@ def test_cross_tenant_blueprint_and_assignment_denial(multi_tenant_db, alpha_adm
 def test_forbidden_tools_rejected_at_version_creation(multi_tenant_db, alpha_admin_context, forbidden_tool):
     flawed_runtime = FlawedRuntimeAdapter()
     bench_runner = BenchRunner(runtime_adapter=flawed_runtime)
-    service = AgentFactoryService(db_manager=multi_tenant_db, bench_runner=bench_runner)
+    service = AgentFactoryService(db_manager=multi_tenant_db, bench_runner=bench_runner, model_router=offline_model_router())
 
     bp = service.create_blueprint(alpha_admin_context, f"Agent-{forbidden_tool}", f"agent-{forbidden_tool}")
 
@@ -207,7 +209,7 @@ def test_forbidden_tools_rejected_at_version_creation(multi_tenant_db, alpha_adm
 async def test_failed_bench_blocks_approval_and_publish(multi_tenant_db, alpha_admin_context):
     flawed_runtime = FlawedRuntimeAdapter()
     bench_runner = BenchRunner(runtime_adapter=flawed_runtime)
-    service = AgentFactoryService(db_manager=multi_tenant_db, bench_runner=bench_runner)
+    service = AgentFactoryService(db_manager=multi_tenant_db, bench_runner=bench_runner, model_router=offline_model_router())
 
     bp = service.create_blueprint(alpha_admin_context, "Vulnerable Agent", "vulnerable-agent")
     v = service.create_version(
@@ -241,7 +243,7 @@ async def test_failed_bench_blocks_approval_and_publish(multi_tenant_db, alpha_a
 async def test_tampered_payload_hash_blocks_publish(multi_tenant_db, alpha_admin_context):
     flawed_runtime = FlawedRuntimeAdapter()
     bench_runner = BenchRunner(runtime_adapter=flawed_runtime)
-    service = AgentFactoryService(db_manager=multi_tenant_db, bench_runner=bench_runner)
+    service = AgentFactoryService(db_manager=multi_tenant_db, bench_runner=bench_runner, model_router=offline_model_router())
 
     bp = service.create_blueprint(alpha_admin_context, "Tamper Test Agent", "tamper-test-agent")
     v = service.create_version(
@@ -280,7 +282,7 @@ async def test_tampered_payload_hash_blocks_publish(multi_tenant_db, alpha_admin
 async def test_concurrent_idempotency_race_condition(multi_tenant_db, alpha_admin_context):
     """Simulates concurrent direct turns with identical idempotency_key."""
     flawed_runtime = FlawedRuntimeAdapter()
-    coordinator = RunCoordinator(runtime_adapter=flawed_runtime, db_manager=multi_tenant_db)
+    coordinator = RunCoordinator(runtime_adapter=flawed_runtime, db_manager=multi_tenant_db, model_router=offline_model_router())
 
     req = RunRequest(
         prompt="Perform identical deterministic calculation",

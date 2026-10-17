@@ -1,4 +1,6 @@
 """Execution constraints, single owner fencing and cross-boundary negative evidence."""
+from tests.model_fixtures import offline_model_router
+
 import asyncio
 import datetime
 import json
@@ -68,7 +70,7 @@ async def test_deadline_unknown_retains_reservation_and_retry_is_not_dispatched(
         resume_clock()
         await asyncio.sleep(10)
     runtime.execute_direct_turn = blocked
-    core = RunCoordinator(runtime, db_manager=db)
+    core = RunCoordinator(runtime, db_manager=db, model_router=offline_model_router())
     req = request(timeout_seconds=0.2, idempotency_key="deadline")
     with pytest.raises(TimeoutError):
         await core.execute_managed_direct_turn(req, ctx)
@@ -90,7 +92,7 @@ async def test_usage_limit_violation_is_durable_failure_not_success(lifecycle):
         result.usage = RunUsage(input_tokens=30, output_tokens=90, total_tokens=120)
         return result
     runtime.execute_direct_turn = excessive
-    result = await RunCoordinator(runtime, db_manager=db).execute_managed_direct_turn(
+    result = await RunCoordinator(runtime, db_manager=db, model_router=offline_model_router()).execute_managed_direct_turn(
         request(max_total_tokens=100), ctx)
     assert result.status == RunStatus.FAILED and result.error_code == "execution_limit_exceeded"
     assert runtime.requests[-1].max_tokens <= 100
@@ -113,7 +115,7 @@ async def test_concurrent_quota_reservations_and_idempotent_settlement(lifecycle
         await release.wait()
         return await execute(req, context)
     runtime.execute_direct_turn = blocked
-    core = RunCoordinator(runtime, db_manager=db)
+    core = RunCoordinator(runtime, db_manager=db, model_router=offline_model_router())
     req = request(idempotency_key="quota")
     task = asyncio.create_task(core.execute_managed_direct_turn(req, ctx))
     await asyncio.wait_for(entered.wait(), 2)
@@ -138,7 +140,7 @@ async def test_missing_usage_never_invents_measured_zero(lifecycle, status):
         result.status, result.usage = status, RunUsage()
         return result
     runtime.execute_direct_turn = missing
-    result = await RunCoordinator(runtime, db_manager=db).execute_managed_direct_turn(request(), ctx)
+    result = await RunCoordinator(runtime, db_manager=db, model_router=offline_model_router()).execute_managed_direct_turn(request(), ctx)
     assert result.status == (RunStatus.OUTCOME_UNKNOWN if status == RunStatus.COMPLETED else RunStatus.FAILED)
     assert result.usage.availability == "unavailable"
     with db.session() as session:
@@ -150,7 +152,7 @@ async def test_missing_usage_never_invents_measured_zero(lifecycle, status):
 async def test_confirmed_partial_failure_settles_actual_usage_once(lifecycle):
     db, ctx, runtime, *_ = lifecycle
     runtime.status = RunStatus.FAILED
-    core = RunCoordinator(runtime, db_manager=db)
+    core = RunCoordinator(runtime, db_manager=db, model_router=offline_model_router())
     req = request(idempotency_key="partial")
     result = await core.execute_managed_direct_turn(req, ctx)
     assert result.status == RunStatus.FAILED and result.usage.total_tokens == 50
@@ -181,10 +183,10 @@ async def test_startup_does_not_recover_live_process_runs_or_bench(lifecycle):
         await release.wait()
         return await execute(req, context)
     runtime.execute_direct_turn = blocked
-    core = RunCoordinator(runtime, db_manager=db)
+    core = RunCoordinator(runtime, db_manager=db, model_router=offline_model_router())
     task = asyncio.create_task(core.execute_managed_direct_turn(request(), ctx))
     await asyncio.wait_for(entered.wait(), 2)
-    second = RunCoordinator(runtime, db_manager=DatabaseManager(db.engine))
+    second = RunCoordinator(runtime, db_manager=DatabaseManager(db.engine), model_router=offline_model_router())
     assert second.recover_in_flight_runs() == []
     with db.session() as session:
         assert session.query(RunStateModel).one().status == "started"
@@ -212,11 +214,11 @@ else:
 @pytest.mark.asyncio
 async def test_restart_fences_stale_completion_and_recovers_unknown(lifecycle):
     db, ctx, runtime, *_ = lifecycle
-    core = RunCoordinator(runtime, db_manager=db)
+    core = RunCoordinator(runtime, db_manager=db, model_router=offline_model_router())
     run_id = await core.start_managed_run(request(), ctx)
     db.engine.dispose()  # Releases the actual OS authority, models process shutdown.
     new = DatabaseManager(create_db_engine(str(db.engine.url)))
-    restarted = RunCoordinator(runtime, db_manager=new)
+    restarted = RunCoordinator(runtime, db_manager=new, model_router=offline_model_router())
     recovery = restarted.recover_in_flight_runs(ctx)
     assert recovery[0]["run_id"] == run_id and recovery[0]["status"] == "outcome_unknown"
     with pytest.raises(ExecutionOwnershipError):
@@ -262,7 +264,7 @@ async def test_injected_authority_survives_missing_environment_identity(lifecycl
     permissions = PermissionEngine(db, identity_binder=binder)
     ctx = binder.bind_context(ctx)
     monkeypatch.delenv("ARYN_IDENTITY_SECRET")
-    factory = AgentFactoryService(db, BenchRunner(runtime), permission_engine=permissions)
+    factory = AgentFactoryService(db, BenchRunner(runtime), permission_engine=permissions, model_router=offline_model_router())
     from packages.contracts.bench import ApprovalGraderSpec, ApprovalRequirement, evidence_hash
     from tests.bench_fixtures import create_generic_version, generic_suite, generic_scenario
     payload = evidence_hash({"operation": "trusted-injected-review"})
@@ -286,7 +288,7 @@ async def test_injected_authority_survives_missing_environment_identity(lifecycl
 async def test_revoked_membership_after_claim_blocks_runtime_dispatch(lifecycle):
     from modules.core.permissions.engine import PermissionDeniedError
     db, ctx, runtime, *_ = lifecycle
-    core = RunCoordinator(runtime, db_manager=db)
+    core = RunCoordinator(runtime, db_manager=db, model_router=offline_model_router())
     availability = runtime.require_model_available
     async def revoked(model):
         await availability(model)
@@ -319,7 +321,7 @@ async def test_async_deadline_transitions_without_polling_and_cannot_be_complete
     monkeypatch.setattr(coordinator, "datetime", SimpleNamespace(
         datetime=ControlledDateTime, timedelta=datetime.timedelta, timezone=datetime.timezone,
     ))
-    core = RunCoordinator(runtime, db_manager=db)
+    core = RunCoordinator(runtime, db_manager=db, model_router=offline_model_router())
     run_id = await core.start_managed_run(request(timeout_seconds=0.2), ctx)
     with db.session() as session:
         row = RunStateRepository(session).get_run(ctx, run_id)
@@ -348,7 +350,7 @@ async def test_measured_cost_source_and_limits_are_durable(lifecycle):
         result.usage.cost_usd, result.usage.cost_source = 0.1, "provider_usage"
         return result
     runtime.execute_direct_turn = with_cost
-    core = RunCoordinator(runtime, db_manager=db)
+    core = RunCoordinator(runtime, db_manager=db, model_router=offline_model_router())
     req = request(max_cost_usd=0.05, idempotency_key="measured-cost")
     result = await core.execute_managed_direct_turn(req, ctx)
     assert result.status == RunStatus.FAILED and result.error_code == "execution_limit_exceeded"
@@ -394,7 +396,7 @@ async def test_signed_execution_claim_cannot_be_rewritten_or_downgraded(lifecycl
     from database.repositories.exceptions import InvalidStateTransitionError
     from modules.core.permissions.engine import PermissionDeniedError
     db, ctx, runtime, *_ = lifecycle
-    core = RunCoordinator(runtime, db_manager=db)
+    core = RunCoordinator(runtime, db_manager=db, model_router=offline_model_router())
     req = request(idempotency_key="signed-claim")
     run_id = await core.start_managed_run(req, ctx)
     changes = {
@@ -421,7 +423,7 @@ async def test_legacy_unknown_consumption_blocks_new_budget_claim(lifecycle):
         repo.create_run(ctx, "historical", "Old prompt", "mock-fast", "mock")
         repo.transition_status(ctx, "historical", "started")
     with pytest.raises(BudgetExceededError, match="reconciliation"):
-        await RunCoordinator(runtime, db_manager=db).execute_managed_direct_turn(request(), ctx)
+        await RunCoordinator(runtime, db_manager=db, model_router=offline_model_router()).execute_managed_direct_turn(request(), ctx)
     assert runtime.requests == []
     with db.session() as session:
         assert RunStateRepository(session).get_run(ctx, "historical").status == "started"
@@ -447,7 +449,7 @@ async def test_immutable_agent_deadline_and_tokens_override_runtime_default(life
         await asyncio.sleep(10)
     runtime.execute_direct_turn = slow
     with pytest.raises(TimeoutError):
-        await RunCoordinator(runtime, db_manager=db).execute_assigned_agent_turn(assignment.id, "Research", ctx, "agent-deadline")
+        await RunCoordinator(runtime, db_manager=db, model_router=offline_model_router()).execute_assigned_agent_turn(assignment.id, "Research", ctx, "agent-deadline")
     assert captured[0].timeout_seconds == 1 and captured[0].max_total_tokens == 512
     assert captured[0].max_tokens < 512
     with db.session() as session:
@@ -464,10 +466,11 @@ from modules.core.workflows.coordinator import RunCoordinator
 from modules.core.identity.binder import TrustedIdentityBinder
 from tests.studio_runtime import IsolatedTestRuntime
 from packages.contracts.runtime import RunRequest
+from tests.model_fixtures import offline_model_router
 import sys, time
 db = DatabaseManager(create_db_engine(sys.argv[1]))
 ctx = TrustedIdentityBinder().create_trusted_context('owner', 'org', 'project')
-core = RunCoordinator(IsolatedTestRuntime(), db_manager=db)
+core = RunCoordinator(IsolatedTestRuntime(), db_manager=db, model_router=offline_model_router())
 owner, result = core._claim(RunRequest(prompt='Research', model='mock-fast'), ctx, 'direct')
 print(result.run_id, flush=True)
 time.sleep(60)
@@ -482,7 +485,7 @@ time.sleep(60)
             run_id = pool.submit(child.stdout.readline).result(timeout=15).strip()
         assert run_id.startswith("run_"), child.stderr.read() if child.poll() is not None else "claim not ready"
         with pytest.raises(ExecutionOwnershipError):
-            RunCoordinator(runtime, db_manager=new)
+            RunCoordinator(runtime, db_manager=new, model_router=offline_model_router())
         deadline = time.monotonic() + 10
         child.terminate()
         child.wait(timeout=10)
@@ -491,7 +494,7 @@ time.sleep(60)
         # bypass a lock or add timeout-based takeover to production authority.
         while True:
             try:
-                restarted = RunCoordinator(runtime, db_manager=new)
+                restarted = RunCoordinator(runtime, db_manager=new, model_router=offline_model_router())
                 break
             except ExecutionOwnershipError:
                 remaining = deadline - time.monotonic()
@@ -525,7 +528,7 @@ async def test_organization_quota_is_shared_across_projects(lifecycle):
         await release.wait()
         return await execute(req, context)
     runtime.execute_direct_turn = blocked
-    core = RunCoordinator(runtime, db_manager=db)
+    core = RunCoordinator(runtime, db_manager=db, model_router=offline_model_router())
     task = asyncio.create_task(core.execute_managed_direct_turn(request(), ctx))
     await asyncio.wait_for(entered.wait(), 2)
     with pytest.raises(BudgetExceededError):
@@ -548,7 +551,7 @@ async def test_cancellation_ack_does_not_prevent_unknown_outcome(lifecycle):
     async def acknowledge(run_id, context):
         return True
     runtime.start_run, runtime.get_result, runtime.cancel_run = start, poll, acknowledge
-    core = RunCoordinator(runtime, db_manager=db)
+    core = RunCoordinator(runtime, db_manager=db, model_router=offline_model_router())
     run_id = await core.start_managed_run(request(timeout_seconds=30), ctx)
     assert await core.cancel_managed_run(run_id, ctx) is False
     with db.session() as session:
@@ -577,7 +580,7 @@ async def test_async_result_revocation_does_not_disclose_output(lifecycle):
         return RunResult(run_id=run_id, status=RunStatus.COMPLETED, model="mock-fast", output="private output", created_at=0,
             usage=RunUsage(input_tokens=10, output_tokens=20, total_tokens=30))
     runtime.start_run, runtime.get_result = start, poll
-    core = RunCoordinator(runtime, db_manager=db)
+    core = RunCoordinator(runtime, db_manager=db, model_router=offline_model_router())
     run_id = await core.start_managed_run(request(), ctx)
     with pytest.raises(PermissionDeniedError):
         await core.get_managed_result(run_id, ctx)

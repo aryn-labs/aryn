@@ -43,9 +43,7 @@ logger = logging.getLogger("aryn.runtime.hermes")
 
 
 class HermesRuntimeAdapter(RuntimeAdapter):
-    """Hermes Agent v0.21.5 HTTP API Adapter."""
-
-    RISKY_TOOLSETS = frozenset({"terminal", "file", "code_execution", "browser"})
+    """Authenticated Core binding to the installed Hermes HTTP runtime."""
 
     def __init__(
         self,
@@ -129,6 +127,66 @@ class HermesRuntimeAdapter(RuntimeAdapter):
     async def discover_models(self, *, refresh=False):
         return await self.model_gateway.discover(refresh=refresh)
 
+    async def runtime_inventory(self):
+        from packages.contracts.runtime_control import RuntimeInventory
+        client = self._get_client()
+        try:
+            response = await client.get(f"{self.base_url}/aryn/inventory", headers=self._headers(), timeout=self.timeout)
+            if response.status_code != 200:
+                return RuntimeInventory(reason="inventory_endpoint_unavailable")
+            data = response.json()
+            self._assert_no_secret(data)
+            return RuntimeInventory.model_validate(data)
+        finally:
+            if self._custom_client is None:
+                await client.aclose()
+
+    async def read_skill(self, selection):
+        import hashlib
+        from packages.contracts.runtime_control import SkillContent
+        client = self._get_client()
+        try:
+            response = await client.post(f"{self.base_url}/aryn/skills/read", headers=self._headers(),
+                json=selection.model_dump(mode="json"), timeout=self.timeout)
+            if response.status_code != 200:
+                raise RuntimeSecurityError("Pinned skill content is unavailable.")
+            body = response.json()
+            self._assert_no_secret(body)
+            skill = SkillContent.model_validate(body)
+            if (skill.name != selection.name or skill.content_hash != selection.content_hash
+                    or hashlib.sha256(skill.content.encode()).hexdigest() != selection.content_hash):
+                raise RuntimeSecurityError("Skill content integrity differs from the reviewed version.")
+            return skill
+        finally:
+            if self._custom_client is None:
+                await client.aclose()
+
+    async def replace_gateway_connection(self, replacement, expected_configuration_id, *, revoke=False):
+        client = self._get_client()
+        try:
+            payload = {"expected_configuration_id": expected_configuration_id}
+            if not revoke:
+                payload.update(base_url=replacement.base_url, api_key=replacement.api_key.get_secret_value())
+            response = await client.request("DELETE" if revoke else "PUT", f"{self.base_url}/aryn/gateway",
+                headers=self._headers(), json=payload, timeout=self.timeout)
+            if response.status_code != 200:
+                raise RuntimeGatewayError()
+            data = response.json()
+            self._assert_no_secret(data)
+            if replacement.api_key.get_secret_value() and replacement.api_key.get_secret_value() in str(data):
+                raise RuntimeSecurityError("Gateway response contains protected credentials.")
+            instance = data.get("runtime_instance")
+            if (data.get("base_url") != replacement.base_url or not isinstance(instance, str)
+                    or data.get("configuration_id") != replacement.runtime_configuration_id(instance)
+                    or data.get("enabled") is not (not revoke)):
+                raise RuntimeGatewayError()
+            self.model_gateway = NineRouterGateway(replacement, http_client=self.model_gateway.client)
+            self._gateway_binding = {}
+            self._gateway_revoked = revoke
+        finally:
+            if self._custom_client is None:
+                await client.aclose()
+
     async def model_availability(self, model, *, refresh=False):
         if self.model_gateway.has_tool_verifications:
             await self.capability_verification_binding()
@@ -204,16 +262,24 @@ class HermesRuntimeAdapter(RuntimeAdapter):
 
     async def gateway_binding(self):
         """Require a runtime-side routing/actual-model contract; echoed model is not proof."""
+        if getattr(self, "_gateway_revoked", False):
+            return False
         client = self._get_client()
         try:
             response = await client.get(f"{self.base_url}/aryn/gateway", headers=self._headers(), timeout=self.timeout)
             if response.status_code != 200:
                 return False
             data = response.json()
+            self._assert_no_secret(data)
             self._gateway_binding = data if isinstance(data, dict) else {}
+            import re
+            instance = data.get("runtime_instance") if isinstance(data, dict) else None
             return (isinstance(data, dict) and data.get("gateway") == "9Router"
                     and data.get("base_url") == self.model_gateway.settings.base_url
                     and data.get("exact_model_enforced") is True
+                    and data.get("enabled", True) is True
+                    and isinstance(instance, str) and re.fullmatch(r"[a-f0-9]{32}", instance) is not None
+                    and data.get("configuration_id") == self.model_gateway.settings.runtime_configuration_id(instance)
                     and data.get("runtime_backend") == "Hermes")
         except (httpx.HTTPError, ValueError, HermesAdapterError):
             return False
@@ -395,7 +461,9 @@ class HermesRuntimeAdapter(RuntimeAdapter):
             enabled = [ts.get("name") for ts in toolsets if ts.get("enabled", False)]
 
             # Check if any dangerous tools are active
-            active_risky = set(enabled).intersection(self.RISKY_TOOLSETS)
+            # Every unmediated native toolset is unsafe in the shared runtime,
+            # regardless of name. Core-owned isolated dispatch remains separate.
+            active_risky = set(enabled)
             tools_confined = len(active_risky) == 0
 
             if self.enforce_tool_confinement and not tools_confined:
@@ -405,7 +473,7 @@ class HermesRuntimeAdapter(RuntimeAdapter):
                 )
 
             governed = (not enabled and body.get("governed_tool_turns") is True
-                        and body.get("tool_isolation") == "read_only_fixture")
+                        and body.get("tool_isolation") in {"read_only_fixture", "core_mediated"})
             return RuntimeCapabilities(
                 enabled_toolsets=enabled,
                 available_toolsets=available,
@@ -414,7 +482,7 @@ class HermesRuntimeAdapter(RuntimeAdapter):
                 supports_streaming=True,
                 supports_governed_tool_turns=governed,
                 details={"active_risky_tools": list(active_risky), "total_toolsets": len(toolsets),
-                         **({"tool_isolation": "read_only_fixture"} if governed else {})},
+                         **({"tool_isolation": body["tool_isolation"]} if governed else {})},
             )
         finally:
             if should_close:

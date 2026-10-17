@@ -1,5 +1,7 @@
 """Security integrity negative gates, using real SQLite/Core/Bench and an isolated adapter."""
 
+from tests.model_fixtures import offline_model_router
+
 import json
 
 import pytest
@@ -90,7 +92,7 @@ async def test_tampering_without_hash_change_blocks_all_lifecycle_gates(lifecycl
         elif stage == "publish":
             factory.publish_version(ctx, version.id)
         else:
-            await RunCoordinator(runtime, db_manager=db).execute_assigned_agent_turn(assignment.id, "Research", ctx)
+            await RunCoordinator(runtime, db_manager=db, model_router=offline_model_router()).execute_assigned_agent_turn(assignment.id, "Research", ctx)
     with db.session() as s:
         assert s.execute(text("PRAGMA integrity_check")).scalar() == "ok"
         assert s.execute(text("PRAGMA foreign_key_check")).all() == []

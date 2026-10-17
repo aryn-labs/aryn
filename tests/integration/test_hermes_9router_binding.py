@@ -30,7 +30,7 @@ def test_installed_hermes_executes_via_guarded_gateway_double(tmp_path):
     root = Path(__file__).resolve().parents[2]
     stdout, stderr = tmp_path / "stdout.txt", tmp_path / "stderr.txt"
     with stdout.open("w", encoding="utf-8") as out, stderr.open("w", encoding="utf-8") as err:
-        process = subprocess.Popen([runtime, "-u", "-I", str(root / "tests/hermes_gateway_check.py"), str(source)],
+        process = subprocess.Popen([runtime, "-u", "-I", str(root / "tests/hermes_gateway_check.py"), str(source), str(tmp_path / "inventory.json")],
                                    cwd=root, env=env, stdout=out, stderr=err)
         try:
             process.wait(timeout=35)
@@ -49,3 +49,6 @@ def test_installed_hermes_executes_via_guarded_gateway_double(tmp_path):
     assert "REAL_HERMES_MCP_DECLARATION_CONTINUATION_PASS" in output
     assert "REAL_HERMES_HTTPS_DECLARATION_CONTINUATION_PASS" in output
     assert "REAL_HERMES_GITHUB_DECLARATION_CONTINUATION_PASS" in output
+    assert "REAL_HERMES_CAPABILITY_DISCOVERY_PASS" in output
+    inventory = json.loads((tmp_path / "inventory.json").read_text(encoding="utf-8"))
+    assert inventory["source_revision"] and inventory["version"]

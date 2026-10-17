@@ -24,6 +24,17 @@ def verify_coverage(directory):
         assert selected <= complete and len(selected) == len(report["selected"])
         xml = ElementTree.parse(path.with_name("backend.xml"))
         assert len(list(xml.iter("testcase"))) == len(selected), "Interrupted or partial test execution."
+        expected = set()
+        for identity in selected:
+            # Match pytest's JUnit address format: parameters may themselves
+            # contain namespace separators, notably IPv6 literals.
+            address, bracket, parameters = identity.partition("[")
+            file, *parts = address.split("::")
+            assert parts and file.endswith(".py"), "Invalid collected test identity."
+            parts[-1] += bracket + parameters
+            expected.add((".".join([file.removesuffix(".py").replace("/", "."), *parts[:-1]]), parts[-1]))
+        actual = {(case.attrib.get("classname"), case.attrib.get("name")) for case in xml.iter("testcase")}
+        assert actual == expected, "Executed test identities differ from the selection manifest."
         assert not list(xml.iter("failure")) and not list(xml.iter("error"))
         groups[report["platform"]].append((report["shard"], selected))
     assert len(groups["posix"]) == 1 and len(groups["nt"]) == 4, "Every backend runner is required."

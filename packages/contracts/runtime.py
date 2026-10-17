@@ -39,7 +39,7 @@ class RuntimeHealth(BaseModel):
 class RuntimeCapabilities(BaseModel):
     enabled_toolsets: List[str]
     available_toolsets: List[str]
-    tools_confined: bool  # True when risky tools (terminal, file, code_exec, browser) are disabled
+    tools_confined: bool  # No native side effects outside the verified Core mediation boundary
     supports_cancellation: bool = True
     supports_streaming: bool = True
     supports_governed_tool_turns: bool = False
@@ -59,7 +59,7 @@ class ToolExecutionContext(BaseModel):
     organization_id: str
     project_id: str
     deadline_at: float = Field(allow_inf_nan=False)
-    call_number: int = Field(ge=1, le=2, strict=True)
+    call_number: int = Field(ge=1, le=256, strict=True)
 
 
 class ToolTurnRequest(BaseModel):
@@ -68,11 +68,11 @@ class ToolTurnRequest(BaseModel):
     run_id: str = Field(min_length=1, max_length=64)
     organization_id: str = Field(min_length=1, max_length=64)
     project_id: str = Field(min_length=1, max_length=64)
-    iteration: int = Field(ge=1, le=3, strict=True)
+    iteration: int = Field(ge=1, le=100, strict=True)
     request: RunRequest
-    tool_names: List[str] = Field(max_length=1)
-    tool_declarations: List[ToolDeclaration] = Field(default_factory=list, max_length=1)
-    history: List[Dict[str, Any]] = Field(default_factory=list, max_length=8)
+    tool_names: List[str] = Field(max_length=32)
+    tool_declarations: List[ToolDeclaration] = Field(default_factory=list, max_length=32)
+    history: List[Dict[str, Any]] = Field(default_factory=list, max_length=512)
     verification_mode: Optional[Literal["tool_calling"]] = None
 
     @model_validator(mode="after")
@@ -82,7 +82,7 @@ class ToolTurnRequest(BaseModel):
             if self.tool_declarations:
                 raise ValueError("Fixture declarations cannot be replaced.")
         elif ([item.name for item in self.tool_declarations] != self.tool_names
-                or len(self.tool_names) != 1):
+                or len(self.tool_names) != len(set(self.tool_names))):
             raise ValueError("An exact Core tool proposal declaration is required.")
         if self.verification_mode is None:
             return self
@@ -127,9 +127,9 @@ class ToolTurnRequest(BaseModel):
 class ToolTurnResult(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
     run_id: str
-    iteration: int = Field(ge=1, le=3, strict=True)
+    iteration: int = Field(ge=1, le=100, strict=True)
     result: RunResult
-    tool_calls: List[ToolCall] = Field(default_factory=list, max_length=2)
+    tool_calls: List[ToolCall] = Field(default_factory=list, max_length=32)
 
 
 class RuntimeModelAvailability(BaseModel):
@@ -199,8 +199,8 @@ class RunRequest(BaseModel):
     max_cost_usd: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     max_total_tokens: Optional[int] = Field(default=None, ge=1)
     max_input_tokens: Optional[int] = Field(default=None, ge=1)
-    max_iterations: int = Field(default=1, ge=1, le=3, strict=True)
-    max_tool_calls: int = Field(default=0, ge=0, le=2, strict=True)
+    max_iterations: int = Field(default=1, ge=1, le=100, strict=True)
+    max_tool_calls: int = Field(default=0, ge=0, le=256, strict=True)
 
 
 class RunUsage(BaseModel):
@@ -285,6 +285,13 @@ class RuntimeAdapter(ABC):
     async def capability_verification_binding(self):
         """Unregistered/test runtimes cannot issue live capability attestations."""
         return None
+
+    async def runtime_inventory(self):
+        from packages.contracts.runtime_control import RuntimeInventory
+        return RuntimeInventory()
+
+    async def read_skill(self, selection):
+        raise RuntimeGatewayError()
 
     async def record_tool_verification(self, evidence, attestation, verifier):
         return False

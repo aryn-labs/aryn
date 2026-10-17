@@ -10,6 +10,8 @@ Covers:
 Complies with ARYN-ARCH-001 Section 03 & 07 and ARYN-SEC-001.
 """
 
+from tests.model_fixtures import offline_model_router
+
 import pytest
 
 from database.connection import DatabaseManager, create_db_engine
@@ -147,7 +149,7 @@ def seeded_db(test_db_manager):
 async def test_cross_tenant_denial_on_run_execution(seeded_db):
     """Verifies that an actor from Org Alpha CANNOT execute or read in Org Beta."""
     adapter = DeterministicMockRuntimeAdapter()
-    coordinator = RunCoordinator(runtime_adapter=adapter, db_manager=seeded_db)
+    coordinator = RunCoordinator(runtime_adapter=adapter, db_manager=seeded_db, model_router=offline_model_router())
 
     # Actor from Org Alpha trying to target Org Beta's project
     invalid_context = bind_test_context(SecurityContext(
@@ -178,7 +180,7 @@ async def test_cross_tenant_denial_on_run_execution(seeded_db):
 async def test_duplicate_request_idempotency_returns_cached_result(seeded_db):
     """Verifies that identical requests with same idempotency_key do not re-invoke runtime."""
     adapter = DeterministicMockRuntimeAdapter()
-    coordinator = RunCoordinator(runtime_adapter=adapter, db_manager=seeded_db)
+    coordinator = RunCoordinator(runtime_adapter=adapter, db_manager=seeded_db, model_router=offline_model_router())
 
     ctx = bind_test_context(SecurityContext(
         actor=Actor(actor_id="user_alpha_admin", organization_id="org_alpha", roles=["admin"]),
@@ -223,7 +225,7 @@ async def test_duplicate_request_idempotency_returns_cached_result(seeded_db):
 def test_restart_recovery_transitions_in_flight_runs(seeded_db):
     """Verifies that abandoned in-flight runs are transitioned to 'failed' on restart."""
     adapter = DeterministicMockRuntimeAdapter()
-    coordinator = RunCoordinator(runtime_adapter=adapter, db_manager=seeded_db)
+    coordinator = RunCoordinator(runtime_adapter=adapter, db_manager=seeded_db, model_router=offline_model_router())
 
     ctx = bind_test_context(SecurityContext(
         actor=Actor(actor_id="user_alpha_admin", organization_id="org_alpha", roles=["admin"]),
@@ -279,7 +281,7 @@ def test_restart_recovery_transitions_in_flight_runs(seeded_db):
 async def test_budget_exhaustion_preflight_denial(seeded_db):
     """Verifies that requests exceeding project budget are rejected at preflight."""
     adapter = DeterministicMockRuntimeAdapter()
-    coordinator = RunCoordinator(runtime_adapter=adapter, db_manager=seeded_db)
+    coordinator = RunCoordinator(runtime_adapter=adapter, db_manager=seeded_db, model_router=offline_model_router())
 
     ctx = bind_test_context(SecurityContext(
         actor=Actor(actor_id="user_alpha_admin", organization_id="org_alpha", roles=["admin"]),
@@ -319,7 +321,7 @@ async def test_budget_exhaustion_preflight_denial(seeded_db):
 async def test_audit_scrubs_secrets_before_persisting_to_db(seeded_db):
     """Verifies that secrets (API keys, Bearer tokens, passwords) are scrubbed before DB insert."""
     adapter = DeterministicMockRuntimeAdapter()
-    coordinator = RunCoordinator(runtime_adapter=adapter, db_manager=seeded_db)
+    coordinator = RunCoordinator(runtime_adapter=adapter, db_manager=seeded_db, model_router=offline_model_router())
 
     ctx = bind_test_context(SecurityContext(
         actor=Actor(actor_id="user_alpha_admin", organization_id="org_alpha", roles=["admin"]),

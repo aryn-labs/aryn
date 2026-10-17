@@ -22,6 +22,7 @@ from packages.tool_adapters.mcp import MCPAdapter
 from packages.contracts.tool import (HTTPSApproval, HTTPSConnectionDefinition, HTTPSInvocation, HTTPSResultEvidence,
     GitHubIssueConnectionDefinition, GitHubIssueResultEvidence, GITHUB_API_ORIGIN)
 from packages.tool_adapters.https import HTTPSAdapter, HTTPSTrust
+from packages.contracts.native_tool import NativeApproval, NativeToolDefinition
 
 
 def clock():
@@ -30,13 +31,17 @@ def clock():
 
 @dataclass
 class ApprovedTool:
-    approval: MCPApproval | HTTPSApproval
-    adapter: MCPAdapter | HTTPSAdapter
+    approval: MCPApproval | HTTPSApproval | NativeApproval
+    adapter: object
     owner_context: object
 
     @property
     def definition(self):
-        return self.approval.connection if isinstance(self.approval, HTTPSApproval) else self.approval.server
+        return self.approval.connection if isinstance(self.approval, (HTTPSApproval, NativeApproval)) else self.approval.server
+
+    @property
+    def native(self):
+        return isinstance(self.approval, NativeApproval)
 
     @property
     def https(self):
@@ -44,16 +49,20 @@ class ApprovedTool:
 
     @property
     def identifier(self):
-        return self.definition.connection_id if self.https else self.definition.server_id
+        return self.definition.connection_id if self.https or self.native else self.definition.server_id
 
     @property
     def kind(self):
+        if self.native:
+            return "native"
         if isinstance(self.definition, GitHubIssueConnectionDefinition):
             return "github"
         return "https" if self.https else "mcp"
 
     @property
     def action(self):
+        if self.native:
+            return "native." + self.definition.tool_name
         return "github.issue.read" if self.kind == "github" else self.kind + ".read"
 
 
@@ -64,6 +73,43 @@ class CoreTools:
         self._entries = {}
         self._changes = threading.RLock()
         self._https_trust = https_trust if https_trust is not None else HTTPSTrust(https_endpoints)
+        self.native_worker = None
+
+    def register_native(self, context, review):
+        from packages.contracts.tool import ToolDeclaration
+        self._manage(context)
+        worker = self.native_worker
+        if worker is None or review.tool_name not in worker.schemas:
+            raise PermissionDeniedError("A reviewed immutable native worker and its installed tool schema are required.")
+        checked_data(review.arguments, worker.schemas[review.tool_name]["parameters"])
+        if sanitize(review.arguments, credentials=getattr(self.core.db_manager, "protected_credentials", ())) != review.arguments:
+            raise PermissionDeniedError("Native tool approval cannot contain protected credentials.")
+        declaration = ToolDeclaration(name="aryn_native_" + review.tool_name,
+            input_schema={"type": "object", "properties": {key: {"const": value} for key, value in review.arguments.items()},
+                "required": sorted(review.arguments), "additionalProperties": False})
+        spec = NativeToolDefinition(connection_id=review.connection_id, organization_id=context.organization_id,
+            project_id=context.project_id, owner_id=context.actor.actor_id, tool_name=review.tool_name,
+            declaration=declaration, arguments=review.arguments, image_id=worker.image_id)
+        binding_id = uuid.uuid4().hex
+        binding_hash = evidence_hash({"connection": spec.model_dump(mode="json"), "binding_id": binding_id})
+        authority = self.core.db_manager.approval_authority
+        if authority is None:
+            raise PermissionDeniedError("Existing Core human approval authority is required.")
+        key = (context.organization_id, context.project_id, declaration.name)
+        with self._changes:
+            if (key in self._entries or len(self._entries) >= 128 or any(
+                    scope[:2] == key[:2] and entry.identifier == review.connection_id for scope, entry in self._entries.items())):
+                raise PermissionDeniedError("Revoke the existing native action before replacement.")
+            record = authority.grant_approval(context, "native_tool_binding", binding_id, binding_hash,
+                comments="Exact sandboxed native action reviewed by the human operator.")
+            observed = clock()
+            approval = NativeApproval(connection=spec, binding_id=binding_id, binding_hash=binding_hash,
+                approval_id=record.approval_id, observed_at=observed, expires_at=observed + review.ttl_seconds)
+            approval = approval.model_copy(update={"attestation": self.core.db_manager.evidence_signer.sign("native_tool_binding", approval.payload())})
+            self.core.audit_logger.record("core.native.registered", context, spec.connection_id, AuditStatus.ALLOWED,
+                {"approval": approval.model_dump(mode="json"), "sandbox": worker.profile()})
+            self._entries[key] = ApprovedTool(approval, worker, context.model_copy(deep=True))
+        return approval.model_dump(mode="json")
 
     def _connection_identity(self, binding_id, secret):
         return evidence_hash(self.core.db_manager.evidence_signer.sign("mcp_connection",
@@ -162,6 +208,17 @@ class CoreTools:
 
     def _valid(self, entry):
         approval = entry.approval
+        if entry.native:
+            if (approval.configuration_hash() != approval.binding_hash or not approval.observed_at <= clock() < approval.expires_at
+                    or approval.expires_at > approval.observed_at + 300 or entry.adapter is not self.native_worker
+                    or entry.definition.image_id != entry.adapter.image_id
+                    or not self.core.db_manager.evidence_signer.verify("native_tool_binding", approval.payload(), approval.attestation)):
+                raise PermissionDeniedError("Native action approval is stale or differs from its isolated worker.")
+            self.core.db_manager.approval_authority.verify_approval(entry.owner_context, "native_tool_binding",
+                approval.binding_id, approval.binding_hash)
+            self.core.permission_engine.enforce("tool:register", entry.owner_context,
+                entry.definition.organization_id, entry.definition.project_id)
+            return
         try:
             trust_matches = not entry.https or entry.adapter.trust.identity() == approval.trust_hash
         except (LookupError, ValueError):
@@ -198,20 +255,43 @@ class CoreTools:
         if not names:
             return {}
         mcp, https = version.metadata.get("mcp_bindings", {}), version.metadata.get("https_bindings", {})
-        if not isinstance(mcp, dict) or not isinstance(https, dict) or set(mcp) & set(https):
+        native = version.metadata.get("native_bindings", {})
+        if (not isinstance(mcp, dict) or not isinstance(https, dict) or not isinstance(native, dict)
+                or set(mcp) & set(https) or set(native) & (set(mcp) | set(https))):
             raise PermissionDeniedError("Tool binding metadata is invalid.")
-        bindings = {**mcp, **https}
+        bindings = {**mcp, **https, **native}
         if (set(bindings) != set(version.tool_grants) - {NAME}
                 or any(not name.startswith("aryn_mcp_") for name in mcp)
                 or any(not name.startswith(("aryn_https_", "aryn_github_")) for name in https)
-                or len(grants) > 1 or any(not isinstance(value, str) for value in bindings.values())
+                or any(not name.startswith("aryn_native_") for name in native)
+                or len(grants) > 32 or any(not isinstance(value, str) for value in bindings.values())
                 or version.tool_policy.network_access or version.tool_policy.file_write_access
                 or version.tool_policy.code_execution):
-            raise PermissionDeniedError("Version must bind one approved read-only tool without host grants.")
+            raise PermissionDeniedError("Version must bind exact approved Core tools without host grants.")
         return {name: self.current(context, name, bindings.get(name), session=session).approval.binding_hash for name in names}
 
     async def invoke(self, context, call, execution_context, binding_hash, reauthorize):
         entry = self.current(context, call.name, binding_hash)
+        if entry.native:
+            checked_data(call.arguments, entry.definition.declaration.input_schema)
+            payload = {**execution_context.model_dump(), "call_id": call.call_id, "binding_hash": binding_hash,
+                "input_hash": evidence_hash(call.arguments), "sandbox": entry.adapter.profile(),
+                "configuration_hash": evidence_hash(entry.definition.model_dump(mode="json"))}
+            invocation = {"payload": payload, "attestation": self.core.db_manager.evidence_signer.sign("native_tool_call", payload)}
+            self.core.audit_logger.record("core.native.admission", context, execution_context.run_id, AuditStatus.ALLOWED, invocation)
+            data, evidence = await entry.adapter.invoke(entry.definition, call, execution_context, invocation,
+                self.core.db_manager.evidence_signer.verify, reauthorize)
+            expected = {"run_id": execution_context.run_id, "organization_id": context.organization_id,
+                "project_id": context.project_id, "call_id": call.call_id, "input_hash": evidence_hash(call.arguments),
+                "output_hash": evidence_hash(data), "invocation_hash": evidence_hash(invocation), "sandbox": entry.adapter.profile()}
+            if (not isinstance(data, dict) or set(data) != {"text"} or not isinstance(data["text"], str)
+                    or len(data["text"].encode()) > 16384 or not isinstance(evidence, dict)
+                    or any(evidence.get(key) != value for key, value in expected.items())):
+                raise PermissionDeniedError("Native tool execution evidence differs from signed Core admission.")
+            if sanitize(data, credentials=getattr(self.core.db_manager, "protected_credentials", ())) != data:
+                raise PermissionDeniedError("Native result contains protected credentials.")
+            self.current(context, call.name, binding_hash)
+            return data, expected
         if entry.https:
             return await self._invoke_https(entry, context, call, execution_context, binding_hash, reauthorize)
         checked_data(call.arguments, entry.approval.server.declaration.input_schema)
@@ -284,8 +364,8 @@ class CoreTools:
             except PermissionDeniedError:
                 available = False
             spec = entry.definition
-            result.append({"namespace": spec.capability, "adapter": "approved_pinned_https" if entry.https else "approved_loopback_mcp",
-                "risk": "read", "available": available, "effective_permission": available and
+            result.append({"namespace": spec.capability, "adapter": "isolated_native_hermes" if entry.native else "approved_pinned_https" if entry.https else "approved_loopback_mcp",
+                "risk": "privileged" if entry.native else "read", "available": available, "effective_permission": available and
                     self.core.permission_engine.evaluate("run:create", context, context.organization_id, context.project_id).allowed,
                 "modes": ["local", "hosted"] if entry.https else ["local"], "requirements": ["exact published version binding", "active assignment",
                     "current human approval", "Core budget and deadline"],

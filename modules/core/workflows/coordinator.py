@@ -190,6 +190,7 @@ class RunCoordinator:
             data.pop("max_iterations", None)
             data.pop("max_tool_calls", None)
         data["metadata"].pop("idempotency_key", None)
+        data["metadata"].pop("runtime_skill_admission", None)
         payload = {"request": data, "mode": mode, "actor_id": context.actor.actor_id,
                    "organization_id": context.organization_id, "project_id": context.project_id}
         return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest()
@@ -263,6 +264,9 @@ class RunCoordinator:
         try:
             with (nullcontext(session) if session is not None else self.db_manager.session(write=True)) as active:
                 self._fence()
+                if (getattr(self.db_manager, "_gateway_reconfiguration", False)
+                        or getattr(self.db_manager.engine, "_aryn_gateway_reconfiguration", False)):
+                    raise PermissionDeniedError("Gateway configuration replacement is in progress.")
                 self.permission_engine.enforce("run:create", context, context.organization_id, context.project_id, session=active)
                 if probe:
                     self.permission_engine.enforce("model:verify", context, context.organization_id, context.project_id, session=active)
@@ -311,6 +315,34 @@ class RunCoordinator:
                     from packages.tool_adapters.fixture import NAME
                     from packages.contracts.bench import validate_output_contract
                     agent_configuration.verify_integrity(require_canonical=True)
+                    if agent_configuration.model_policy.provider != "9router":
+                        raise PermissionDeniedError("Historical provider policy requires a reviewed 9Router-bound agent version.")
+                    from packages.contracts.runtime_control import RuntimePolicy
+                    runtime_policy = RuntimePolicy.model_validate(agent_configuration.metadata.get("hermes", {}))
+                    if (runtime_policy.memory
+                            or runtime_policy.delegation or runtime_policy.scheduling or runtime_policy.max_child_executions):
+                        raise PermissionDeniedError("Native runtime capabilities require verified scoped worker admission.")
+                    if runtime_policy.toolsets:
+                        worker = self.mcp_tools.native_worker
+                        native_grants = {name.removeprefix("aryn_native_") for name in agent_configuration.tool_grants if name.startswith("aryn_native_")}
+                        if worker is None or any(name not in worker.toolsets or not native_grants.intersection(worker.toolsets[name]) for name in runtime_policy.toolsets):
+                            raise PermissionDeniedError("Toolsets require installed worker metadata and explicit member grants.")
+                        members = set().union(*(set(worker.toolsets[name]) for name in runtime_policy.toolsets))
+                        if not native_grants.issubset(members):
+                            raise PermissionDeniedError("A native action is outside the selected toolset configuration.")
+                    if runtime_policy.skills:
+                        import time
+                        admission = request.metadata.get("runtime_skill_admission", {})
+                        payload = admission.get("payload", {})
+                        expected = {"organization_id": context.organization_id, "project_id": context.project_id,
+                            "agent_version_id": agent_configuration.id, "agent_payload_hash": agent_configuration.payload_hash,
+                            "skills": [item.model_dump(mode="json") for item in runtime_policy.skills],
+                            "instructions_hash": hashlib.sha256((request.system_instructions or "").encode()).hexdigest()}
+                        if (not isinstance(payload, dict) or any(payload.get(key) != value for key, value in expected.items())
+                                or not isinstance(payload.get("observed_at"), (int, float))
+                                or not 0 <= time.time() - payload["observed_at"] <= 60
+                                or not self.db_manager.evidence_signer.verify("runtime_skill_admission", payload, admission.get("attestation", ""))):
+                            raise PermissionDeniedError("Pinned skills require fresh Core content integrity admission.")
                     validate_output_contract(agent_configuration.output_contract)
                     grants = set(agent_configuration.tool_grants)
                     if not agent_configuration.tool_policy.deny_by_default:
@@ -321,7 +353,8 @@ class RunCoordinator:
                     request.max_iterations = min(request.max_iterations,
                         agent_configuration.budget_policy.max_turns, self.budget_engine.default_rule.max_turns,
                         *[b.max_turns for b in budgets])
-                    request.max_tool_calls = min(request.max_tool_calls, max(0, request.max_iterations - 1), 2)
+                    request.max_tool_calls = min(request.max_tool_calls, max(0, request.max_iterations - 1) * max(1, len(grants)),
+                        256 if any(name.startswith("aryn_native_") for name in grants) else 2)
                     limits.update({"max_turns": request.max_iterations, "max_tool_calls": request.max_tool_calls,
                         "tool_grants": sorted(grants), "agent_version_id": agent_configuration.id,
                         "agent_payload_hash": agent_configuration.payload_hash,
@@ -330,6 +363,7 @@ class RunCoordinator:
                     if mcp_bindings:
                         limits["mcp_bindings"] = {name: value for name, value in mcp_bindings.items() if name.startswith("aryn_mcp_")}
                         limits["https_bindings"] = {name: value for name, value in mcp_bindings.items() if name.startswith(("aryn_https_", "aryn_github_"))}
+                        limits["native_bindings"] = {name: value for name, value in mcp_bindings.items() if name.startswith("aryn_native_")}
                 # Managed monetary dispatch requires an explicit price/ceiling contract;
                 # external gateway/BYOK/local usage is never relabelled Managed AI.
                 if spec.provider.value in {"gemini", "nous"}:
@@ -639,6 +673,12 @@ class RunCoordinator:
                         raise RunInProgressError(old.id, old.status)
                     return self.stored_result(old)
         from database.repositories.agent_activation_repo import AgentActivationRepository
+        with self.db_manager.session() as session:
+            from packages.contracts.agent import AgentVersion
+            source_assignment = AgentRepository(session).get_assignment(context, assignment_id)
+            source_configuration = AgentVersion.from_stored(AgentRepository(session).get_version(context, source_assignment.version_id))
+            source_configuration.verify_integrity(require_canonical=True)
+        skill_content = await self._load_runtime_skills(context, source_configuration)
         with self.db_manager.session(write=True) as session:
             repo = AgentRepository(session)
             activation = AgentActivationRepository(session, self.db_manager.evidence_signer, self.permission_engine)
@@ -671,6 +711,8 @@ class RunCoordinator:
                 provenance["automation"] = dict(automation_reference)
             from packages.contracts.agent import AgentVersion
             configuration = AgentVersion.from_stored(version)
+            if skill_content and configuration.payload_hash != source_configuration.payload_hash:
+                raise PermissionDeniedError("Skill assignment changed during content admission.")
             governed = bool(configuration.tool_grants)
             req = RunRequest(prompt=prompt, system_instructions=version.system_prompt, model=version.model,
                 session_id=assignment_id, temperature=version.temperature, max_tokens=version.max_tokens,
@@ -679,8 +721,10 @@ class RunCoordinator:
                 idempotency_key=idempotency_key, metadata={**provenance,
                     "role_name": assignment.role_name, "division_id": assignment.division_id})
             if governed:
-                req.max_iterations = min(configuration.budget_policy.max_turns, 3)
-                req.max_tool_calls = min(req.max_iterations - 1, 2)
+                native = any(name.startswith("aryn_native_") for name in configuration.tool_grants)
+                req.max_iterations = min(configuration.budget_policy.max_turns, 100 if native else 3)
+                req.max_tool_calls = min((req.max_iterations - 1) * len(configuration.tool_grants), 256 if native else 2)
+            self._append_runtime_skills(req, context, configuration, skill_content)
             claimed = self._claim(req, context, "governed_agent" if governed else "direct",
                 session=session, assignment_provenance=provenance, agent_configuration=configuration)
             if claim_callback is not None:
@@ -694,19 +738,62 @@ class RunCoordinator:
     async def execute_bench_agent_turn(self, request, context, version, allowed_tools):
         """Isolated evaluation authority for a persisted version, never a draft grant for user runs."""
         from database.repositories.agent_repo import AgentRepository
+        skill_content = await self._load_runtime_skills(context, version)
+        self._append_runtime_skills(request, context, version, skill_content)
         with self.db_manager.session(write=True) as session:
             self.permission_engine.enforce("run:create", context, context.organization_id, context.project_id, session=session)
             stored = AgentRepository(session).get_version(context, version.id, for_update=True)
             if stored.payload_hash != version.payload_hash or stored.status != "evaluating":
                 raise PermissionDeniedError("Bench version authority differs.")
             if version.tool_grants:
-                request.max_iterations = min(version.budget_policy.max_turns, 3)
-                request.max_tool_calls = min(request.max_iterations - 1, 2)
+                native = any(name.startswith("aryn_native_") for name in version.tool_grants)
+                request.max_iterations = min(version.budget_policy.max_turns, 100 if native else 3)
+                request.max_tool_calls = min((request.max_iterations - 1) * len(version.tool_grants), 256 if native else 2)
             claimed = self._claim(request, context, "governed_agent" if version.tool_grants else "bench",
                 session=session, agent_configuration=version, allowed_tools=allowed_tools)
         if version.tool_grants:
             return await self._execute_governed_turns(request, context, claimed)
         return await self.execute_managed_direct_turn(request, context, _claimed=claimed, _execution_mode="bench")
+
+    async def _load_runtime_skills(self, context, configuration):
+        from packages.contracts.runtime_control import RuntimePolicy
+        policy = RuntimePolicy.model_validate(configuration.metadata.get("hermes", {}))
+        if not policy.skills:
+            return []
+        self.permission_engine.enforce("run:create", context, context.organization_id, context.project_id)
+        content = []
+        import time
+        deadline = time.monotonic() + min(30, configuration.budget_policy.timeout_seconds,
+            configuration.constraints.max_execution_time_seconds)
+        for selection in policy.skills:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise PermissionDeniedError("Skill content admission deadline exceeded.")
+            skill = await asyncio.wait_for(self.runtime_adapter.read_skill(selection), min(5, remaining))
+            self.permission_engine.enforce("run:create", context, context.organization_id, context.project_id)
+            if (skill.name != selection.name or skill.content_hash != selection.content_hash
+                    or hashlib.sha256(skill.content.encode()).hexdigest() != selection.content_hash):
+                raise PermissionDeniedError("Skill content differs from the immutable agent version.")
+            from modules.core.errors import sanitize
+            if sanitize(skill.content, credentials=getattr(self.db_manager, "protected_credentials", ())) != skill.content:
+                raise PermissionDeniedError("Skill content contains a protected credential.")
+            content.append((selection.name, skill.content))
+        return content
+
+    def _append_runtime_skills(self, request, context, configuration, contents):
+        if not contents:
+            return
+        from packages.contracts.runtime_control import RuntimePolicy
+        import time
+        policy = RuntimePolicy.model_validate(configuration.metadata["hermes"])
+        request.system_instructions = (request.system_instructions or "") + "\n\n" + "\n\n".join(
+            "Reviewed skill guidance (Core grants remain authoritative): " + name + "\n" + text for name, text in contents)
+        payload = {"organization_id": context.organization_id, "project_id": context.project_id,
+            "agent_version_id": configuration.id, "agent_payload_hash": configuration.payload_hash,
+            "skills": [item.model_dump(mode="json") for item in policy.skills],
+            "instructions_hash": hashlib.sha256(request.system_instructions.encode()).hexdigest(), "observed_at": time.time()}
+        request.metadata["runtime_skill_admission"] = {"payload": payload,
+            "attestation": self.db_manager.evidence_signer.sign("runtime_skill_admission", payload)}
 
     def _tool_authority(self, run_id, context, iteration):
         from database.repositories.run_state_repo import RunStateRepository
@@ -761,7 +848,7 @@ class RunCoordinator:
                 raise PermissionDeniedError("Bench authority revoked.")
             current_pins = self.mcp_tools.pins(context, version, limits["tool_grants"], session=session)
             expected_pins = {name: value for name, value in {**limits.get("mcp_bindings", {}),
-                **limits.get("https_bindings", {})}.items() if name in limits["tool_grants"]}
+                **limits.get("https_bindings", {}), **limits.get("native_bindings", {})}.items() if name in limits["tool_grants"]}
             if current_pins != expected_pins:
                 raise PermissionDeniedError("MCP version binding changed.")
             return limits
@@ -812,7 +899,7 @@ class RunCoordinator:
                         raise PermissionDeniedError("Probe runtime configuration changed.")
                 limits = self._tool_authority(run_id, context, iteration)
                 prompt = request.prompt if not history else "Continue using the verified tool result."
-                bindings = {**limits.get("mcp_bindings", {}), **limits.get("https_bindings", {})}
+                bindings = {**limits.get("mcp_bindings", {}), **limits.get("https_bindings", {}), **limits.get("native_bindings", {})}
                 declarations = [self.mcp_tools.current(context, name, bindings[name]).definition.declaration
                     for name in limits["tool_grants"] if name != fixture.NAME]
                 definitions = [item.definition() for item in declarations] or ([fixture.definition()] if limits["tool_grants"] else [])
@@ -1003,6 +1090,13 @@ class RunCoordinator:
             exc.run_id = run_id
             raise
 
+        finally:
+            if self.mcp_tools.native_worker is not None:
+                from packages.contracts.runtime import ToolExecutionContext
+                await self.mcp_tools.native_worker.close_run(ToolExecutionContext(run_id=run_id,
+                    organization_id=context.organization_id, project_id=context.project_id,
+                    deadline_at=time.time() + 10, call_number=1))
+
     async def start_managed_run(self, request: RunRequest, context: SecurityContext) -> str:
         """Claim the Core ID before any asynchronous runtime start."""
         request = request.model_copy(deep=True)
@@ -1075,6 +1169,12 @@ class RunCoordinator:
     async def cancel_managed_run(self, run_id: str, context: SecurityContext) -> bool:
         """Return True only for cancellation proven by stored/runtime terminal state."""
         stored, runtime_id, mode = self._owned_run(run_id, context, "run:cancel")
+        if self.mcp_tools.native_worker is not None:
+            from packages.contracts.runtime import ToolExecutionContext
+            import time
+            await self.mcp_tools.native_worker.close_run(ToolExecutionContext(run_id=run_id,
+                organization_id=context.organization_id, project_id=context.project_id,
+                deadline_at=time.time() + 10, call_number=1))
         if stored.status in {RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELLED, RunStatus.OUTCOME_UNKNOWN}:
             return stored.status == RunStatus.CANCELLED
         if not runtime_id:

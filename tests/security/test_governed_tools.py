@@ -1,4 +1,6 @@
 """Offline model double + actual Core/Factory/Bench/fixture executor; no live inference."""
+from tests.model_fixtures import offline_model_router
+
 import asyncio
 import json
 import time
@@ -380,7 +382,7 @@ async def test_recovery_retains_unknown_tool_run_without_retry(lifecycle):
     db.engine.dispose()
     other_engine = create_db_engine(db_url)
     try:
-        replacement = RunCoordinator(runtime, db_manager=DatabaseManager(other_engine))
+        replacement = RunCoordinator(runtime, db_manager=DatabaseManager(other_engine), model_router=offline_model_router())
         assert replacement.recover_in_flight_runs(ctx) == []  # Already honestly terminal unknown.
         result = await replacement.execute_assigned_agent_turn(assignment.id, "Read aryn-core.", ctx, "recovered")
         assert result.status == RunStatus.OUTCOME_UNKNOWN and len(runtime.turns) == 1

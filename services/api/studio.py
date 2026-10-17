@@ -16,6 +16,9 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.exc import IntegrityError
+from packages.contracts.runtime_control import GatewayConnectionChange, GatewayConnectionRevoke
+from packages.contracts.native_tool import NativeToolReview
+from packages.contracts.runtime_control import SkillRead
 
 from database.connection import DatabaseManager, create_db_engine
 from database.repositories.agent_repo import AgentRepository
@@ -149,12 +152,12 @@ class RunInput(BaseModel):
 
 
 class StudioHermesAdapter(HermesRuntimeAdapter):
-    """Text-only boundary for evaluation and execution; zero live write tools."""
+    """Shared runtime proposes actions; Core admits effects in scoped adapters/workers."""
 
     async def execute_direct_turn(self, request, context):
         caps = await self.capabilities()
         if caps.enabled_toolsets:
-            raise PermissionDeniedError("Studio requires all Hermes toolsets disabled.")
+            raise PermissionDeniedError("Shared Hermes host effects require Core mediation and an approved isolated worker.")
         result = await super().execute_direct_turn(request, context)
         if result.model != request.model:
             raise ModelRoutingError(
@@ -202,6 +205,7 @@ def create_app(
     testing=False,
     authentication: AuthenticationSettings | None = None,
     identity_provider=None,
+    native_worker=None,
 ):
     from packages.config import get_settings
     settings = get_settings()
@@ -276,6 +280,18 @@ def create_app(
     coordinator = RunCoordinator(
         adapter, permission_engine=permissions, audit_logger=audit, db_manager=db, model_router=model_router
     )
+    from modules.core.runtime_control import RuntimeControl
+
+    def protect_gateway_credential(secret):
+        if secret and secret not in protected_credentials:
+            protected_credentials.append(secret)
+            db.protected_credentials = tuple(protected_credentials)
+            protect_diagnostic_logging(db.protected_credentials)
+
+    runtime_control = RuntimeControl(coordinator, local_administration=local_development,
+        protect_credentials=protect_gateway_credential)
+    coordinator.mcp_tools.native_worker = native_worker
+    factory.execution_coordinator.mcp_tools = coordinator.mcp_tools
     workspace_reads = WorkspaceReads(db, permissions, coordinator)
     workspace_service = WorkspaceService(db, permissions)
     editor = AgentEditor(factory)
@@ -372,9 +388,16 @@ def create_app(
                 body = await request.body()
                 if len(body) > 65536:
                     return fail(413, "Isi permintaan terlalu besar.")
-                credential_input += body.decode("utf-8", errors="replace")
+                import re
+                connection_write = (request.method == "POST" and re.fullmatch(
+                    r"/api/projects/[A-Za-z0-9_-]+/model-connection", request.url.path))
+                if not connection_write:
+                    credential_input += body.decode("utf-8", errors="replace")
                 try:
-                    credential_input += json.dumps(json.loads(body), ensure_ascii=False)
+                    value = json.loads(body)
+                    if connection_write and isinstance(value, dict):
+                        value = {name: item for name, item in value.items() if name != "api_key"}
+                    credential_input += json.dumps(value, ensure_ascii=False)
                 except ValueError:
                     pass
             if any(key and key in credential_input for key in protected_credentials):
@@ -569,9 +592,9 @@ def create_app(
                 "version": health.version,
                 "tools_confined": caps.tools_confined,
                 "enabled_toolsets": caps.enabled_toolsets,
-                "message": "ARYN Runtime siap · tanpa tool"
+                "message": "ARYN Runtime siap · mediasi tool Core" if ready and caps.supports_governed_tool_turns else "ARYN Runtime siap · eksekusi teks"
                 if ready
-                else "Runtime dibatasi: seluruh toolset harus dinonaktifkan.",
+                else "Runtime dibatasi: mediasi tool Core belum terverifikasi.",
                 "readiness": health.details.get("status", "unknown"),
             }
         except RuntimeAuthenticationError:
@@ -725,6 +748,50 @@ def create_app(
     @app.get("/api/workspace/home")
     async def workspace_home():
         return workspace_reads.home_summary(context(""))
+
+    @app.get("/api/projects/{project_id}/runtime")
+    async def runtime_inventory(project_id: str):
+        return await runtime_control.inventory(context(project_id))
+
+    @app.post("/api/projects/{project_id}/runtime/skills/read")
+    async def read_runtime_skill(project_id: str, body: SkillRead):
+        context(project_id, "version:create")
+        skill = await adapter.read_skill(body)
+        context(project_id, "version:create")
+        return sanitize(skill.model_dump(mode="json"), credentials=protected_credentials)
+
+    @app.get("/api/projects/{project_id}/model-connection")
+    async def model_connection(project_id: str, refresh: bool = False):
+        return await runtime_control.connection(context(project_id, "system:health"), refresh=refresh)
+
+    @app.post("/api/projects/{project_id}/model-connection")
+    async def replace_model_connection(project_id: str, body: GatewayConnectionChange):
+        return await runtime_control.change_connection(context(project_id, "tool:register"), body)
+
+    @app.post("/api/projects/{project_id}/model-connection/revoke")
+    async def revoke_model_connection(project_id: str, body: GatewayConnectionRevoke):
+        return await runtime_control.change_connection(context(project_id, "tool:register"), body, revoke=True)
+
+    @app.get("/api/projects/{project_id}/runtime/native-tools")
+    async def native_tools(project_id: str):
+        ctx = context(project_id)
+        return {"organization_id": ctx.organization_id, "project_id": ctx.project_id,
+            "configured": native_worker is not None,
+            "tools": list(native_worker.schemas) if native_worker is not None else [],
+            "schemas": native_worker.schemas if native_worker is not None else {},
+            "registrations": [{"connection_id": entry.identifier, "tool_name": entry.definition.tool_name,
+                "expires_at": entry.approval.expires_at} for scope, entry in coordinator.mcp_tools._entries.items()
+                if scope[:2] == (ctx.organization_id, ctx.project_id) and entry.native],
+            "bindings": coordinator.mcp_tools.summaries(ctx)}
+
+    @app.post("/api/projects/{project_id}/runtime/native-tools/approve")
+    async def approve_native_tool(project_id: str, body: NativeToolReview):
+        return coordinator.mcp_tools.register_native(context(project_id, "tool:register"), body)
+
+    @app.post("/api/projects/{project_id}/runtime/native-tools/{connection_id}/revoke")
+    async def revoke_native_tool(project_id: str, connection_id: str):
+        coordinator.mcp_tools.revoke(context(project_id, "tool:register"), connection_id)
+        return {"revoked": True}
 
     @app.get("/api/projects/{project_id}/summary", response_model=WorkspaceSummary)
     async def summary(project_id: str):

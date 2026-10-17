@@ -1,9 +1,9 @@
 """End-to-End Smoke Test for ARYN Autonomous Agent Infrastructure.
 
 Validates the full governance pipeline:
-Client Request → ARYN Core Policy → Permission Gate → Model Router → Budget Preflight
-→ Pre-Execution Audit → Hermes Runtime Adapter → Hermes Gateway (127.0.0.1:8642)
-→ Model Inference → Response Capture → Post-Execution Budget Update → Post-Execution Audit.
+Client Request â†’ ARYN Core Policy â†’ Permission Gate â†’ Model Router â†’ Budget Preflight
+â†’ Pre-Execution Audit â†’ Hermes Runtime Adapter â†’ Hermes Gateway (127.0.0.1:8642)
+â†’ Model Inference â†’ Response Capture â†’ Post-Execution Budget Update â†’ Post-Execution Audit.
 
 Complies with user task requirement 8, ARYN-TECH-001 ADR-004, and ARYN-SEC-001.
 """
@@ -36,7 +36,6 @@ from tests.live_gateway import selected_live_model
 from tests.conftest import bind_test_context
 from database.repositories.organization_repo import OrganizationRepository
 from packages.runtime_adapters.hermes import HermesRuntimeAdapter
-from packages.model_adapters import ModelRouter
 
 
 def get_live_api_key() -> str:
@@ -177,7 +176,7 @@ async def test_mocked_end_to_end_smoke_isolated():
         permission_engine=PermissionEngine(db_manager=db_manager),
         budget_engine=BudgetEngine(db_manager=db_manager),
         audit_logger=AuditLogger(db_manager=db_manager),
-        model_router=ModelRouter(),
+        model_router=__import__("tests.model_fixtures", fromlist=["offline_model_router"]).offline_model_router(),
         db_manager=db_manager,
     )
     request = RunRequest(prompt="ping", model="mock-fast")

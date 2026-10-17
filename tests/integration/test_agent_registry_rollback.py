@@ -1,4 +1,6 @@
 """AF-07: exact immutable publication activation, rollback and durable run identity."""
+from tests.model_fixtures import offline_model_router
+
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 
@@ -40,7 +42,7 @@ async def test_registry_rollback_preserves_artifacts_baseline_and_run_provenance
     db, ctx, runtime, factory, bp, first, second, assignment, intent = await publications(lifecycle)
     older = factory.assign_agent(ctx, bp.id, first.id, "Original publication")
     other = factory.assign_agent(ctx, bp.id, second.id, "Research B")
-    core = RunCoordinator(runtime, db_manager=db)
+    core = RunCoordinator(runtime, db_manager=db, model_router=offline_model_router())
     original = await core.execute_assigned_agent_turn(older.id, "Original run", ctx, "original-run-request")
     assert original.agent_version_id == first.id
     before = await core.execute_assigned_agent_turn(assignment.id, "Before rollback", ctx, "before-run-request")
@@ -102,7 +104,7 @@ async def test_in_flight_run_keeps_claimed_version_across_rollback(lifecycle):
         await release.wait()
         return await actual_execute(request, context)
     runtime.execute_direct_turn = waiting
-    core = RunCoordinator(runtime, db_manager=db)
+    core = RunCoordinator(runtime, db_manager=db, model_router=offline_model_router())
     task = asyncio.create_task(core.execute_assigned_agent_turn(assignment.id, "In-flight request", ctx, "in-flight-request"))
     await started.wait()
     with db.session() as session:

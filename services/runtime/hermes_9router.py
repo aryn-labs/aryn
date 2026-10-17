@@ -40,17 +40,16 @@ def build_adapter(settings, runtime_key, port=None):
     from agent import title_generator
     from gateway.config import PlatformConfig
     from gateway.platforms.api_server import APIServerAdapter, _require_auth, _hermes_version
-    from gateway.run import _load_gateway_config
-    from hermes_cli.tools_config import _get_platform_tools
-
     def require_confinement():
-        # Read security configuration through Hermes, without modifying it.
-        if _get_platform_tools(_load_gateway_config(), "api_server"):
-            raise RuntimeError("Hermes toolsets must already be disabled.")
+        # Confinement belongs to this dedicated binding, not global user settings.
+        # Every agent has no host tools and native dispatch is overridden below.
+        if not settings.base_url or len(runtime_key) < 32:
+            raise RuntimeError("Authenticated governed runtime binding required.")
 
     require_confinement()
     runtime_instance = uuid.uuid4().hex
     runtime_configuration = settings.runtime_configuration_id(runtime_instance)
+    gateway_enabled = True
     # Session naming must not dispatch an additional, ungoverned model request.
     # This affects only the dedicated ARYN process, never installed Hermes config.
     title_generator._auto_title_enabled = lambda: False
@@ -119,8 +118,14 @@ def build_adapter(settings, runtime_key, port=None):
                 if any(request.headers.get(name) is not None for name in ("X-Hermes-Session-Id", "X-Hermes-Session-Key")):
                     return web.json_response({"error": {"code": "native_session_selection_forbidden"}}, status=403)
                 try:
+                    if not gateway_enabled and request.path not in {"/aryn/gateway", "/aryn/inventory", "/v1/toolsets", "/v1/capabilities", "/health/detailed"}:
+                        return web.json_response({"error": {"code": "gateway_connection_revoked"}}, status=409)
                     require_confinement()
-                    response = await handler(request)
+                    self._aryn_inflight = getattr(self, "_aryn_inflight", 0) + 1
+                    try:
+                        response = await handler(request)
+                    finally:
+                        self._aryn_inflight -= 1
                     if isinstance(response, web.Response) and response.content_type == "application/json":
                         data = json.loads(response.body)
                         data = sanitize(data, credentials=(runtime_key, settings.api_key.get_secret_value()))
@@ -143,7 +148,7 @@ def build_adapter(settings, runtime_key, port=None):
                 except Exception:
                     return web.json_response({"error": {"code": "runtime_operation_failed"}}, status=502)
 
-            application = web.Application(middlewares=[boundary], client_max_size=65536)
+            application = web.Application(middlewares=[boundary], client_max_size=1048576)
             for method, path, handler in self._http_route_table():
                 application.router.add_route(method, path, handler)
             return application
@@ -233,6 +238,10 @@ def build_adapter(settings, runtime_key, port=None):
                 ("GET", "/v1/toolsets", self.aryn_toolsets),
                 ("GET", "/v1/capabilities", self.aryn_capabilities),
                 ("GET", "/aryn/gateway", self.aryn_gateway),
+                ("PUT", "/aryn/gateway", self.replace_gateway),
+                ("DELETE", "/aryn/gateway", self.revoke_gateway),
+                ("GET", "/aryn/inventory", self.aryn_inventory),
+                ("POST", "/aryn/skills/read", self.aryn_read_skill),
                 ("POST", "/aryn/turn", self.aryn_turn),
                 ("POST", "/v1/chat/completions", self._handle_chat_completions),
                 ("POST", "/v1/runs", self._handle_runs),
@@ -245,8 +254,23 @@ def build_adapter(settings, runtime_key, port=None):
 
         async def aryn_toolsets(self, request):
             require_confinement()
-            return web.json_response({"data": [], "governed_tool_turns": True,
-                                      "tool_isolation": "read_only_fixture"})
+            from services.runtime.inventory import discover_toolsets
+            return web.json_response({"data": [item.model_dump(mode="json") for item in discover_toolsets()], "governed_tool_turns": True,
+                                      "tool_isolation": "core_mediated"})
+
+        async def aryn_inventory(self, request):
+            from services.runtime.inventory import discover_inventory
+            return web.json_response(discover_inventory(runtime_configuration).model_dump(mode="json"))
+
+        async def aryn_read_skill(self, request):
+            from packages.contracts.runtime_control import SkillRead, SkillContent
+            from services.runtime.inventory import discover_skill_content
+            selection = SkillRead.model_validate(await request.json())
+            skill = discover_skill_content().get(selection.name)
+            if skill is None or skill["content_hash"] != selection.content_hash:
+                return web.json_response({"error": {"code": "skill_integrity_unavailable"}}, status=409)
+            return web.json_response(SkillContent(name=selection.name, content_hash=selection.content_hash,
+                content=skill["content"]).model_dump(mode="json"))
 
         async def aryn_capabilities(self, request):
             require_confinement()
@@ -261,7 +285,41 @@ def build_adapter(settings, runtime_key, port=None):
             return web.json_response({"gateway": "9Router", "runtime_backend": "Hermes",
                                       "base_url": settings.base_url, "exact_model_enforced": True,
                                       "async_provenance": True, "runtime_instance": runtime_instance,
+                                      "enabled": gateway_enabled,
                                       "configuration_id": runtime_configuration})
+
+        async def replace_gateway(self, request):
+            nonlocal settings, runtime_configuration, runtime_instance, gateway_enabled
+            from packages.contracts.runtime_control import GatewayConnectionChange
+            from packages.model_adapters.gateway import GatewaySettings
+            body = await request.json()
+            change = GatewayConnectionChange.model_validate(body)
+            if (change.expected_configuration_id != settings.configuration_id
+                    or getattr(self, "_aryn_inflight", 0) != 1
+                    or any(not task.done() for task in getattr(self, "_active_run_tasks", {}).values())):
+                return web.json_response({"error": {"code": "gateway_configuration_conflict"}}, status=409)
+            replacement = GatewaySettings(base_url=change.base_url, api_key=change.api_key)
+            protect_diagnostic_logging((runtime_key, replacement.api_key.get_secret_value()))
+            settings = replacement
+            gateway_enabled = True
+            runtime_instance = uuid.uuid4().hex
+            runtime_configuration = settings.runtime_configuration_id(runtime_instance)
+            return await self.aryn_gateway(request)
+
+        async def revoke_gateway(self, request):
+            nonlocal settings, gateway_enabled, runtime_instance, runtime_configuration
+            from packages.contracts.runtime_control import GatewayConnectionRevoke
+            change = GatewayConnectionRevoke.model_validate(await request.json())
+            if (change.expected_configuration_id != settings.configuration_id
+                    or getattr(self, "_aryn_inflight", 0) != 1
+                    or any(not task.done() for task in getattr(self, "_active_run_tasks", {}).values())):
+                return web.json_response({"error": {"code": "gateway_configuration_conflict"}}, status=409)
+            gateway_enabled = False
+            from packages.model_adapters import GatewaySettings
+            settings = GatewaySettings(base_url=settings.base_url, api_key="")
+            runtime_instance = uuid.uuid4().hex
+            runtime_configuration = settings.runtime_configuration_id(runtime_instance)
+            return await self.aryn_gateway(request)
 
         def _create_agent(self, **kwargs):
             require_confinement()
@@ -416,6 +474,7 @@ async def serve(args):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--hermes-source", required=True)
+    parser.add_argument("--runtime-home")
     parser.add_argument("--port", type=int, default=None)
     parser.add_argument("--check", action="store_true")
     asyncio.run(serve(parser.parse_args()))

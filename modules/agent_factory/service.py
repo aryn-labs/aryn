@@ -162,6 +162,8 @@ class AgentFactoryService:
                 else model_policy
             )
             parsed_model_policy.validate_model(model)
+            if parsed_model_policy.provider != "9router":
+                raise ValueError("New agent model policies must use the 9Router gateway.")
 
         # 2. Tool boundary confinement: explicit grants & deny-by-default
         if tool_policy:
@@ -180,6 +182,22 @@ class AgentFactoryService:
                 raise ForbiddenToolError(
                     f"Requested tool '{t}' is strictly forbidden by ARYN security policy (AGENTS.md rule 5)."
                 )
+
+        if metadata and "hermes" in metadata:
+            from packages.contracts.runtime_control import RuntimePolicy
+            RuntimePolicy.model_validate(metadata["hermes"])
+
+        if any(name.startswith("aryn_native_") for name in tools):
+            from packages.contracts.runtime_control import RuntimePolicy
+            policy = RuntimePolicy.model_validate((metadata or {}).get("hermes", {}))
+            if policy.environment != "isolated_worker":
+                raise ForbiddenToolError("Native tools require the explicitly selected isolated worker environment.")
+            bindings = (metadata or {}).get("native_bindings", {})
+            if not isinstance(bindings, dict):
+                raise ForbiddenToolError("Native bindings must pin existing reviewed Core actions.")
+            for name in tools:
+                if name.startswith("aryn_native_"):
+                    self.execution_coordinator.mcp_tools.current(context, name, bindings.get(name), session=session)
 
         # 3. Evaluation reference validation
         if evaluation_reference:

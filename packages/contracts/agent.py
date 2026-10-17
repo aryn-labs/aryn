@@ -135,7 +135,11 @@ class AgentConstraints(BaseModel):
 
 
 class AgentToolPolicy(BaseModel):
-    """Explicit tool grant policy enforcing deny-by-default boundaries (AGENTS.md rule 5)."""
+    """Deny by default. Broad access flags never authorize host execution.
+
+    Scoped connector/native actions require exact grants, their own current Core
+    approvals and a verified adapter/worker boundary; these are not host grants.
+    """
     tool_grants: List[str] = Field(default_factory=list)
     forbidden_tools: List[str] = Field(
         default_factory=lambda: [
@@ -171,7 +175,7 @@ class AgentToolPolicy(BaseModel):
 
 class AgentModelPolicy(BaseModel):
     """Model policy enforcing exact model selection and prohibiting silent fallback (ADR-005)."""
-    primary_model: str = "mock-fast"
+    primary_model: str = ""
     provider: str = "9router"
     allowed_models: List[str] = Field(default_factory=list)
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
@@ -313,7 +317,7 @@ class AgentVersion(BaseModel):
                     data["max_tokens"] = mp.max_tokens
             elif isinstance(mp, dict):
                 if not model:
-                    data["model"] = mp.get("primary_model", "mock-fast")
+                    data["model"] = mp.get("primary_model", "")
                 if "temperature" not in data or data["temperature"] is None:
                     data["temperature"] = mp.get("temperature", 0.7)
                 if "max_tokens" not in data or data["max_tokens"] is None:

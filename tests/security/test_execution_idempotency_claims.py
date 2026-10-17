@@ -1,5 +1,7 @@
 """Count actual adapter dispatches while a duplicate request is in flight."""
 
+from tests.model_fixtures import offline_model_router
+
 import asyncio
 
 import pytest
@@ -28,9 +30,9 @@ async def test_concurrent_direct_requests_dispatch_runtime_once(lifecycle):
         return await execute(request, context)
     runtime.execute_direct_turn = slow
     request = RunRequest(prompt="Research", model="mock-fast", idempotency_key="same-key")
-    first = asyncio.create_task(RunCoordinator(runtime, db_manager=db).execute_managed_direct_turn(request, ctx))
+    first = asyncio.create_task(RunCoordinator(runtime, db_manager=db, model_router=offline_model_router()).execute_managed_direct_turn(request, ctx))
     await asyncio.wait_for(entered.wait(), 3)
-    second = asyncio.create_task(RunCoordinator(runtime, db_manager=db).execute_managed_direct_turn(request, ctx))
+    second = asyncio.create_task(RunCoordinator(runtime, db_manager=db, model_router=offline_model_router()).execute_managed_direct_turn(request, ctx))
     await asyncio.sleep(0.05)
     release.set()
     outcomes = await asyncio.gather(first, second, return_exceptions=True)
@@ -46,7 +48,7 @@ async def test_concurrent_direct_requests_dispatch_runtime_once(lifecycle):
 @pytest.mark.asyncio
 async def test_same_key_with_different_configuration_is_a_conflict(lifecycle):
     db, ctx, runtime, factory, bp, version = lifecycle
-    coordinator = RunCoordinator(runtime, db_manager=db)
+    coordinator = RunCoordinator(runtime, db_manager=db, model_router=offline_model_router())
     request = RunRequest(prompt="Research", model="mock-fast", idempotency_key="same-key")
     await coordinator.execute_managed_direct_turn(request, ctx)
     with pytest.raises(IdempotencyConflictError):
@@ -63,7 +65,7 @@ async def test_failed_timeout_retry_does_not_dispatch_again(lifecycle):
         calls += 1
         raise TimeoutError("Runtime outcome is unknown")
     runtime.execute_direct_turn = timeout
-    coordinator = RunCoordinator(runtime, db_manager=db)
+    coordinator = RunCoordinator(runtime, db_manager=db, model_router=offline_model_router())
     request = RunRequest(prompt="Research", model="mock-fast", idempotency_key="timeout-key")
     with pytest.raises(TimeoutError):
         await coordinator.execute_managed_direct_turn(request, ctx)
@@ -89,10 +91,10 @@ async def test_async_claim_is_persisted_before_runtime_start_and_shared(lifecycl
         return "runtime-id"
     runtime.start_run = slow_start
     request = RunRequest(prompt="Research", model="mock-fast", idempotency_key="async-key")
-    coordinator = RunCoordinator(runtime, db_manager=db)
+    coordinator = RunCoordinator(runtime, db_manager=db, model_router=offline_model_router())
     first = asyncio.create_task(coordinator.start_managed_run(request, ctx))
     await asyncio.wait_for(entered.wait(), 3)
-    duplicate_id = await RunCoordinator(runtime, db_manager=db).start_managed_run(request, ctx)
+    duplicate_id = await RunCoordinator(runtime, db_manager=db, model_router=offline_model_router()).start_managed_run(request, ctx)
     release.set()
     assert await first == duplicate_id
     assert duplicate_id != "runtime-id"
@@ -113,13 +115,13 @@ async def test_cancelled_caller_is_unknown_and_retry_is_cached(lifecycle):
         await hold.wait()
     runtime.execute_direct_turn = interrupted
     request = RunRequest(prompt="Research", model="mock-fast", idempotency_key="crash-key")
-    coordinator = RunCoordinator(runtime, db_manager=db)
+    coordinator = RunCoordinator(runtime, db_manager=db, model_router=offline_model_router())
     task = asyncio.create_task(coordinator.execute_managed_direct_turn(request, ctx))
     await asyncio.wait_for(entered.wait(), 3)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
-    result = await RunCoordinator(runtime, db_manager=db).execute_managed_direct_turn(request, ctx)
+    result = await RunCoordinator(runtime, db_manager=db, model_router=offline_model_router()).execute_managed_direct_turn(request, ctx)
     assert result.status == RunStatus.OUTCOME_UNKNOWN
     assert result.usage.availability == "unavailable"
     assert calls == 1
@@ -145,7 +147,7 @@ def test_threaded_claim_across_connections_dispatches_once(lifecycle):
     def invoke(_):
         barrier.wait(timeout=5)
         try:
-            return asyncio.run(RunCoordinator(runtime, db_manager=db).execute_managed_direct_turn(request, ctx))
+            return asyncio.run(RunCoordinator(runtime, db_manager=db, model_router=offline_model_router()).execute_managed_direct_turn(request, ctx))
         except RunInProgressError as exc:
             return exc
     with ThreadPoolExecutor(max_workers=8) as pool:
@@ -160,7 +162,7 @@ def test_threaded_claim_across_connections_dispatches_once(lifecycle):
 @pytest.mark.asyncio
 async def test_unique_runs_and_atomic_usage_for_different_requests(lifecycle):
     db, ctx, runtime, factory, bp, version = lifecycle
-    coordinator = RunCoordinator(runtime, db_manager=db)
+    coordinator = RunCoordinator(runtime, db_manager=db, model_router=offline_model_router())
     results = await asyncio.gather(*[
         coordinator.execute_managed_direct_turn(RunRequest(prompt="Research", model="mock-fast", idempotency_key=f"key-{i}"), ctx)
         for i in range(5)

@@ -10,6 +10,8 @@ Verifies:
 6. Blueprint persona specification with role, objective, and owner.
 """
 
+from tests.model_fixtures import offline_model_router
+
 import json
 import pytest
 
@@ -328,7 +330,7 @@ def test_agent_blueprint_with_definition_persona():
         OrganizationRepository(session).create_project(ctx, "proj_research", "Research Project", "research-proj")
 
     runtime = IsolatedTestRuntime()
-    factory = AgentFactoryService(db, BenchRunner(runtime))
+    factory = AgentFactoryService(db, BenchRunner(runtime), model_router=offline_model_router())
 
     bp = factory.create_blueprint(
         context=ctx,
@@ -477,7 +479,7 @@ async def test_factory_lifecycle_rejects_legacy_payload_format():
 
     runtime = IsolatedTestRuntime()
     runner = BenchRunner(runtime)
-    factory = AgentFactoryService(db, runner)
+    factory = AgentFactoryService(db, runner, model_router=offline_model_router())
 
     bp = factory.create_blueprint(ctx, name="Investigator", slug="investigator")
 

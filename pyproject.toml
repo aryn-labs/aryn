@@ -48,3 +48,8 @@ select = ["E4", "E7", "E9", "F", "B"]
 # These entry points must install the isolated runtime path before importing it.
 "scripts/hermes-9router.py" = ["E402"]
 "tests/hermes_gateway_check.py" = ["E402"]
+
+[dependency-groups]
+dev = [
+    "pytest-xdist>=3.8,<4",
+]

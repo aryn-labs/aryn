@@ -1,4 +1,6 @@
 """Freshness attacks cannot replace independently committed governance state."""
+from tests.model_fixtures import offline_model_router
+
 import datetime
 import json
 import sqlite3
@@ -20,6 +22,95 @@ from modules.bench.quality_gate import QualityGateFailedError
 from packages.contracts.core import AuditStatus
 from tests.integration.test_agent_registry_rollback import publications
 from tests.storage_attacks import corrupt_storage
+
+
+def test_history_observation_commit_keeps_independent_store_unchanged(lifecycle):
+    from modules.core.history import observed_head
+    db, ctx, *_ = lifecycle
+    store = db.history_commitments
+    before = store.read()
+    bytes_before = store.path.read_bytes()
+    with db.session(write=True) as session:
+        assert observed_head(session, "verification", ctx, "read-only") is None
+    assert store.read() == before
+    assert store.path.read_bytes() == bytes_before
+
+
+@pytest.mark.parametrize("mutation", ["row", "ddl", "function", "function_ddl"])
+def test_application_mutation_without_head_update_retains_durable_intent(lifecycle, monkeypatch, mutation):
+    from modules.core.history import observed_head
+    db, ctx, *_ = lifecycle
+    store = db.history_commitments
+    def lost_ack(_token):
+        raise RuntimeError("Synthetic lost application commit acknowledgement")
+    monkeypatch.setattr(store, "finish", lost_ack)
+    with pytest.raises(RuntimeError, match="lost application commit"):
+        with db.session(write=True) as session:
+            observed_head(session, "verification", ctx, "read-only")
+            if mutation == "ddl":
+                session.execute(text("CREATE TABLE history_observation_probe (value INTEGER)"))
+            elif mutation in {"function", "function_ddl"}:
+                raw = session.connection().connection.driver_connection
+                def mutate_from_select():
+                    if mutation == "function_ddl":
+                        raw.execute("CREATE TABLE history_observation_probe (value INTEGER)")
+                        return 1
+                    return raw.execute("UPDATE memberships SET status='revoked' WHERE organization_id=? AND user_id=?",
+                        (ctx.organization_id, ctx.actor.actor_id)).rowcount
+                raw.create_function("history_observation_write", 0, mutate_from_select)
+                session.execute(text("SELECT history_observation_write()"))
+            else:
+                session.execute(text("UPDATE memberships SET status='revoked' WHERE organization_id=:org AND user_id=:actor"),
+                    {"org": ctx.organization_id, "actor": ctx.actor.actor_id})
+    with pytest.raises(HistoryUnverifiedError, match="unresolved durable commit intent"):
+        store.read()
+
+
+@pytest.mark.parametrize("change", ["head", "pending"])
+def test_history_observation_commit_rejects_concurrent_authority_change(lifecycle, change):
+    from modules.core.history import observed_head
+    db, ctx, *_ = lifecycle
+    store = db.history_commitments
+    key = head_key("verification", ctx, "read-only")
+    with pytest.raises(HistoryUnverifiedError):
+        with db.session(write=True) as session:
+            assert observed_head(session, "verification", ctx, "read-only") is None
+            if change == "head":
+                store.mutate(lambda document: document["heads"].update({key: {"generation": 1}}))
+            else:
+                store.prepare({key: None}, {})
+
+
+def test_history_observation_lock_covers_application_commit(lifecycle):
+    import threading
+    from sqlalchemy import event
+    from modules.core.history import HistoryCommitments, observed_head
+    db, ctx, *_ = lifecycle
+    competitor = HistoryCommitments(db.engine, db.evidence_signer)
+    started, finished = threading.Event(), threading.Event()
+    failures = []
+    def write():
+        started.set()
+        try:
+            competitor.mutate(lambda document: document["heads"].update({"concurrent": {"generation": 1}}))
+        except Exception as error:
+            failures.append(error)
+        finally:
+            finished.set()
+    thread = threading.Thread(target=write)
+    try:
+        with db.session(write=True) as session:
+            observed_head(session, "verification", ctx, "read-only")
+            @event.listens_for(session, "before_commit")
+            def while_committing(_session):
+                thread.start()
+                assert started.wait(1)
+                assert not finished.wait(.05)
+        assert finished.wait(5) and not failures
+        assert competitor.read()["heads"]["concurrent"] == {"generation": 1}
+    finally:
+        if thread.ident is not None:
+            thread.join(timeout=5)
 
 
 @pytest.mark.asyncio
@@ -55,7 +146,7 @@ async def test_deleted_or_replayed_history_fails_closed(lifecycle, attack):
     with pytest.raises((ValueError, QualityGateFailedError)):
         factory.rollback_assignment(ctx, assignment.id, intent.model_copy(update={"expected_transition_id": None if attack == "all_activations" else old_pointer}))
     with pytest.raises((ValueError, QualityGateFailedError)):
-        await RunCoordinator(runtime, db_manager=db).execute_assigned_agent_turn(assignment.id, "Must not dispatch", ctx, "history-attack-run")
+        await RunCoordinator(runtime, db_manager=db, model_router=offline_model_router()).execute_assigned_agent_turn(assignment.id, "Must not dispatch", ctx, "history-attack-run")
     assert len(runtime.requests) == requests
     if attack in {"last_baseline", "publication"}:
         assert not {x.version_id: x for x in factory.version_registry(ctx, bp.id)}[second.id].rollback_eligible
@@ -142,7 +233,7 @@ async def test_commitment_failure_blocks_run_rollback_and_promotion(lifecycle, f
     with pytest.raises(ValueError):
         factory.rollback_assignment(ctx, assignment.id, intent)
     with pytest.raises(ValueError):
-        await RunCoordinator(runtime, db_manager=db).execute_assigned_agent_turn(assignment.id, "No dispatch", ctx, "missing-head-run")
+        await RunCoordinator(runtime, db_manager=db, model_router=offline_model_router()).execute_assigned_agent_turn(assignment.id, "No dispatch", ctx, "missing-head-run")
     with pytest.raises((ValueError, QualityGateFailedError)):
         factory.approve_version(ctx, third.id)
     assert factory.get_assignment(ctx, assignment.id).version_id == second.id

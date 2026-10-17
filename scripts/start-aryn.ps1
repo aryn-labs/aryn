@@ -3,6 +3,7 @@ param(
     [switch]$NoBrowser,
     [switch]$SkipInstall,
     [switch]$SkipBuild,
+    [string]$NativeWorkerManifest = '',
     [switch]$CheckOnly
 )
 $ErrorActionPreference = 'Stop'
@@ -15,4 +16,4 @@ if ($env:ARYN_AUTH_MODE -and $env:ARYN_AUTH_MODE -ne 'local-development') { thro
 # API_SERVER_KEY is inherited by both Runtime and Studio; never written to a file.
 Initialize-ArynRuntimeAuthentication
 & (Join-Path $PSScriptRoot 'start-runtime-9router.ps1') -CheckOnly:$CheckOnly
-& (Join-Path $PSScriptRoot 'start-studio.ps1') -NoBrowser:$NoBrowser -SkipInstall:$SkipInstall -SkipBuild:$SkipBuild -CheckOnly:$CheckOnly
+& (Join-Path $PSScriptRoot 'start-studio.ps1') -NoBrowser:$NoBrowser -SkipInstall:$SkipInstall -SkipBuild:$SkipBuild -CheckOnly:$CheckOnly -NativeWorkerManifest $NativeWorkerManifest

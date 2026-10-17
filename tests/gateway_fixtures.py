@@ -13,7 +13,7 @@ COMPLETION = {"id": "isolated-runtime-id", "model": MODEL, "created": 1,
               "usage": {"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 5}, "aryn": PROOF}
 
 
-def standard_handler(request, *, models=None, response=None):
+def standard_handler(request, *, models=None, response=None, settings=None):
     if request.url.port == 20128:
         rows = models if models is not None else [{"id": MODEL, "availability": "available"}]
         rows = [{**m, **({"availability_verified": True, "availability_source": "provider_discovery",
@@ -22,8 +22,11 @@ def standard_handler(request, *, models=None, response=None):
     if request.url.path == "/v1/toolsets":
         return httpx.Response(200, json={"data": []})
     if request.url.path == "/aryn/gateway":
-        return httpx.Response(200, json={"gateway": "9Router", "runtime_backend": "Hermes", "base_url": BASE,
-                              "exact_model_enforced": True, "async_provenance": True})
+        settings = settings or GatewaySettings(api_key="")
+        instance = "c" * 32
+        return httpx.Response(200, json={"gateway": "9Router", "runtime_backend": "Hermes", "base_url": settings.base_url,
+                              "exact_model_enforced": True, "async_provenance": True,
+                              "runtime_instance": instance, "configuration_id": settings.runtime_configuration_id(instance)})
     return httpx.Response(200, json=response or COMPLETION)
 
 

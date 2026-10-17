@@ -25,6 +25,8 @@ import base64
 import json
 import pytest
 
+from tests.model_fixtures import offline_model_router
+
 from database.connection import DatabaseManager, create_db_engine
 from database.schema import Base
 from database.repositories.organization_repo import OrganizationRepository
@@ -385,7 +387,7 @@ def test_forged_admin_role_rejected_by_permission_engine(rbac_db):
 async def test_forged_admin_role_rejected_in_run_coordinator(rbac_db):
     """RunCoordinator refuses execution when caller claims admin but DB is viewer."""
     runtime = MockTestRuntime()
-    coordinator = RunCoordinator(runtime_adapter=runtime, db_manager=rbac_db)
+    coordinator = RunCoordinator(runtime_adapter=runtime, db_manager=rbac_db, model_router=offline_model_router())
 
     forged_context = bind_test_context(SecurityContext(
         actor=Actor(

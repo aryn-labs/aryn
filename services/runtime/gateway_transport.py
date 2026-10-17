@@ -173,7 +173,7 @@ class ExactGatewayTransport(httpx.BaseTransport):
             calls = message.get("tool_calls")
             if calls:
                 if (self.receipt.tool_names is None or choices[0]["finish_reason"] != "tool_calls"
-                        or not isinstance(calls, list) or not 1 <= len(calls) <= 2):
+                        or not isinstance(calls, list) or not 1 <= len(calls) <= 32):
                     return self._reject(request, "invalid_gateway_completion")
                 parsed = []
                 for call in calls:

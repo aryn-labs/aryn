@@ -10,6 +10,7 @@ from services.api.studio import runtime_key
 
 def test_production_router_has_no_nous_default():
     router = ModelRouter()
+    assert router.catalog == {}
     assert "stealth/space-bunny-alpha" not in router.catalog
     with pytest.raises(ModelRoutingError):
         router.resolve_model()

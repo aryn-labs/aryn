@@ -1,5 +1,7 @@
 """Model discovery/rejection checks use HTTP transports only, never paid/live inference."""
 
+from tests.model_fixtures import offline_model_router
+
 import httpx
 import pytest
 from sqlalchemy import text
@@ -183,7 +185,7 @@ async def test_core_blocks_unknown_model_availability_before_dispatch(lifecycle,
         raise AssertionError("Unknown availability must not dispatch")
     runtime.execute_direct_turn = unexpected_dispatch
     runtime.start_run = unexpected_dispatch
-    coordinator = RunCoordinator(runtime, db_manager=db)
+    coordinator = RunCoordinator(runtime, db_manager=db, model_router=offline_model_router())
     request = RunRequest(prompt="Test", model="mock-fast", idempotency_key=f"unknown-{mode}")
     with pytest.raises(ModelUnavailableError):
         if mode == "direct":

@@ -1,5 +1,9 @@
 # CI delivery validation evidence
 
+For the `main` consolidation, offline review and Linux profiling, see
+[runtime consolidation verification](runtime-consolidation-validation.md).
+The evidence below remains historical and does not attest the current source.
+
 Validation date: 2026-10-08. Source baseline:
 `58bde394ea40c9098f5c8d0e472ef21a3314468c` (`development`).
 `main` was not changed; its local and remote reference was

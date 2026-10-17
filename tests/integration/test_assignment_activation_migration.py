@@ -1,4 +1,6 @@
 """AF-07 migration preserves historical artifacts without synthesizing receipts."""
+from tests.model_fixtures import offline_model_router
+
 import pytest
 from alembic import command
 from alembic.config import Config
@@ -14,7 +16,7 @@ from modules.core.history import HistoryUnverifiedError
 @pytest.mark.parametrize("lifecycle", ["migrations"], indirect=True)
 async def test_activation_upgrade_downgrade_keeps_versions_governance_and_existing_assignment(lifecycle):
     db, ctx, runtime, factory, bp, first, second, assignment, intent = await publications(lifecycle)
-    run = await RunCoordinator(runtime, db_manager=db).execute_assigned_agent_turn(assignment.id, "Prior run", ctx, "migration-run-key")
+    run = await RunCoordinator(runtime, db_manager=db, model_router=offline_model_router()).execute_assigned_agent_turn(assignment.id, "Prior run", ctx, "migration-run-key")
     config = Config(str(ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(ROOT / "database/migrations"))
     with db.engine.begin() as connection:

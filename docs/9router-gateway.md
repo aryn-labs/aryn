@@ -1,5 +1,15 @@
 # ARYN: Hermes runtime, gateway model 9Router
 
+## Current working-tree consolidation — 17 October 2026
+
+The `main` baseline is `024dd77a833c7fd865944a1206c98e3b5421e399`.
+The single production model path, removal of legacy provider adapters, volatile
+connection lifecycle, native capability matrix and Core-governed worker are
+described in [runtime control plane](runtime-control-plane.md). Actual local
+results and remaining exact-commit CI requirements are in
+[runtime consolidation verification](runtime-consolidation-validation.md).
+The dated sections below retain their historical baselines and source findings.
+
 ## Official isolation controls and unresolved delivery gates — 15 October 2026
 
 The owner explicitly declined live inference and requested a source-only blocker

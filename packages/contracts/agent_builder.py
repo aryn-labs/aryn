@@ -29,7 +29,7 @@ class ModelPolicy(AgentModelPolicy, EditorContract):
 
 
 class ToolPolicy(AgentToolPolicy, EditorContract):
-    tool_grants: list[str] = Field(default_factory=list, max_length=0)
+    tool_grants: list[str] = Field(default_factory=list, max_length=32)
     deny_by_default: Literal[True] = True
     network_access: Literal[False] = False
     file_write_access: Literal[False] = False
@@ -57,7 +57,7 @@ class AgentDraft(EditorContract):
     model: str = Field(min_length=1, max_length=128)
     temperature: float = Field(default=0.3, ge=0, le=2)
     max_tokens: int = Field(default=2048, ge=128, le=4096)
-    tool_grants: list[str] = Field(default_factory=list, max_length=0)
+    tool_grants: list[str] = Field(default_factory=list, max_length=32)
     schema_version: Literal["1.0.0"] = "1.0.0"
     role: str = Field(default="general_agent", min_length=1, max_length=64)
     objective: str = Field(default="", max_length=4000)
@@ -72,6 +72,13 @@ class AgentDraft(EditorContract):
 
     @model_validator(mode="after")
     def canonical_consistency(self):
+        if "hermes" in self.metadata:
+            from packages.contracts.runtime_control import RuntimePolicy
+            RuntimePolicy.model_validate(self.metadata["hermes"])
+        if self.tool_grants != self.tool_policy.tool_grants:
+            raise ValueError("Canonical tool grants and tool policy must agree.")
+        if any(not name.startswith(("aryn_native_", "aryn_mcp_", "aryn_https_", "aryn_github_")) for name in self.tool_grants):
+            raise ValueError("Tool grants require an exact Core registered capability.")
         policy = self.model_policy
         if (policy.primary_model, policy.temperature, policy.max_tokens) != (self.model, self.temperature, self.max_tokens):
             raise ValueError("Model policy and canonical model settings must agree.")

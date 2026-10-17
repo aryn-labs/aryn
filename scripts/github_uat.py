@@ -105,6 +105,8 @@ def _build_core(config):
     from modules.core.workflows.coordinator import RunCoordinator
     from packages.contracts.core import Actor, SecurityContext
     from packages.runtime_adapters.github_uat import GitHubUATModelDouble
+    from packages.model_adapters import ModelRouter
+    from packages.contracts.model import ModelSpec, ModelProviderType
     # Explicit isolated state/keys: no application DB, identity environment,
     # persistent key files, provider configuration or runtime process is loaded.
     engine = create_db_engine("sqlite:///:memory:")
@@ -123,7 +125,10 @@ def _build_core(config):
             repo.create_organization(context.organization_id, "Operator GitHub UAT", "github-uat")
             repo.add_member(context.organization_id, context.actor.actor_id, "admin")
             repo.create_project(context, context.project_id, "Operator GitHub UAT", "github-uat")
-        core = RunCoordinator(GitHubUATModelDouble(config.plan.issue_number), db_manager=db,
+        # Explicit operator-only model double; never a production catalog/default.
+        offline_router = ModelRouter(catalog={"mock-fast": ModelSpec(provider=ModelProviderType.MOCK,
+            model_id="mock-fast", display_name="Isolated GitHub operator UAT double", requires_api_key=False)})
+        core = RunCoordinator(GitHubUATModelDouble(config.plan.issue_number), db_manager=db, model_router=offline_router,
             permission_engine=permissions, https_endpoints=(GITHUB_API_ORIGIN,))
         return db, context, core
     except BaseException:

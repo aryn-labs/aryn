@@ -1,5 +1,7 @@
 """Positive and negative contracts for independently reusable deterministic graders."""
 from dataclasses import replace
+from tests.model_fixtures import offline_model_router
+
 import datetime
 import pytest
 from pydantic import ValidationError
@@ -298,7 +300,7 @@ async def test_core_idempotency_claim_observations_are_reusable(lifecycle):
     from database.repositories.run_state_repo import RunStateRepository
     from packages.contracts.runtime import RunRequest
     db, security, runtime, factory, bp, version = lifecycle
-    coordinator = RunCoordinator(runtime, db_manager=db)
+    coordinator = RunCoordinator(runtime, db_manager=db, model_router=offline_model_router())
     request = RunRequest(prompt="Readonly research summary", model="mock-fast", idempotency_key="research-operation")
     evidence = []
     for index in range(2):

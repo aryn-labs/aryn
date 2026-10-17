@@ -13,6 +13,8 @@ Workflow:
 Complies with ARYN-ARCH-001, ARYN-SEC-001, and AGENTS.md rules 3, 4, 5, 6, 7.
 """
 
+from tests.model_fixtures import offline_model_router
+
 import os
 import pytest
 
@@ -146,8 +148,8 @@ async def test_complete_agent_lifecycle_workflow(workflow_db, admin_security_con
     bench_runner = BenchRunner(runtime_adapter=runtime)
 
     # Initialize services
-    factory_service = AgentFactoryService(db_manager=workflow_db, bench_runner=bench_runner)
-    coordinator = RunCoordinator(runtime_adapter=runtime, db_manager=workflow_db)
+    factory_service = AgentFactoryService(db_manager=workflow_db, bench_runner=bench_runner, model_router=offline_model_router())
+    coordinator = RunCoordinator(runtime_adapter=runtime, db_manager=workflow_db, model_router=offline_model_router())
 
     # -------------------------------------------------------------
     # 1. Buat Agent (Blueprint)

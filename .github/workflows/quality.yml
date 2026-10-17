@@ -45,7 +45,9 @@ jobs:
       - run: uv sync --frozen --extra dev
       - run: uv run --frozen --extra dev ruff check .
       - name: All offline backend and security regressions
-        run: uv run --frozen --extra dev pytest -m 'not postgresql' --backend-shard=${{ matrix.shard }} -v --durations=15 -o faulthandler_timeout=120 --junitxml=.local/backend.xml
+        # Leave CPU headroom for Core admission and the real TLS fixtures; their
+        # approved operation deadlines remain unchanged.
+        run: uv run --frozen --extra dev pytest -m 'not postgresql' --backend-shard=${{ matrix.shard }} ${{ matrix.os == 'ubuntu-24.04' && '-n 3 --dist worksteal' || '' }} -v --durations=15 --timing-report=.local/backend-timings.jsonl -o faulthandler_timeout=120 --junitxml=.local/backend.xml
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
@@ -53,6 +55,7 @@ jobs:
           path: |
             .local/backend.xml
             .local/backend-selection.json
+            .local/backend-timings.jsonl
           include-hidden-files: true
           retention-days: 7
 
@@ -172,7 +175,7 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           repository: NousResearch/hermes-agent
-          ref: 937f23db2d707cde1c87337fde3aafee514d117c
+          ref: 3637c512fc3211bdccb61b7140d09ac1018508ba
           path: .local/hermes-source
           persist-credentials: false
       - name: Native dependency lock (no tool/provider extras)
@@ -204,6 +207,11 @@ jobs:
           ARYN_TEST_HERMES_SOURCE: ${{ github.workspace }}/.local/hermes-source
           ARYN_TEST_HERMES_PYTHON: ${{ github.workspace }}/.local/hermes-source/.venv/bin/python
         run: uv run --frozen --extra dev pytest tests/integration/test_hermes_9router_binding.py -q --junitxml=.local/native-runtime.xml
+      - name: Core signed native terminal and filesystem sandbox
+        run: |
+          docker pull python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170
+          uv run --frozen --extra dev python scripts/prepare-native-worker.py --hermes-source .local/hermes-source --base-image python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170 --output .local/native-worker
+          uv run --frozen --extra dev python -m tests.native_worker_check --manifest .local/native-worker/manifest.json > .local/native-worker-verification.json
       - name: Native runtime dependency vulnerabilities
         run: uv run --frozen --extra dev pip-audit --path .local/hermes-source/.venv/lib/python3.14/site-packages --skip-editable --format json --output .local/native-python-audit.json
       - run: uv run --frozen --extra dev python scripts/check_dependency_audit.py .local/native-python-audit.json --native --site-packages .local/hermes-source/.venv/lib/python3.14/site-packages
@@ -214,6 +222,8 @@ jobs:
           path: |
             .local/native-runtime.xml
             .local/native-python-audit.json
+            .local/native-worker-verification.json
+            .local/native-worker/manifest.json
           include-hidden-files: true
           retention-days: 7
 

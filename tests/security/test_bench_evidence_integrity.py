@@ -1,5 +1,7 @@
 """Bench evidence cannot be promoted by inserting or editing PASS records."""
 
+from tests.model_fixtures import offline_model_router
+
 import json
 
 import pytest
@@ -54,7 +56,7 @@ async def test_empty_suite_cannot_be_used_for_publication(lifecycle):
 async def test_valid_attestation_survives_database_manager_restart(lifecycle):
     db, ctx, runtime, factory, bp, version = lifecycle
     await factory.evaluate_version_with_bench(ctx, version.id)
-    restarted = AgentFactoryService(DatabaseManager(db.engine), BenchRunner(IsolatedTestRuntime()))
+    restarted = AgentFactoryService(DatabaseManager(db.engine), BenchRunner(IsolatedTestRuntime()), model_router=offline_model_router())
     assert restarted.approve_version(ctx, version.id).payload_hash == version.payload_hash
     with db.session() as s:
         assert s.execute(text("PRAGMA integrity_check")).scalar() == "ok"

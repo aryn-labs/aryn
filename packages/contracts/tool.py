@@ -43,7 +43,7 @@ class ToolContract(BaseModel):
 
 class ToolDeclaration(ToolContract):
     """Private Core-to-runtime proposal schema; contains no endpoint or credential."""
-    name: str = Field(pattern=r"^aryn_(?:mcp|https|github)_[a-z0-9_]{1,48}$", max_length=64)
+    name: str = Field(pattern=r"^aryn_(?:mcp|https|github|native)_[a-z0-9_]{1,48}$", max_length=64)
     input_schema: dict[str, Any]
 
     @model_validator(mode="after")
@@ -73,7 +73,7 @@ class ToolDeclaration(ToolContract):
                 return [plain(v) for v in value]
             return value
         return {"type": "function", "function": {"name": self.name,
-            "description": "Read data using the explicitly approved project-scoped Core tool.",
+            "description": "Execute the exact human-approved action inside the isolated project run workspace." if self.name.startswith("aryn_native_") else "Read data using the explicitly approved project-scoped Core tool.",
             "parameters": plain(self.input_schema)}}
 
 

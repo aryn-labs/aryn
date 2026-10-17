@@ -31,6 +31,10 @@ class AgentPreviewService:
             if not record.definition_json:
                 raise InvalidStateTransitionError("Save the working copy first.")
             definition = AgentDraft.model_validate_json(record.definition_json)
+            from packages.contracts.runtime_control import RuntimePolicy
+            runtime_policy = RuntimePolicy.model_validate(definition.metadata.get("hermes", {}))
+            if definition.tool_grants or runtime_policy.skills or runtime_policy.toolsets or runtime_policy.memory or runtime_policy.delegation or runtime_policy.scheduling:
+                raise InvalidStateTransitionError("Native capability configurations require candidate Bench and published Core assignment authority; draft text preview cannot authorize them.")
             layout = session.query(AgentEditorLayoutModel).filter_by(
                 blueprint_id=blueprint_id, actor_id=context.actor.actor_id,
                 organization_id=context.organization_id, project_id=context.project_id,

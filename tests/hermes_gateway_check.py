@@ -19,12 +19,9 @@ def reject_network(*args, **kwargs):
 
 source = Path(sys.argv[1]).resolve()
 sys.path.insert(0, str(source))
-import hermes_bootstrap  # noqa: F401
-from hermes_constants import set_hermes_home_override, pin_process_hermes_home
-home = os.environ["ARYN_TEST_HERMES_HOME"]
-set_hermes_home_override(home)
-pin_process_hermes_home(home)
-os.environ["HERMES_HOME"] = home
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from services.runtime.bootstrap import prepare_runtime_home
+prepare_runtime_home(source, os.environ["ARYN_TEST_HERMES_HOME"], os.environ)
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import httpx
 
@@ -179,6 +176,16 @@ async def check():
     assert (await dispatch("GET", "/v1/toolsets", authenticated=False)).status == 401
     assert (await dispatch("GET", "/v1/toolsets")).status == 200
     assert (await dispatch("GET", "/v1/capabilities")).status == 200
+    inventory_response = await dispatch("GET", "/aryn/inventory")
+    assert inventory_response.status == 200
+    inventory = json.loads(inventory_response.body)
+    if len(sys.argv) > 2:
+        Path(sys.argv[2]).write_text(json.dumps(inventory, indent=2) + "\n", encoding="utf-8")
+    assert inventory["runtime"] == "Hermes" and inventory["toolsets"]
+    assert {"terminal", "file", "browser"}.issubset({item["name"] for item in inventory["toolsets"]})
+    assert not any(item["enabled"] or item["executable"] for item in inventory["toolsets"])
+    assert "api_key" not in inventory["settings"]
+    print("REAL_HERMES_CAPABILITY_DISCOVERY_PASS", flush=True)
     for extra in [{"tools": [{"type": "function"}]}, {"tool_choice": "auto"},
                   {"provider": "openai"}, {"fallback_model": "other/model"},
                   {"model_options": {"_aryn_receipt": {}}}, {"stream": True},

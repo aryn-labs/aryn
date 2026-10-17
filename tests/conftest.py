@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import os
 import json
+from tests.model_fixtures import offline_model_router
+
 from pathlib import Path
 from typing import Generator
 
@@ -21,6 +23,37 @@ TEST_IDENTITY_SECRET = "aryn-test-explicit-entropy-secret-key-32b-secure"
 
 def pytest_addoption(parser):
     parser.addoption("--backend-shard", default=None, help="Deterministic offline backend partition, INDEX/COUNT")
+    parser.addoption("--timing-report", default=None, help="Append setup/call/teardown observations as JSON lines")
+
+
+def pytest_configure(config):
+    config._aryn_timings_path = config.getoption("timing_report")
+    if config._aryn_timings_path and not hasattr(config, "workerinput"):
+        path = Path(config._aryn_timings_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("", encoding="utf-8")
+
+
+@pytest.hookimpl(optionalhook=True)
+def pytest_xdist_node_collection_finished(node, ids):
+    if not node.config.getoption("backend_shard"):
+        return
+    previous = getattr(node.config, "_aryn_distributed_ids", None)
+    assert previous is None or previous == ids, "Distributed runner collections differ."
+    node.config._aryn_distributed_ids = ids
+    write_backend_selection(node.config, ids, ids)
+
+
+def pytest_runtest_logreport(report):
+    config = getattr(pytest_runtest_logreport, "config", None)
+    if config is not None and config._aryn_timings_path and not hasattr(config, "workerinput"):
+        with Path(config._aryn_timings_path).open("a", encoding="utf-8") as output:
+            output.write(json.dumps({"nodeid": report.nodeid, "when": report.when,
+                "duration": report.duration, "outcome": report.outcome}) + "\n")
+
+
+def pytest_sessionstart(session):
+    pytest_runtest_logreport.config = session.config
 
 
 def pytest_collection_modifyitems(items, config):
@@ -46,12 +79,17 @@ def pytest_collection_modifyitems(items, config):
 
 def pytest_collection_finish(session):
     shard = session.config.getoption("backend_shard")
-    if shard:
-        path = Path(".local/backend-selection.json")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({"platform": os.name, "shard": shard,
-            "commit": os.getenv("GITHUB_SHA"), "complete": session.config._aryn_backend_collection,
-            "selected": [item.nodeid for item in session.items]}, indent=2) + "\n", encoding="utf-8")
+    if shard and not hasattr(session.config, "workerinput") and not session.config.pluginmanager.hasplugin("dsession"):
+        write_backend_selection(session.config, session.config._aryn_backend_collection,
+            [item.nodeid for item in session.items])
+
+
+def write_backend_selection(config, complete, selected):
+    path = Path(".local/backend-selection.json")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"platform": os.name, "shard": config.getoption("backend_shard"),
+        "commit": os.getenv("GITHUB_SHA"), "complete": complete,
+        "selected": selected}, indent=2) + "\n", encoding="utf-8")
 
 
 @pytest.fixture(autouse=True)
@@ -114,7 +152,7 @@ def lifecycle(tmp_path, request):
         repo.add_member("org", "owner", "admin")
         repo.create_project(ctx, "project", "Test", "test")
     runtime = IsolatedTestRuntime()
-    factory = AgentFactoryService(db, BenchRunner(runtime))
+    factory = AgentFactoryService(db, BenchRunner(runtime), model_router=offline_model_router())
     bp = factory.create_blueprint(ctx, "Integrity", "integrity")
     version = factory.create_version(
         ctx, bp.id, "1.0.0", "Follow research safety guidelines.", "mock-fast",
@@ -122,4 +160,3 @@ def lifecycle(tmp_path, request):
     )
     yield db, ctx, runtime, factory, bp, version
     engine.dispose()
-

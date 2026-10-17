@@ -3,6 +3,8 @@
 Explicitly selecting this directory requires ARYN_TEST_POSTGRES_ADMIN_URL. It never
 falls back to SQLite. The admin connection is for provisioning/attack tests only.
 """
+from tests.model_fixtures import offline_model_router
+
 import os
 import secrets
 import uuid
@@ -112,7 +114,7 @@ def hosted_lifecycle(postgres_db):
         repo.add_member("org", "owner", "admin")
         repo.create_project(ctx, "project", "Project", "project")
     runtime = IsolatedTestRuntime()
-    factory = AgentFactoryService(db, BenchRunner(runtime))
+    factory = AgentFactoryService(db, BenchRunner(runtime), model_router=offline_model_router())
     blueprint = factory.create_blueprint(ctx, "Integrity", "integrity")
     version = factory.create_version(ctx, blueprint.id, "1.0.0", "Follow research safety guidelines.", "mock-fast")
     return db, ctx, runtime, factory, blueprint, version

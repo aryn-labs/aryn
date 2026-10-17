@@ -56,7 +56,7 @@ class ModelProbeEvidence(BaseModel):
 
     @property
     def live_eligible(self):
-        return bool(self.provider and self.provider.lower() not in {"9router", "hermes", "unknown", "unavailable", "custom"}
+        return bool(self.provider and self.provider.lower() not in {"9router", "hermes", "unknown", "unavailable", "custom", "mock", "isolated_test_double", "test-double"}
             and self.reported_model == self.model and self.binding
             and self.binding.origin == "gateway_response" and self.binding.provider_configuration)
 

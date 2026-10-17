@@ -1,4 +1,6 @@
 """Disposable PostgreSQL, restricted writer and genuine Core project transactions."""
+from tests.model_fixtures import offline_model_router
+
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 import pytest
@@ -44,7 +46,7 @@ def test_live_project_creation_edit_race_receipts_and_refresh(hosted_lifecycle):
 async def test_project_catalog_postgresql_queries_and_verified_bench(hosted_lifecycle):
     db, ctx, runtime, factory, _, version = hosted_lifecycle
     permissions = PermissionEngine(db_manager=db)
-    coordinator = RunCoordinator(runtime, db_manager=db, permission_engine=permissions)
+    coordinator = RunCoordinator(runtime, db_manager=db, permission_engine=permissions, model_router=offline_model_router())
     reads = ProjectReads(WorkspaceReads(db, permissions, coordinator))
     for collection in ('work', 'team', 'results', 'activity'):
         assert reads.page(ctx, collection)['project_id'] == ctx.project_id

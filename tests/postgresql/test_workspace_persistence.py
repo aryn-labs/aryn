@@ -1,5 +1,7 @@
 """Divisions and read models with a disposable restricted PostgreSQL writer."""
 from concurrent.futures import ThreadPoolExecutor
+from tests.model_fixtures import offline_model_router
+
 import threading
 
 import pytest
@@ -31,7 +33,7 @@ def test_live_division_generation_race_audit_scope_and_read_model(hosted_lifecyc
     assert set(outcomes) == {2, "conflict"}
     from modules.core.workflows.coordinator import RunCoordinator
     from services.api.workspace_reads import WorkspaceReads
-    reads = WorkspaceReads(db, permissions, RunCoordinator(runtime, db_manager=db, permission_engine=permissions))
+    reads = WorkspaceReads(db, permissions, RunCoordinator(runtime, db_manager=db, permission_engine=permissions, model_router=offline_model_router()))
     assert reads.summary(ctx)["metrics"]["divisions"]["value"] == 1
     detail = reads.detail(ctx, "divisions", created["id"])
     assert detail["generation"] == 2

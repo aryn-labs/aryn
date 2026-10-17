@@ -1,7 +1,6 @@
 """Model policy only. Hermes executes; 9Router owns provider routing/credentials."""
 
 from packages.contracts.model import ModelRoutingConfig, ModelSpec
-from .providers.mock import MockModelAdapter
 
 
 class ModelRoutingError(Exception):
@@ -10,9 +9,7 @@ class ModelRoutingError(Exception):
 
 class ModelRouter:
     def __init__(self, config=None, *, catalog=None):
-        # The named offline model remains for isolated Core callers only.
-        # Studio supplies discovery models, including an empty catalog on failure.
-        self.catalog = dict(MockModelAdapter.SUPPORTED_MODELS if catalog is None else catalog)
+        self.catalog = dict(catalog or {})
         self.config = config or ModelRoutingConfig(allowed_models=list(self.catalog))
         if self.config.allow_fallback or self.config.fallback_model or self.config.fallback_provider:
             raise ModelRoutingError("Silent fallback is forbidden.")
@@ -29,6 +26,4 @@ class ModelRouter:
         return self.catalog[requested_model]
 
     def get_adapter_for_spec(self, spec):
-        if spec.provider.value == "mock":
-            return MockModelAdapter()
         raise ModelRoutingError("Model invocation belongs to Hermes Runtime through 9Router.")

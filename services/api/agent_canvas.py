@@ -17,11 +17,19 @@ def register_agent_canvas(app, coordinator, editor, context, model_catalog, requ
         discovery = await model_catalog()
         ctx = context(project_id)
         models = discovery.models if discovery.discovery_valid else []
+        inventory = await coordinator.runtime_adapter.runtime_inventory()
+        ctx = context(project_id)
         default = AgentDraft(version_number="1.0.0", system_prompt="Jawab secara akurat. Nyatakan ketidakpastian dan batas bukti yang tersedia.",
             model=models[0]["model_id"], model_policy={"primary_model": models[0]["model_id"], "temperature": 0.3, "max_tokens": 2048}) if models else None
         return {"organization_id": ctx.organization_id, "project_id": project_id,
             "models": models, "draft_defaults": default.model_dump(mode="json") if default else None,
-            "tools": [], "tool_policy": "draft_grants_disabled", "telemetry": "core_lifecycle_only"}
+            "tools": [entry.approval.model_dump(mode="json") for key, entry in coordinator.mcp_tools._entries.items()
+                if key[:2] == (ctx.organization_id, ctx.project_id) and entry.native],
+            "skills": [skill.model_dump(mode="json") for skill in inventory.skills],
+            "toolsets": [{"name": name, "tools": tools} for name, tools in (coordinator.mcp_tools.native_worker.toolsets.items()
+                if coordinator.mcp_tools.native_worker is not None else [])
+                if any(schema.get("x_hermes_toolset") == name for schema in coordinator.mcp_tools.native_worker.schemas.values())],
+            "tool_policy": "core_registered_actions", "telemetry": "core_lifecycle_only"}
 
     @app.post(prefix + "/blueprints/{blueprint_id}/preview-runs", status_code=202, response_model=AgentPreviewView)
     async def start(project_id: str, blueprint_id: str, body: AgentPreviewInput):

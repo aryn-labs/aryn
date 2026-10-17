@@ -43,7 +43,9 @@ export const draftSchema = z.object({
   model: z.string().min(1).max(128),
   temperature: z.number().min(0).max(2),
   max_tokens: z.number().int().min(128).max(4096),
-  tool_grants: z.array(z.string()).max(0),
+  tool_grants: z
+    .array(z.string().regex(/^aryn_(?:native|mcp|https|github)_[a-z0-9_]{1,48}$/))
+    .max(32),
   schema_version: z.literal('1.0.0'),
   role: z.string().min(1).max(64),
   objective: z.string().max(4000),
@@ -63,7 +65,9 @@ export const draftSchema = z.object({
     max_execution_time_seconds: z.number().int().min(1).max(3600),
   }),
   tool_policy: z.object({
-    tool_grants: z.array(z.string()).max(0),
+    tool_grants: z
+      .array(z.string().regex(/^aryn_(?:native|mcp|https|github)_[a-z0-9_]{1,48}$/))
+      .max(32),
     forbidden_tools: z.array(z.string()),
     deny_by_default: z.literal(true),
     network_access: z.literal(false),
@@ -200,6 +204,12 @@ export const capabilitiesSchema = z.object({
   ),
   draft_defaults: draftSchema.nullable(),
   tools: z.array(z.unknown()),
+  toolsets: z.array(z.object({ name: z.string(), tools: z.array(z.string()) })).optional(),
+  skills: z
+    .array(
+      z.object({ name: z.string(), description: z.string(), content_hash: z.string().nullable() }),
+    )
+    .optional(),
   telemetry: z.literal('core_lifecycle_only'),
 })
 export type Capabilities = z.infer<typeof capabilitiesSchema>

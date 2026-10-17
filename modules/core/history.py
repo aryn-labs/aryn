@@ -157,6 +157,34 @@ class HistoryCommitments:
         self.mutate(change)
         return token
 
+    @contextmanager
+    def guard_observations(self, observations):
+        """Hold authenticated freshness through a commit that advances no heads.
+
+        There is no protected-history change to recover, so no durable intent
+        is written. The same store writer lock prevents a concurrent authority
+        update between verification and the application transaction's commit.
+        """
+        with self.lock:
+            if self.path is None:
+                document = self.read()
+                if any(document["heads"].get(key) != value for key, value in observations.items()):
+                    raise HistoryUnverifiedError("History freshness changed before database commit.")
+                yield
+            else:
+                with self.connect() as connection:
+                    try:
+                        connection.execute("BEGIN IMMEDIATE")
+                        document = self.decode(connection.execute("SELECT document, signature FROM commitment WHERE id=1").fetchone())
+                        if (document["pending"] is not None
+                                or any(document["heads"].get(key) != value for key, value in observations.items())):
+                            raise HistoryUnverifiedError("History freshness changed before database commit.")
+                    except HistoryUnverifiedError:
+                        raise
+                    except (OSError, sqlite3.Error, ValueError, KeyError, TypeError) as exc:
+                        raise HistoryUnverifiedError("Independent history commitment cannot be verified.") from exc
+                    yield
+
     def finish(self, token):
         def change(document):
             pending = document["pending"]

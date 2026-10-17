@@ -3,6 +3,33 @@
   gap: 24px;
   margin-top: 24px;
 }
+.gateway-fields {
+  display: grid;
+  gap: 16px;
+  margin: 20px 0;
+}
+.gateway-fields label {
+  display: grid;
+  gap: 8px;
+}
+.gateway-fields input {
+  background: var(--composer);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font: inherit;
+}
+.runtime-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0;
+}
+.provider-preferences code {
+  display: block;
+  overflow-wrap: anywhere;
+}
 .language-preference {
   display: flex;
   flex-wrap: wrap;

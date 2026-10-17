@@ -27,7 +27,9 @@ def test_real_selection_is_order_independent_disjoint_and_complete():
 @pytest.fixture
 def coverage(tmp_path, monkeypatch):
     monkeypatch.setenv("GITHUB_SHA", "a" * 40)
-    complete = [f"test_{index}" for index in range(8)]
+    complete = [f"tests/unit/test_fixture.py::test_{index}" for index in range(8)]
+    complete[0] += "[https://[::1]:443]"
+    complete[2] = "tests/unit/test_fixture.py::TestAddresses::test_2[2606:4700:4700::1111]"
     for platform, count in [("posix", 1), ("nt", 4)]:
         for index in range(count):
             folder = tmp_path / f"{platform}-{index}"
@@ -35,12 +37,24 @@ def coverage(tmp_path, monkeypatch):
             selected = complete[index::count]
             (folder / "backend-selection.json").write_text(json.dumps({"platform": platform,
                 "shard": f"{index+1}/{count}", "commit": "a" * 40, "complete": complete, "selected": selected}))
-            (folder / "backend.xml").write_text("<testsuite>" + "<testcase/>" * len(selected) + "</testsuite>")
+            cases = []
+            for identity in selected:
+                # Construct JUnit metadata independently from the manifest
+                # parser; preserve the entire parameter suffix.
+                function = identity[identity.index("test_", identity.index("::")):]
+                classname = "tests.unit.test_fixture" + (".TestAddresses" if "::TestAddresses::" in identity else "")
+                cases.append(f'<testcase classname="{classname}" name="{function}"/>')
+            (folder / "backend.xml").write_text("<testsuite>" + "".join(cases) + "</testsuite>")
     return tmp_path
 
 
 def test_full_coverage_is_accepted(coverage):
     verify_coverage(coverage)
+    path = coverage / "nt-0/backend.xml"
+    original = path.read_text()
+    path.write_text(original.replace("[::1]", "[::2]"))
+    with pytest.raises(AssertionError, match="Executed test identities differ"):
+        verify_coverage(coverage)
 
 
 @pytest.mark.parametrize("corruption", ["missing", "overlap", "interrupted", "commit"])
@@ -53,7 +67,8 @@ def test_partial_or_duplicated_execution_blocks_gate(coverage, corruption):
     else:
         report = json.loads(path.read_text())
         if corruption == "overlap":
-            report["selected"] = ["test_1", "test_5"]
+            report["selected"] = ["tests/unit/test_fixture.py::test_1", "tests/unit/test_fixture.py::test_5"]
+            path.with_name("backend.xml").write_text('<testsuite><testcase classname="tests.unit.test_fixture" name="test_1"/><testcase classname="tests.unit.test_fixture" name="test_5"/></testsuite>')
         else:
             report["commit"] = "b" * 40
         path.write_text(json.dumps(report))

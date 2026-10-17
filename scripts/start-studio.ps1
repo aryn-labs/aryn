@@ -5,6 +5,7 @@ param(
     [switch]$SkipInstall,
     [switch]$SkipBuild,
     [switch]$UseSystemPython,
+    [string]$NativeWorkerManifest = '',
     [switch]$CheckOnly
 )
 $ErrorActionPreference = 'Stop'
@@ -74,7 +75,12 @@ try {
             }
         } finally { Pop-Location }
     }
-    $studioProcess = Start-Process -FilePath $studioPython -ArgumentList @('-m','services.api','--host',"$studioHost",'--port',"$Port") -WorkingDirectory $studioRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $studioLocal 'studio.stdout.log') -RedirectStandardError (Join-Path $studioLocal 'studio.stderr.log')
+    $studioArguments = @('-m','services.api','--host',"$studioHost",'--port',"$Port")
+    if ($NativeWorkerManifest) {
+        $studioWorkerManifest = (Resolve-Path -LiteralPath $NativeWorkerManifest).Path
+        $studioArguments += @('--native-worker-manifest', ('"' + $studioWorkerManifest + '"'))
+    }
+    $studioProcess = Start-Process -FilePath $studioPython -ArgumentList $studioArguments -WorkingDirectory $studioRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $studioLocal 'studio.stdout.log') -RedirectStandardError (Join-Path $studioLocal 'studio.stderr.log')
     @{pid=$studioProcess.Id;port=$Port;started=$studioProcess.StartTime.ToUniversalTime().ToString('o')} | ConvertTo-Json | Set-Content -LiteralPath $studioPidFile
     $studioReady = $false
     for ($studioAttempt = 0; $studioAttempt -lt 60; $studioAttempt++) {

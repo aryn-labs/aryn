@@ -1,6 +1,8 @@
 """Live hosted persistence contracts; no model/provider network requests."""
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from tests.model_fixtures import offline_model_router
+
 import os
 from pathlib import Path
 import subprocess
@@ -206,7 +208,7 @@ async def test_concurrent_rollback_idempotency_and_stale_cas(hosted_lifecycle):
 
 def test_concurrent_budget_claim_cannot_overspend(hosted_lifecycle):
     db, ctx, runtime, *_ = hosted_lifecycle
-    core = RunCoordinator(runtime, db_manager=db)
+    core = RunCoordinator(runtime, db_manager=db, model_router=offline_model_router())
     with db.session(write=True) as session:
         budget = BudgetRepository(session).get_or_create_budget(ctx)
         budget.max_total_tokens = 256
@@ -224,7 +226,7 @@ def test_concurrent_budget_claim_cannot_overspend(hosted_lifecycle):
 @pytest.mark.asyncio
 async def test_concurrent_run_idempotency_and_usage_settlement(hosted_lifecycle):
     db, ctx, runtime, *_ = hosted_lifecycle
-    core = RunCoordinator(runtime, db_manager=db)
+    core = RunCoordinator(runtime, db_manager=db, model_router=offline_model_router())
     claims = concurrent(lambda: core._claim(request(), ctx, "direct"))
     assert sorted(owner for owner, _ in claims) == [False, True]
     assert claims[0][1].run_id == claims[1][1].run_id
@@ -281,7 +283,7 @@ async def test_replayed_assignment_pointer_blocks_core_run_and_rollback(hosted_l
                         {"version": prior.to_version_id, "transition": prior.id, "id": assignment.id})
     calls = len(runtime.requests)
     with pytest.raises(VersionIntegrityError, match="Assignment pointer differs"):
-        await RunCoordinator(runtime, db_manager=db).execute_assigned_agent_turn(assignment.id, "Replay must not dispatch", ctx, "replay-request")
+        await RunCoordinator(runtime, db_manager=db, model_router=offline_model_router()).execute_assigned_agent_turn(assignment.id, "Replay must not dispatch", ctx, "replay-request")
     with pytest.raises(VersionIntegrityError, match="Assignment pointer differs"):
         factory.rollback_assignment(ctx, assignment.id, intent.model_copy(update={"expected_current_version_id": first.id,
                                     "expected_transition_id": rolled.transition_id, "idempotency_key": "replayed-history"}))
@@ -294,7 +296,7 @@ async def test_replayed_assignment_pointer_blocks_core_run_and_rollback(hosted_l
 @pytest.mark.asyncio
 async def test_populated_auth_migration_roundtrip_preserves_governance_and_runs(hosted_lifecycle, postgres_db):
     db, ctx, runtime, factory, blueprint, _, second, assignment, _ = await publications(hosted_lifecycle)
-    result = await RunCoordinator(runtime, db_manager=db).execute_assigned_agent_turn(assignment.id, "Preserve captured provenance", ctx, "migration-run")
+    result = await RunCoordinator(runtime, db_manager=db, model_router=offline_model_router()).execute_assigned_agent_turn(assignment.id, "Preserve captured provenance", ctx, "migration-run")
     with db.session() as session:
         receipts = {table: session.execute(text(f"SELECT * FROM {table} ORDER BY id")).all() for table in HISTORY_TABLES}
         baseline = BenchRegressionRepository(session, db.evidence_signer).current(ctx, blueprint.id)
@@ -316,7 +318,7 @@ async def test_populated_auth_migration_roundtrip_preserves_governance_and_runs(
 
 def test_second_authority_rejected_by_live_advisory_lock(hosted_lifecycle, tmp_path):
     db, _, runtime, *_ = hosted_lifecycle
-    core = RunCoordinator(runtime, db_manager=db)
+    core = RunCoordinator(runtime, db_manager=db, model_router=offline_model_router())
     code = """import os
 from database.connection import create_db_engine
 from modules.core.workflows.ownership import ExecutionAuthority, ExecutionOwnershipError
@@ -343,7 +345,7 @@ finally:
 @pytest.mark.asyncio
 async def test_lost_postgresql_owner_fences_completion_and_recovers_unknown(hosted_lifecycle, postgres_db):
     db, ctx, runtime, *_ = hosted_lifecycle
-    core = RunCoordinator(runtime, db_manager=db)
+    core = RunCoordinator(runtime, db_manager=db, model_router=offline_model_router())
     owner, claimed = core._claim(request(), ctx, "async")
     assert owner
     with postgres_db.admin.connect() as connection:
@@ -353,7 +355,7 @@ async def test_lost_postgresql_owner_fences_completion_and_recovers_unknown(host
     old_id = core.authority.owner_id
     db.engine.dispose()  # A fenced engine cannot silently reacquire; restart uses a new engine.
     restarted = DatabaseManager(create_db_engine(db.engine.url.render_as_string(hide_password=False)))
-    replacement = RunCoordinator(runtime, db_manager=restarted)
+    replacement = RunCoordinator(runtime, db_manager=restarted, model_router=offline_model_router())
     assert replacement.authority.owner_id != old_id
     recovered = replacement.recover_in_flight_runs(ctx)
     assert recovered == [{"run_id": claimed.run_id, "previous_status": "started", "status": "outcome_unknown",

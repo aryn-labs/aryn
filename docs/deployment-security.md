@@ -1,5 +1,11 @@
 # Deployment authentication dan runtime isolation
 
+Implementasi working tree `main` saat ini menambahkan runtime home terpisah,
+lifecycle credential process-only dan native worker dengan admission Core.
+Lihat [runtime control plane](runtime-control-plane.md) untuk batas yang berlaku
+dan [verification](runtime-consolidation-validation.md) untuk bukti aktual.
+Baseline dan hasil di bawah tetap merupakan catatan historis.
+
 Baseline: `27c3f0e66840ef4dee671dc5852fe4c3142d9465`, branch `development`.
 Boundary ini adalah fondasi integration verification; **hosted production readiness belum dibuktikan**.
 Tidak ada deployment VPS, inference live/berbayar, credential IdP production, atau perubahan `main`.

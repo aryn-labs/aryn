@@ -1,5 +1,7 @@
 """Run ownership must be checked before any runtime access or cancellation."""
 
+from tests.model_fixtures import offline_model_router
+
 import pytest
 from sqlalchemy import text
 
@@ -37,7 +39,7 @@ async def test_other_project_is_denied_before_runtime_access(lifecycle, operatio
         calls.append(run_id)
         return RuntimeTrace(run_id=run_id)
     runtime.get_result, runtime.cancel_run, runtime.get_trace = result, cancel, trace
-    coordinator = RunCoordinator(runtime, db_manager=db)
+    coordinator = RunCoordinator(runtime, db_manager=db, model_router=offline_model_router())
     run_id = await coordinator.start_managed_run(RunRequest(prompt="Research", model="mock-fast"), ctx)
     with pytest.raises(TenantIsolationError):
         await getattr(coordinator, operation)(run_id, foreign)
@@ -47,7 +49,7 @@ async def test_other_project_is_denied_before_runtime_access(lifecycle, operatio
 @pytest.mark.asyncio
 async def test_rejected_cancellation_does_not_claim_cancelled_state(lifecycle):
     db, ctx, runtime, factory, bp, version = lifecycle
-    coordinator = RunCoordinator(runtime, db_manager=db)
+    coordinator = RunCoordinator(runtime, db_manager=db, model_router=offline_model_router())
     run_id = await coordinator.start_managed_run(RunRequest(prompt="Research", model="mock-fast"), ctx)
     assert not await coordinator.cancel_managed_run(run_id, ctx)
     with db.session() as s:
@@ -66,7 +68,7 @@ async def test_corrupted_assignment_blueprint_cannot_execute(lifecycle):
         s.execute(text("UPDATE agent_assignments SET blueprint_id=:bp WHERE id=:id"), {"bp": other.id, "id": assignment.id})
     before = len(runtime.requests)
     with pytest.raises(PermissionDeniedError, match="blueprint|Blueprint"):
-        await RunCoordinator(runtime, db_manager=db).execute_assigned_agent_turn(assignment.id, "Research", ctx)
+        await RunCoordinator(runtime, db_manager=db, model_router=offline_model_router()).execute_assigned_agent_turn(assignment.id, "Research", ctx)
     assert len(runtime.requests) == before
 
 
@@ -79,12 +81,12 @@ async def test_result_mapping_and_terminal_cache_account_usage_once(lifecycle):
         return RunResult(run_id=runtime_id, status=RunStatus.COMPLETED, output="Actual result",
                          model="mock-fast", created_at=1, usage=RunUsage(input_tokens=2, output_tokens=3, total_tokens=5))
     runtime.get_result = result
-    coordinator = RunCoordinator(runtime, db_manager=db)
+    coordinator = RunCoordinator(runtime, db_manager=db, model_router=offline_model_router())
     core_id = await coordinator.start_managed_run(RunRequest(prompt="Research", model="mock-fast"), ctx)
     result = await coordinator.get_managed_result(core_id, ctx)
     assert result.run_id == core_id
     assert calls == ["test_only"]
-    cached = await RunCoordinator(runtime, db_manager=db).get_managed_result(core_id, ctx)
+    cached = await RunCoordinator(runtime, db_manager=db, model_router=offline_model_router()).get_managed_result(core_id, ctx)
     assert cached.output == result.output
     assert calls == ["test_only"]
     with db.session() as s:
@@ -104,7 +106,7 @@ async def test_stop_acknowledgment_is_not_cancellation_proof(lifecycle):
     async def result(runtime_id, context):
         return RunResult(run_id=runtime_id, status=status, output="", model="mock-fast", created_at=1)
     runtime.cancel_run, runtime.get_result = cancel, result
-    coordinator = RunCoordinator(runtime, db_manager=db)
+    coordinator = RunCoordinator(runtime, db_manager=db, model_router=offline_model_router())
     core_id = await coordinator.start_managed_run(RunRequest(prompt="Research", model="mock-fast"), ctx)
     assert not await coordinator.cancel_managed_run(core_id, ctx)
     with db.session() as s:
@@ -120,7 +122,7 @@ async def test_stop_acknowledgment_is_not_cancellation_proof(lifecycle):
 @pytest.mark.asyncio
 async def test_direct_trace_and_cancellation_are_explicitly_unavailable(lifecycle):
     db, ctx, runtime, factory, bp, version = lifecycle
-    coordinator = RunCoordinator(runtime, db_manager=db)
+    coordinator = RunCoordinator(runtime, db_manager=db, model_router=offline_model_router())
     result = await coordinator.execute_managed_direct_turn(RunRequest(prompt="Research", model="mock-fast"), ctx)
     trace = await coordinator.get_managed_trace(result.run_id, ctx)
     assert not trace.available and trace.events == [] and trace.unavailability_reason
@@ -147,14 +149,14 @@ async def test_recovery_is_project_scoped_and_never_claims_runtime_cancellation(
         OrganizationRepository(s).create_project(ctx, "other", "Other", "other")
     from tests.conftest import bind_test_context
     other = bind_test_context(ctx.model_copy(update={"project_id": "other"}, deep=True))
-    coordinator = RunCoordinator(runtime, db_manager=db)
+    coordinator = RunCoordinator(runtime, db_manager=db, model_router=offline_model_router())
     own_id = await coordinator.start_managed_run(RunRequest(prompt="Own", model="mock-fast", idempotency_key="own-key"), ctx)
     other_id = await coordinator.start_managed_run(RunRequest(prompt="Other", model="mock-fast"), other)
     assert coordinator.recover_in_flight_runs(ctx) == []  # Live owner is never abandoned.
     from database.connection import DatabaseManager, create_db_engine
     db.engine.dispose()
     db = DatabaseManager(create_db_engine(str(db.engine.url)))
-    coordinator = RunCoordinator(runtime, db_manager=db)
+    coordinator = RunCoordinator(runtime, db_manager=db, model_router=offline_model_router())
     recovered = coordinator.recover_in_flight_runs(ctx)
     assert [x["run_id"] for x in recovered] == [own_id]
     assert recovered[0]["runtime_outcome"] == "unknown"

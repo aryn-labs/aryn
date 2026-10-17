@@ -7,9 +7,10 @@ import { DataState, QueryError } from '@/components/feedback/DataState'
 import { Button } from '@/components/ui/button'
 import { useWorkspace } from '@/app/providers/WorkspaceProvider'
 import { useWorkspaceStatus } from '@/hooks/use-workspace-queries'
-import { Box, Cloud, Monitor } from 'lucide-react'
+import { Cloud, Monitor } from 'lucide-react'
 import { HomeDraftHandoff } from '@/features/home/components/HomeDraftHandoff'
 import { ChatPreferences } from '@/features/settings/ChatPreferences'
+import { RuntimeControl } from '@/features/settings/RuntimeControl'
 export function FeatureScaffold({ title }: { title: string }) {
   useTranslation()
 
@@ -24,6 +25,7 @@ export function FeatureScaffold({ title }: { title: string }) {
           <>
             <ChatPreferences />
             <WorkspaceRuntime />
+            <RuntimeControl key={project?.id} />
           </>
         ) : (
           <HomeDraftHandoff title={title}>
@@ -48,7 +50,7 @@ export function FeatureScaffold({ title }: { title: string }) {
 function WorkspaceRuntime() {
   useTranslation()
 
-  const { context, project, loading, error, retry } = useWorkspace()
+  const { context, loading, error, retry } = useWorkspace()
   const status = useWorkspaceStatus()
   const measuredStatus = context && !status.isError ? status.data : undefined
   if (error) return <QueryError error={error} retry={retry} />
@@ -101,39 +103,6 @@ function WorkspaceRuntime() {
           </div>
         ) : (
           <DataState kind="unavailable" description={tr('ui.runtime_information_is_unavailable')} />
-        )}
-      </section>
-      <section className="runtime-card" aria-labelledby="models-heading">
-        <h2 id="models-heading">
-          <Box size={19} aria-hidden="true" />
-          {tr('ui.models')}
-        </h2>
-        <p className="muted">{project?.name ?? tr('ui.no_project_selected')}</p>
-        <DataState
-          kind={project ? 'unavailable' : 'empty'}
-          title={project ? tr('ui.active_model_unavailable') : tr('ui.no_project_selected')}
-          description={
-            project
-              ? tr('ui.no_active_or_default_model_has_been_reported_for_this_project')
-              : tr('ui.no_project_is_available_to_this_account')
-          }
-        />
-        {status.isLoading ? (
-          <p role="status">{tr('ui.loading_model_catalog')}</p>
-        ) : status.error ? (
-          <QueryError error={status.error} retry={() => void status.refetch()} />
-        ) : measuredStatus?.models.length ? (
-          <div className="model-catalog">
-            <h3>{tr('ui.discovered_models')}</h3>
-            {measuredStatus.models.map((model) => (
-              <div key={model.model_id}>
-                <span>{model.display_name}</span>
-                <small>{model.availability ?? tr('ui.availability_unknown')}</small>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="muted">{tr('ui.model_catalog_unavailable')}</p>
         )}
       </section>
     </div>

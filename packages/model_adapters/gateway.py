@@ -208,7 +208,10 @@ class NineRouterGateway:
                 response = await client.get(f"{self.settings.base_url}/models", headers=headers, timeout=self.timeout,
                                             follow_redirects=False)
                 if response.status_code != 200:
-                    self._snapshot = GatewayDiscovery(connected=True, reason="discovery_rejected")
+                    reason = ({401: "gateway_authentication_rejected", 403: "gateway_authentication_rejected",
+                        404: "gateway_endpoint_mismatch", 429: "gateway_rate_limited"}.get(response.status_code)
+                        or ("gateway_redirect_rejected" if 300 <= response.status_code < 400 else None))
+                    self._snapshot = GatewayDiscovery(connected=True, reason=reason or "discovery_rejected")
                 else:
                     body = response.json()
                     if not isinstance(body, dict) or body.get("object") != "list" or not isinstance(body.get("data"), list):
@@ -223,6 +226,9 @@ class NineRouterGateway:
                         mid = model["id"]
                         presentation = model_presentation_metadata(model)
                         provider = presentation.get("provider")
+                        if (isinstance(provider, str) and provider.lower() in {"mock", "isolated_test_double", "test-double"}
+                                or model.get("kind") in {"mock", "fixture", "test_double"}):
+                            continue
                         if (isinstance(provider, str) and MODEL_ID.fullmatch(provider)
                                 and provider.lower() not in {"9router", "hermes", "unknown", "unavailable", "custom", "combo"}):
                             self._provider_identities[mid] = provider

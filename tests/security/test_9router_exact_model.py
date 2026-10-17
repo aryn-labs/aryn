@@ -145,7 +145,7 @@ async def test_gateway_secret_does_not_leak_in_response_errors_or_logs(lifecycle
     def handler(request):
         if request.method == "POST":
             return httpx.Response(500, json={"error": {"message": secret}})
-        return standard_handler(request)
+        return standard_handler(request, settings=GatewaySettings(api_key=secret))
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         adapter = make_adapter(client, secret=secret)
         with pytest.raises(HermesAdapterError) as exc:
@@ -169,6 +169,31 @@ async def test_runtime_binding_missing_prevents_any_inference(lifecycle):
     assert all(r.method == "GET" for r in calls)
 
 
+@pytest.mark.parametrize("change", ["credential", "configuration", "missing_instance", "malformed_instance"])
+@pytest.mark.asyncio
+async def test_runtime_binding_drift_prevents_inference(lifecycle, change):
+    _, ctx, *_ = lifecycle
+    calls = []
+    def handler(request):
+        calls.append(request)
+        response = standard_handler(request)
+        if request.url.path == "/aryn/gateway":
+            binding = response.json()
+            if change == "configuration":
+                binding["configuration_id"] = "0" * 64
+            elif change == "missing_instance":
+                binding.pop("runtime_instance")
+            elif change == "malformed_instance":
+                binding["runtime_instance"] = "untrusted"
+            return httpx.Response(200, json=binding)
+        return response
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        adapter = make_adapter(client, secret="rotated-synthetic-key" if change == "credential" else "")
+        with pytest.raises(RuntimeGatewayError):
+            await adapter.execute_direct_turn(RunRequest(prompt="Test", model=MODEL), ctx)
+    assert calls and all(request.method == "GET" for request in calls)
+
+
 @pytest.mark.parametrize("location", ["health", "result", "discovery", "async_start"])
 @pytest.mark.asyncio
 async def test_raw_runtime_secret_is_never_returned(lifecycle, location, caplog):
@@ -185,7 +210,7 @@ async def test_raw_runtime_secret_is_never_returned(lifecycle, location, caplog)
             return httpx.Response(200, json=response)
         if location == "async_start" and request.url.path == "/v1/runs":
             return httpx.Response(202, json={"run_id": secret, "status": "queued"})
-        return standard_handler(request)
+        return standard_handler(request, settings=GatewaySettings(api_key=secret))
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         adapter = make_adapter(client, secret=secret)
         if location == "discovery":
