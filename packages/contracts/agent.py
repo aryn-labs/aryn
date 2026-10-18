@@ -120,10 +120,6 @@ class AgentVersionStatus(str, Enum):
     REJECTED = "rejected"
 
 
-class OutputFormat(str, Enum):
-    TEXT = "text"
-    JSON = "json"
-    MARKDOWN = "markdown"
 
 
 class AgentConstraints(BaseModel):

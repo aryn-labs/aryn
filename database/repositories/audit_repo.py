@@ -90,18 +90,6 @@ class AuditRepository:
             .all()
         )
 
-    def list_by_project(self, context: SecurityContext, limit: int = 100) -> List[AuditEventModel]:
-        """Lists audit events for the context's project."""
-        return (
-            self.session.query(AuditEventModel)
-            .filter_by(
-                organization_id=context.organization_id,
-                project_id=context.project_id,
-            )
-            .order_by(AuditEventModel.occurred_at.desc())
-            .limit(limit)
-            .all()
-        )
 
     @staticmethod
     def verify_event_integrity(event_model: AuditEventModel, signer=None) -> bool:

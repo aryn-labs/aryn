@@ -2,8 +2,8 @@
 
 Implementasi working tree `main` saat ini menambahkan runtime home terpisah,
 lifecycle credential process-only dan native worker dengan admission Core.
-Lihat [runtime control plane](runtime-control-plane.md) untuk batas yang berlaku
-dan [verification](runtime-consolidation-validation.md) untuk bukti aktual.
+Lihat [runtime control plane](https://github.com/aryn-labs/aryn-docs/blob/e826deba288803d8d52d51e176be5e4d8ab0fd04/engineering/aryn/runtime-control-plane.md) untuk batas yang berlaku
+dan [verification](https://github.com/aryn-labs/aryn-docs/blob/e826deba288803d8d52d51e176be5e4d8ab0fd04/engineering/aryn/runtime-consolidation-validation.md) untuk bukti aktual.
 Baseline dan hasil di bawah tetap merupakan catatan historis.
 
 Baseline: `27c3f0e66840ef4dee671dc5852fe4c3142d9465`, branch `development`.
@@ -158,40 +158,10 @@ Single execution authority 014 tetap wajib; tidak ada multiworker scale-out.
 
 Contoh Nginx berikut adalah konfigurasi untuk review/UAT, **belum dijalankan pada server**:
 
-```nginx
-server {
-    listen 443 ssl;
-    server_name studio.example.org;
-    # Supply certificate/key outside repository; configure TLS per operational policy.
-    ssl_certificate /etc/aryn/tls/fullchain.pem;
-    ssl_certificate_key /etc/aryn/tls/private.key;
-    location / {
-        proxy_pass http://127.0.0.1:8710;
-        proxy_set_header Host studio.example.org;
-        proxy_set_header X-Forwarded-Proto https;
-        proxy_set_header X-Forwarded-Host studio.example.org;
-        proxy_set_header X-Forwarded-For $remote_addr;
-        proxy_set_header Forwarded "";
-        proxy_set_header X-User "";
-        proxy_set_header X-Role "";
-        proxy_set_header X-Forwarded-User "";
-        proxy_set_header X-Auth-Request-User "";
-        proxy_buffering off; # Core SSE
-    }
-    location = /auth/callback {
-        access_log off; # Never persist authorization code/state query strings.
-        proxy_pass http://127.0.0.1:8710;
-        proxy_set_header Host studio.example.org;
-        proxy_set_header X-Forwarded-Proto https;
-        proxy_set_header X-Forwarded-Host studio.example.org;
-        proxy_set_header Forwarded "";
-        proxy_set_header X-User "";
-        proxy_set_header X-Role "";
-        proxy_set_header X-Forwarded-User "";
-        proxy_set_header X-Auth-Request-User "";
-    }
-}
-```
+[Review/UAT Nginx configuration](https://github.com/aryn-labs/aryn-infra/blob/939e4a48bd759c18f4f8213ad59a749f47f3e746/deployment/cloud/nginx.conf)
+is maintained in `aryn-infra`. Its source section and verified content hash are
+recorded in that repository; this application contract retains the trust boundaries.
+
 
 Proxy harus reject unknown incoming hosts pada default vhost dan menimpa/clear incoming
 forwarded/identity headers. ARYN juga memeriksa exact Host/Origin. `Forwarded` format tidak
@@ -248,7 +218,7 @@ membership, backfill approval/receipt, atau perubahan history/run/budget schema.
 SQLite fresh metadata/migrations dan 015 ↔ 014 downgrade/upgrade diuji. Disposable
 live PostgreSQL migrations, restricted non-owner writer, locking, history triggers,
 signed-provider/API sessions dan governance concurrency kini diuji melalui
-[CI verification](ci-validation.md); VPS operational configuration tetap perlu UAT.
+[CI verification](https://github.com/aryn-labs/aryn/blob/31491840dfbcadbb6ebc852a41ec0f64ee31aa73/docs/ci-validation.md); VPS operational configuration tetap perlu UAT.
 Downgrade menghapus sessions/mappings/login transactions sehingga memerlukan login/
 provisioning ulang bila kembali upgrade; history/evidence existing tetap dipertahankan.
 Stop old binaries sebelum migration; mixed revisions atau multiple authority processes
@@ -262,7 +232,7 @@ dalam scope yang sah dengan compatibility restrictions existing 013/014.
 
 ## Validation dan residual
 
-Hasil dan commands aktual final dicatat pada [deployment validation](deployment-validation.md).
+Hasil dan commands aktual final dicatat pada [deployment validation](https://github.com/aryn-labs/aryn/blob/31491840dfbcadbb6ebc852a41ec0f64ee31aa73/docs/deployment-validation.md).
 Dedicated signed-provider/API/Core tests dan installed native Hermes route dispatch
 merupakan bukti H4/M6 dalam boundary yang didukung, bukan bukti deployment internet.
 TestClient HTTPS adalah ASGI scheme fixture; tidak melakukan TLS handshake production.

@@ -30,4 +30,3 @@ export const navigation = [
   { label: 'Settings', path: '/settings', icon: Settings, group: 'Manage' },
   { label: 'Help & Support', path: '/help', icon: CircleHelp, group: 'Support' },
 ] as const
-export type RoutePath = (typeof navigation)[number]['path']

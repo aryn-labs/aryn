@@ -356,8 +356,6 @@ export const suitesSchema = z.object({
     }),
   ),
 })
-export type Source = z.infer<typeof sourceSchema>
 export type Bundle = z.infer<typeof bundleSchema>
 export type Incident = z.infer<typeof incidentDetailSchema>
 export type Evaluation = z.infer<typeof evaluationDetailSchema>
-export type Replay = z.infer<typeof replayDetailSchema>

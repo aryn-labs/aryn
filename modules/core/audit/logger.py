@@ -89,8 +89,3 @@ class AuditLogger:
                 return [AuditRepository.contract(m) for m in db_models]
 
         return [e for e in self._events if e.correlation_id == correlation_id and (context is None or (e.organization_id == context.organization_id and e.project_id == context.project_id))]
-
-    def all_events(self, context: Optional[SecurityContext] = None) -> List[AuditEvent]:
-        if context is None:
-            raise ValueError("Organization/project context is required for persistent audit reads.")
-        return [e for e in self._events if context is None or (e.organization_id == context.organization_id and e.project_id == context.project_id)]

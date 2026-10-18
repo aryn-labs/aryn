@@ -62,7 +62,6 @@ export const statusSchema = z.object({
 })
 export type WorkspaceContext = z.infer<typeof contextSchema>
 export type ResourceItem = z.infer<typeof resourceSchema>
-export type WorkspaceSummary = z.infer<typeof summarySchema>
 export type Selection = {
   resource: 'runs' | 'audits' | 'blueprints' | 'projects'
   item: ResourceItem

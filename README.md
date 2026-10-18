@@ -10,18 +10,14 @@ This is the primary monorepo for ARYN Cloud and ARYN Local.
 - `modules/brief/`: evidence bundles, provenance, contradiction, and abstention.
 - `modules/bench/`: generic scenario execution, deterministic graders, evidence validation, accepted baseline comparisons and regression promotion gates. Research Safety is the first suite.
 - `modules/relay/`: incident investigation, approved remediation, recovery proof.
-- `modules/commercial/`: plans, subscriptions, entitlements and billing usage policy.
 
 ## Applications and adapters
 - `apps/web/`: Cloud web interface.
-- `apps/desktop/`: Windows Local candidate (Tauri evaluation pending).
 - services/api/: authoritative application API.
-- services/worker/: background execution; never a second policy authority.
 - `packages/contracts/`: versioned data contracts.
 - `packages/runtime_adapters/`: Hermes runtime boundary (execution engine).
 - `packages/model_adapters/`: 9Router model discovery and exact-model policy; no provider credentials.
 - `packages/tool_adapters/`: allowlisted tool boundaries.
-- `packages/ui/`: reusable user interface components.
 
 ## Security invariants
 All private resources are organization-scoped and project-scoped where applicable. Sensitive writes require service-side policy enforcement. Agent output is untrusted. Approval binds to exact action payload. Replays never invoke live write tools. Local has no silent cloud sync/fallback. Never commit secrets.
@@ -31,7 +27,7 @@ Core governance/persistence, Agent Factory, Bench, and the Hermes adapter are im
 
 ## Quality and delivery
 
-`main` is the active solo development branch; `development` is retained as a historical reference. Pushes to either branch and PRs targeting either branch run backend checks on Linux/Windows, live PostgreSQL with a restricted writer, security/dependency scans, native Hermes boundary checks, frontend tests/build and isolated browser E2E. Successful push gates produce commit-bound review artifacts; there is no automatic production deployment or release. See [CI contracts, commands and repository settings](docs/ci-delivery.md) and [actual validation evidence](docs/ci-validation.md).
+`main` is the active solo development branch; `development` is retained as a historical reference. Pushes to either branch and PRs targeting either branch run backend checks on Linux/Windows, live PostgreSQL with a restricted writer, security/dependency scans, native Hermes boundary checks, frontend tests/build and isolated browser E2E. Successful push gates produce commit-bound review artifacts; there is no automatic production deployment or release. See [CI contracts, commands and repository settings](docs/ci-delivery.md) and [baseline CI evidence](https://github.com/aryn-labs/aryn/actions/runs/39056546049) and [repository maintenance verification](docs/repository-maintenance.md).
 
 Use Python/Node versions in `.python-version`/`.node-version`, `uv sync --frozen --extra dev`, and `npm ci --ignore-scripts --prefix apps/web`. Python dependency resolution is committed in `uv.lock`. Install the hosted PostgreSQL driver with `--extra postgresql`; migration owner and application writer must remain separate.
 
@@ -40,24 +36,29 @@ Set-Location D:\ARYN\aryn-labs\aryn
 .\scripts\start-aryn.ps1
 ```
 
-9Router must already listen at `http://127.0.0.1:20128/v1`; the combined launcher starts runtime and Studio with matching ephemeral authentication. See [9Router routing, readiness limitations and validation](docs/9router-gateway.md). Open `http://127.0.0.1:8710`. See [Studio setup, security, and capabilities](docs/studio.md) and [validation evidence](docs/studio-validation.md). Brief supports verified scoped evidence; Relay supports explicit disposable database-fixture incidents and approval-bound recovery with independent health checks. [Evidence/recovery boundaries and safe model-free Bench replay](docs/intelligence-recovery-contracts.md) exclude live infrastructure remediation and automatic promotion.
+9Router must already listen at `http://127.0.0.1:20128/v1`; the combined launcher starts runtime and Studio with matching ephemeral authentication. See [9Router routing, readiness limitations and validation](https://github.com/aryn-labs/aryn-docs/blob/e826deba288803d8d52d51e176be5e4d8ab0fd04/engineering/aryn/9router-gateway.md). Open `http://127.0.0.1:8710`. See [Studio setup, security, and capabilities](docs/studio.md) and [validation evidence](https://github.com/aryn-labs/aryn/blob/31491840dfbcadbb6ebc852a41ec0f64ee31aa73/docs/studio-validation.md). Brief supports verified scoped evidence; Relay supports explicit disposable database-fixture incidents and approval-bound recovery with independent health checks. [Evidence/recovery boundaries and safe model-free Bench replay](https://github.com/aryn-labs/aryn-docs/blob/e826deba288803d8d52d51e176be5e4d8ab0fd04/engineering/aryn/intelligence-recovery-contracts.md) exclude live infrastructure remediation and automatic promotion.
 
-See [Bench engine contracts and validation](docs/bench-engine.md).
+See [Bench engine contracts and validation](https://github.com/aryn-labs/aryn-docs/blob/e826deba288803d8d52d51e176be5e4d8ab0fd04/engineering/aryn/bench-engine.md).
 
-See [secure HTTPS connectivity contracts and offline validation](docs/secure-https-connectivity.md)
+See [secure HTTPS connectivity contracts and offline validation](https://github.com/aryn-labs/aryn-docs/blob/e826deba288803d8d52d51e176be5e4d8ab0fd04/engineering/aryn/secure-https-connectivity.md)
 for the Core-approved bounded GET adapter, temporary credential bindings and TLS
 fixture boundary. General external API compatibility and connector OAuth remain
 unverified; the limited owner-executed GitHub UAT is recorded separately below.
 
-See [GitHub issue connectivity](docs/github-issue-connectivity.md) for the selected
+See [GitHub issue connectivity](https://github.com/aryn-labs/aryn-docs/blob/e826deba288803d8d52d51e176be5e4d8ab0fd04/engineering/aryn/github-issue-connectivity.md) for the selected
 repository read-only connector and its offline TLS fixture contract. Production
 GitHub API access and credentials remain unverified.
 
-See [owner-executed GitHub UAT preparation](docs/github-live-uat.md) for the
+See [owner-executed GitHub UAT preparation](https://github.com/aryn-labs/aryn-docs/blob/e826deba288803d8d52d51e176be5e4d8ab0fd04/engineering/aryn/github-live-uat.md) for the
 explicit local-file/CLI gates and limited human operator Core profile. The owner
 reported a verified live read of issue #10; its scope and evidence limitations are
 documented there. Published-agent Bench gates are unchanged.
 
-Authentication defaults to fail closed. Local launchers explicitly select `ARYN_AUTH_MODE=local-development`; production requires `ARYN_AUTH_MODE=oidc`, verified issuer/subject provisioning and current Core membership. The dedicated Hermes binding discovers native capabilities, pins reviewed skill content, and proposes tools to Core. A trusted immutable worker can execute exact human-approved native terminal/filesystem actions in per-run containers; native host execution remains disabled. Settings provides the gateway credential lifecycle, runtime inventory and native action review. Native background dispatch, shared profile/session administration and unrestricted integrations remain blocked. See [runtime control plane and capability boundaries](docs/runtime-control-plane.md), [deployment security](docs/deployment-security.md) and [validation evidence](docs/deployment-validation.md).
+Authentication defaults to fail closed. Local launchers explicitly select `ARYN_AUTH_MODE=local-development`; production requires `ARYN_AUTH_MODE=oidc`, verified issuer/subject provisioning and current Core membership. The dedicated Hermes binding discovers native capabilities, pins reviewed skill content, and proposes tools to Core. A trusted immutable worker can execute exact human-approved native terminal/filesystem actions in per-run containers; native host execution remains disabled. Settings provides the gateway credential lifecycle, runtime inventory and native action review. Native background dispatch, shared profile/session administration and unrestricted integrations remain blocked. See [runtime control plane and capability boundaries](https://github.com/aryn-labs/aryn-docs/blob/e826deba288803d8d52d51e176be5e4d8ab0fd04/engineering/aryn/runtime-control-plane.md), [deployment security](docs/deployment-security.md) and [validation evidence](https://github.com/aryn-labs/aryn/blob/31491840dfbcadbb6ebc852a41ec0f64ee31aa73/docs/deployment-validation.md).
 
 References: ARYN-PRD-001, ARYN-ARCH-001, ARYN-TECH-001, ARYN-SEC-001 and ARYN-PLAN-001 in private `aryn-docs`.
+
+Source-derived engineering contracts are maintained in `aryn-docs/engineering/aryn`;
+they do not replace the missing approved corporate documents. Operational deployment
+examples belong to `aryn-infra`. Owner-approved cross-repository delivery publishes
+each destination on `main` before application-source removal, with source provenance.

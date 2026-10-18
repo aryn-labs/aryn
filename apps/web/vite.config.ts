@@ -15,7 +15,6 @@ export default defineConfig({
           primitives: [
             '@radix-ui/react-dialog',
             '@radix-ui/react-dropdown-menu',
-            '@radix-ui/react-tabs',
             '@radix-ui/react-tooltip',
             'cmdk',
           ],

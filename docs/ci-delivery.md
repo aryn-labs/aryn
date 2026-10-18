@@ -3,7 +3,7 @@
 `main` is the active branch for owner-authorized solo development. CI runs on pushes
 to `main` and the retained `development` branch, PRs targeting either branch, and
 workflow dispatch. It does not merge, release, deploy or modify either branch.
-Actual validation evidence is in [CI validation](ci-validation.md).
+Actual validation evidence is in [CI validation](https://github.com/aryn-labs/aryn/blob/31491840dfbcadbb6ebc852a41ec0f64ee31aa73/docs/ci-validation.md).
 
 Before each solo commit, audit HEAD, the working tree and remote divergence, review
 the scoped diff, and run relevant local tests and security/configuration checks.

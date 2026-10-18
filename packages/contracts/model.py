@@ -100,11 +100,3 @@ class ModelRoutingConfig(BaseModel):
     allow_fallback: bool = False
     fallback_provider: Optional[ModelProviderType] = None
     fallback_model: Optional[str] = None
-
-    def validate_request(self, requested_model: str) -> None:
-        """Enforces that the requested model is registered and permitted."""
-        if requested_model not in self.allowed_models:
-            raise ValueError(
-                f"Model '{requested_model}' is not permitted by ARYN routing policy. "
-                f"Allowed models: {self.allowed_models}. Silent fallback is forbidden."
-            )

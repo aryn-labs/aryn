@@ -157,4 +157,48 @@ test('populated five-page visual matrix and safe output details', async ({ page 
   await expect(page.locator('#main-content')).toBeFocused()
   const violations = await new AxeBuilder({ page }).include('#main-content').analyze()
   expect(violations.violations).toEqual([])
+  // Retain the bilingual persistence check from the superseded manual harness.
+  await page.goto('/settings')
+  await expect(page.locator('#studio-language')).toBeEnabled()
+  await page.locator('#studio-language').selectOption('en-US')
+  await expect(page.locator('#studio-language')).toBeEnabled()
+  await page.goto(projectUrl)
+  await page.reload()
+  await expect(page.getByRole('navigation', { name: 'Project pages' })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('populated-overview-390-english-light.png') })
+  const englishAccessibility = await new AxeBuilder({ page }).include('#main-content').analyze()
+  expect(englishAccessibility.violations).toEqual([])
+  await page.goto('/settings')
+  await page.locator('#studio-language').selectOption('id-ID')
+  await expect(page.locator('#studio-language')).toHaveValue('id-ID')
 })
+
+for (const [role, port] of [
+  ['admin', 8875],
+  ['viewer', 8876],
+] as const) {
+  test(`real zero-project workspace respects ${role} permission`, async ({ page }, testInfo) => {
+    // Preserve the former manual suite's deadline while retaining every
+    // viewport/theme, permission and accessibility assertion in CI.
+    test.setTimeout(60_000)
+    for (const width of [1920, 1440, 1024, 768, 390])
+      for (const theme of ['dark', 'light']) {
+        await page.setViewportSize({ width, height: 960 })
+        await page.goto(`http://127.0.0.1:${port}/projects`)
+        await page.evaluate((value) => localStorage.setItem('aryn.shell.theme', value), theme)
+        await page.reload()
+        await expect(page.getByRole('heading', { name: 'Mulai proyek pertama Anda' })).toBeVisible()
+        await expect(page.getByRole('button', { name: 'Buat Proyek', exact: true })).toHaveCount(
+          role === 'admin' ? 1 : 0,
+        )
+        expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(
+          false,
+        )
+        await page.screenshot({
+          path: testInfo.outputPath(`live-empty-${role}-${width}-${theme}.png`),
+        })
+        const accessibility = await new AxeBuilder({ page }).include('#main-content').analyze()
+        expect(accessibility.violations).toEqual([])
+      }
+  })
+}

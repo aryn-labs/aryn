@@ -106,13 +106,6 @@ class AgentRepository:
             )
         return blueprint
 
-    def list_blueprints(self, context: SecurityContext) -> List[AgentBlueprintModel]:
-        return (
-            self.session.query(AgentBlueprintModel)
-            .filter_by(organization_id=context.organization_id, project_id=context.project_id)
-            .order_by(AgentBlueprintModel.created_at.desc())
-            .all()
-        )
 
     # -------------------------------------------------------------
     # Version Operations
@@ -375,11 +368,3 @@ class AgentRepository:
                 f"'{assignment.organization_id}/{assignment.project_id}', not context '{context.organization_id}/{context.project_id}'."
             )
         return assignment
-
-    def list_assignments(self, context: SecurityContext) -> List[AgentAssignmentModel]:
-        return (
-            self.session.query(AgentAssignmentModel)
-            .filter_by(organization_id=context.organization_id, project_id=context.project_id)
-            .order_by(AgentAssignmentModel.created_at.desc())
-            .all()
-        )

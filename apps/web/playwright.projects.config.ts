@@ -13,11 +13,20 @@ export default defineConfig({
   timeout: 45_000,
   reporter: [['list'], ['html', { outputFolder: 'playwright-report/projects', open: 'never' }]],
   use: { baseURL: 'http://127.0.0.1:8873', browserName: 'chromium', trace: 'retain-on-failure' },
-  webServer: {
-    command: `"${python}" -m tests.projects_browser_server`,
-    cwd: '../..',
-    url: 'http://127.0.0.1:8873',
-    reuseExistingServer: false,
-    timeout: 60_000,
-  },
+  webServer: [
+    {
+      command: `"${python}" -m tests.projects_browser_server`,
+      cwd: '../..',
+      url: 'http://127.0.0.1:8873',
+      reuseExistingServer: false,
+      timeout: 60_000,
+    },
+    ...(['admin', 'viewer'] as const).map((role, index) => ({
+      command: `"${python}" -m tests.projects_browser_server --empty-role ${role} --port ${8875 + index}`,
+      cwd: '../..',
+      url: `http://127.0.0.1:${8875 + index}`,
+      reuseExistingServer: false,
+      timeout: 60_000,
+    })),
+  ],
 })

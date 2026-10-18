@@ -10,6 +10,7 @@ import threading
 import uuid
 
 from sqlalchemy import event, text
+from sqlalchemy.exc import SQLAlchemyError
 
 
 class ExecutionOwnershipError(RuntimeError):
@@ -47,8 +48,10 @@ class ExecutionAuthority:
                     released = True
                     current.references -= 1
                     if current.references == 0:
-                        current.close()
-                        cls._instances.pop(key, None)
+                        try:
+                            current.close()
+                        finally:
+                            cls._instances.pop(key, None)
                     # Retain invalid object on a disposed engine: stale workers
                     # must never acquire a replacement authority transparently.
             return current
@@ -103,17 +106,29 @@ class ExecutionAuthority:
 
     def close(self):
         with self._connection_guard:
+            was_valid = self.valid
             self.valid = False
             try:
                 if self.connection is not None:
+                    connection = self.connection
                     try:
-                        if not self.connection.invalidated:
-                            self.connection.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": self.advisory_key})
+                        if was_valid and not connection.invalidated:
+                            try:
+                                connection.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": self.advisory_key})
+                            except SQLAlchemyError:
+                                # Ownership can disappear during shutdown. The
+                                # authority stays fenced and physical session
+                                # invalidation below still releases its lock.
+                                pass
                     finally:
                         # A pooled session must not retain advisory ownership.
-                        self.connection.invalidate()
-                        self.connection.close()
-                        self.connection = None
+                        try:
+                            connection.invalidate()
+                        finally:
+                            try:
+                                connection.close()
+                            finally:
+                                self.connection = None
             finally:
                 if self.file is not None:
                     self.file.close()

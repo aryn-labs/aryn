@@ -5,8 +5,6 @@ import { X } from 'lucide-react'
 import type { ComponentProps } from 'react'
 import { cn } from '@/lib/utils'
 export const Dialog = Primitive.Root
-export const DialogTrigger = Primitive.Trigger
-export const DialogClose = Primitive.Close
 export const DialogTitle = Primitive.Title
 export const DialogDescription = Primitive.Description
 export function DialogContent({

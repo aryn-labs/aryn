@@ -14,6 +14,7 @@ from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 
 from database.connection import DatabaseManager, create_db_engine
 from database.repositories.budget_repo import BudgetRepository
@@ -22,13 +23,88 @@ from database.schema import RunStateModel
 from modules.core.audit.logger import AuditLogger
 from modules.core.usage.engine import BudgetExceededError
 from modules.core.workflows.coordinator import RunCoordinator
-from modules.core.workflows.ownership import ExecutionOwnershipError
+from modules.core.workflows.ownership import ExecutionAuthority, ExecutionOwnershipError
 from packages.contracts.core import AuditStatus
 from packages.contracts.runtime import RunRequest, RunStatus, RunUsage
 
 
 def request(**changes):
     return RunRequest(prompt="Research", model="mock-fast", **changes)
+
+
+@pytest.mark.parametrize("already_fenced", [False, True])
+def test_authority_release_closes_lost_session_and_keeps_old_engine_fenced(tmp_path, already_fenced):
+    engine = create_db_engine("sqlite:///" + (tmp_path / "authority.sqlite3").as_posix())
+    authority = ExecutionAuthority.for_engine(engine)
+    owner_id = authority.owner_id
+    calls = []
+
+    class LostSession:
+        # A driver error need not set SQLAlchemy's disconnect classification.
+        invalidated = False
+
+        def execute(self, statement, parameters=None):
+            calls.append(str(statement))
+            raise OperationalError(str(statement), parameters, RuntimeError("owner session terminated"))
+
+        def invalidate(self):
+            calls.append("invalidate")
+            self.invalidated = True
+
+        def close(self):
+            calls.append("close")
+
+    authority.connection = LostSession()
+    authority.advisory_key = 1
+    try:
+        if already_fenced:
+            with pytest.raises(ExecutionOwnershipError):
+                authority.assert_valid()
+        engine.dispose()
+        assert calls == ["SELECT pg_backend_pid()" if already_fenced else "SELECT pg_advisory_unlock(:key)",
+                         "invalidate", "close"]
+        assert not authority.valid and authority.connection is None and authority.file is None
+        assert authority.references == 0
+        with pytest.raises(ExecutionOwnershipError):
+            ExecutionAuthority.for_engine(engine)
+        replacement_engine = create_db_engine(engine.url.render_as_string(hide_password=False))
+        try:
+            replacement = ExecutionAuthority.for_engine(replacement_engine)
+            assert replacement.owner_id != owner_id and replacement.valid
+        finally:
+            replacement_engine.dispose()
+    finally:
+        engine.dispose()
+
+
+def test_authority_release_removes_registry_and_file_lock_even_if_invalidation_fails(tmp_path):
+    engine = create_db_engine("sqlite:///" + (tmp_path / "authority.sqlite3").as_posix())
+    authority = ExecutionAuthority.for_engine(engine)
+    calls = []
+
+    def failed_invalidation():
+        calls.append("invalidate")
+        raise RuntimeError("physical invalidation failed")
+
+    authority.connection = SimpleNamespace(invalidated=False, execute=lambda *_: None,
+        invalidate=failed_invalidation, close=lambda: calls.append("close"))
+    authority.advisory_key = 1
+    try:
+        with pytest.raises(RuntimeError, match="physical invalidation failed"):
+            engine.dispose()
+        assert calls == ["invalidate", "close"]
+        assert not authority.valid and authority.connection is None and authority.file is None
+        assert authority.references == 0
+        with pytest.raises(ExecutionOwnershipError):
+            ExecutionAuthority.for_engine(engine)
+        replacement_engine = create_db_engine(engine.url.render_as_string(hide_password=False))
+        try:
+            replacement = ExecutionAuthority.for_engine(replacement_engine)
+            assert replacement.owner_id != authority.owner_id and replacement.valid
+        finally:
+            replacement_engine.dispose()
+    finally:
+        engine.dispose()
 
 
 def freeze_admission_clock(monkeypatch):

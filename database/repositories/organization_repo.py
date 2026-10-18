@@ -73,13 +73,6 @@ class OrganizationRepository:
         self.session.flush()
         return member
 
-    def suspend_member(self, org_id: str, user_id: str) -> MembershipModel:
-        member = self.get_member(org_id, user_id)
-        if not member:
-            raise EntityNotFoundError(f"Membership for user '{user_id}' in org '{org_id}' not found.")
-        member.status = "suspended"
-        self.session.flush()
-        return member
 
     def get_member(self, org_id: str, user_id: str) -> Optional[MembershipModel]:
         return self.session.query(MembershipModel).filter_by(organization_id=org_id, user_id=user_id).first()
@@ -183,6 +176,3 @@ class OrganizationRepository:
         member.status = "suspended"
         self.session.flush()
         return member
-
-    def list_project_members(self, project_id: str) -> List[ProjectMembershipModel]:
-        return self.session.query(ProjectMembershipModel).filter_by(project_id=project_id).all()

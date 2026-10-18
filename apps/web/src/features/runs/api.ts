@@ -30,5 +30,4 @@ export const detailSchema = runItemSchema.extend({
   workflow_version: versionSchema.nullable(),
   permissions: z.record(z.string(), z.boolean()),
 })
-export type RunItem = z.infer<typeof runItemSchema>
 export type Detail = z.infer<typeof detailSchema>
