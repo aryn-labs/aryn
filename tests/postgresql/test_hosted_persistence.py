@@ -57,7 +57,7 @@ def test_live_migration_chain_and_roundtrip(postgres_db):
     owner = postgres_db.owner
     with owner.connect() as connection:
         assert connection.execute(text("SELECT version()")).scalar().startswith("PostgreSQL 16.")
-        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar() == "024_project_metadata"
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar() == "027_incident_capsules"
     migrate_to(owner, "012_assignment_activation", downgrade=True)
     assert "auth_sessions" not in inspect(owner).get_table_names()
     migrate_to(owner, "head")

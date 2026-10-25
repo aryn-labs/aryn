@@ -15,8 +15,14 @@ TABLES = (
     "relay_capsules",
     "bench_capsule_replays",
     "evidence_links",
+    "bench_suite_versions",
+    "bench_scenario_candidates",
+    "evidence_references",
+    "brief_interpretations",
+    "incident_capsules",
+    "incident_capsule_replays",
 )
-MUTABLE_TABLES = ("demo_fixtures", "relay_incidents", "relay_executions")
+MUTABLE_TABLES = ("demo_fixtures", "relay_incidents", "relay_executions", "evidence_connections")
 CONFLICTS = {
     "relay_events": "incident_id=NEW.incident_id AND sequence=NEW.sequence",
     "relay_verifications": "execution_id=NEW.execution_id",
@@ -24,6 +30,8 @@ CONFLICTS = {
     "relay_incidents": "organization_id=NEW.organization_id AND project_id=NEW.project_id AND dedup_key=NEW.dedup_key",
     "relay_executions": "proposal_id=NEW.proposal_id OR (organization_id=NEW.organization_id AND project_id=NEW.project_id AND idempotency_key=NEW.idempotency_key)",
     "evidence_links": "bundle_id=NEW.bundle_id AND reference_kind=NEW.reference_kind AND reference_id=NEW.reference_id",
+    "bench_suite_versions": "organization_id=NEW.organization_id AND project_id=NEW.project_id AND family_key=NEW.family_key AND evaluation_version=NEW.evaluation_version",
+    "incident_capsules": "incident_id=NEW.incident_id AND incident_revision=NEW.incident_revision",
 }
 
 

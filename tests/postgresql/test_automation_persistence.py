@@ -115,7 +115,7 @@ def test_immutable_schedule_events_and_safe_rollback(studio, postgres_db):
     with postgres_db.owner.connect() as connection:
         assert (
             connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
-            == "024_project_metadata"
+            == "027_incident_capsules"
         )
         assert (
             connection.execute(

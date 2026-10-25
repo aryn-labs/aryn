@@ -28,6 +28,9 @@ def test_runtime_auth_does_not_scan_provider_env_file(monkeypatch):
 def test_production_environment_reads_are_explicit_and_never_provider_credentials():
     root = Path(__file__).resolve().parents[2]
     allowed = {
+        # The bounded read-only Git subprocess needs executable lookup and the
+        # Windows loader directory. No credential or arbitrary env enumeration.
+        "PATH", "SYSTEMROOT",
         "ARYN_ENV",
         "ARYN_WEBHOOK_INGRESS_ORIGIN",
         "ARYN_STUDIO_HOST",

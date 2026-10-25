@@ -675,6 +675,23 @@ class EvidenceSourceModel(IntelligenceScope, Base):
     blob = Column(LargeBinary, nullable=False)
 
 
+class EvidenceConnectionModel(IntelligenceScope, Base):
+    __tablename__ = "evidence_connections"
+    kind = Column(String(32), nullable=False)
+    revision = Column(Integer, nullable=False)
+
+
+class EvidenceReferenceModel(IntelligenceScope, Base):
+    __tablename__ = "evidence_references"
+    connection_id = Column(String(64), ForeignKey("evidence_connections.id"), nullable=False)
+
+
+class BriefInterpretationModel(IntelligenceScope, Base):
+    __tablename__ = "brief_interpretations"
+    bundle_id = Column(String(64), ForeignKey("evidence_bundles.id"), nullable=False)
+    core_run_id = Column(String(64), ForeignKey("run_states.id"), nullable=False, unique=True)
+
+
 class EvidenceBundleModel(IntelligenceScope, Base):
     __tablename__ = "evidence_bundles"
     title = Column(String(160), nullable=False)
@@ -749,6 +766,33 @@ class BenchReplayModel(IntelligenceScope, Base):
     capsule_id = Column(String(64), ForeignKey("relay_capsules.id"), nullable=False)
 
 
+class IncidentCapsuleModel(IntelligenceScope, Base):
+    """Operational snapshots, including unknown outcomes; legacy capsules stay immutable."""
+    __tablename__ = "incident_capsules"
+    incident_id = Column(String(64), ForeignKey("relay_incidents.id"), nullable=False)
+    incident_revision = Column(Integer, nullable=False)
+    __table_args__ = (UniqueConstraint("incident_id", "incident_revision", name="uq_incident_capsule_revision"),)
+
+
+class IncidentReplayModel(IntelligenceScope, Base):
+    __tablename__ = "incident_capsule_replays"
+    capsule_id = Column(String(64), ForeignKey("incident_capsules.id"), nullable=False)
+
+
+class BenchSuiteVersionModel(IntelligenceScope, Base):
+    __tablename__ = "bench_suite_versions"
+    family_key = Column(String(64), nullable=False)
+    evaluation_version = Column(String(32), nullable=False)
+    __table_args__ = (UniqueConstraint("organization_id", "project_id", "family_key", "evaluation_version",
+        name="uq_bench_suite_version"),)
+
+
+class BenchScenarioCandidateModel(IntelligenceScope, Base):
+    __tablename__ = "bench_scenario_candidates"
+    source_kind = Column(String(32), nullable=False)
+    source_id = Column(String(64), nullable=False)
+
+
 class EvidenceLinkModel(IntelligenceScope, Base):
     __tablename__ = "evidence_links"
     bundle_id = Column(String(64), ForeignKey("evidence_bundles.id"), nullable=False)
@@ -761,7 +805,8 @@ class EvidenceLinkModel(IntelligenceScope, Base):
 for _intelligence_model in (DemoFixtureModel, DemoObservationModel, EvidenceDocumentModel,
     EvidenceSourceModel, EvidenceBundleModel, RelaySignalModel, RelayIncidentModel, RelayEventModel,
     RelayInvestigationModel, RelayProposalModel, RelayExecutionModel, RelayVerificationModel,
-    RelayCapsuleModel, BenchReplayModel, EvidenceLinkModel):
+    RelayCapsuleModel, BenchReplayModel, EvidenceLinkModel, BenchSuiteVersionModel, BenchScenarioCandidateModel,
+    EvidenceConnectionModel, EvidenceReferenceModel, BriefInterpretationModel, IncidentCapsuleModel, IncidentReplayModel):
     Index("ix_" + _intelligence_model.__tablename__ + "_scope", _intelligence_model.organization_id,
         _intelligence_model.project_id, _intelligence_model.created_at, _intelligence_model.id)
 Index("ix_relay_active_execution", RelayExecutionModel.status)

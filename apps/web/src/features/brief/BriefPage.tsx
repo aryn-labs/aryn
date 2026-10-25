@@ -39,14 +39,19 @@ import {
   sourceDetailSchema,
   linkSchema,
   fixtureSchema,
+  targetSchema,
+  sourceKinds,
+  claimPredicates,
   type Bundle,
 } from '@/features/intelligence/api'
+import { EvidenceConnectionsPanel } from './EvidenceConnectionsPanel'
+import { InterpretationsPanel } from './InterpretationsPanel'
 
 export function BriefPage() {
   const c = useCopy(),
     search = useSearch({ strict: false }),
     [tab, setTab] = useState(
-      'tab' in search && ['sources', 'linked'].includes(String(search.tab))
+      'tab' in search && ['sources', 'linked', 'connections'].includes(String(search.tab))
         ? String(search.tab)
         : 'bundles',
     )
@@ -58,7 +63,7 @@ export function BriefPage() {
     <IntelligenceLayout
       module="brief"
       tab={tab}
-      tabs={['bundles', 'sources', 'linked']}
+      tabs={['bundles', 'sources', 'connections', 'linked']}
       onTab={(value) => {
         setTab(value)
         filters.setStatus('')
@@ -79,6 +84,8 @@ export function BriefPage() {
         <BundleCatalog filters={filters} />
       ) : tab === 'sources' ? (
         <SourceCatalog filters={filters} />
+      ) : tab === 'connections' ? (
+        <EvidenceConnectionsPanel project={filters.project || w.project?.id || ''} />
       ) : (
         <LinkedLookup
           initialKind={'kind' in search ? String(search.kind ?? 'run') : 'run'}
@@ -275,9 +282,11 @@ function LinkedLookup({
         </Field>
         <Field label={c('recordKind')}>
           <select value={kind} onChange={(e) => setKind(e.target.value)}>
-            {['run', 'artifact', 'workflow_run', 'incident', 'capsule', 'replay'].map((k) => (
-              <option key={k}>{k}</option>
-            ))}
+            {['run', 'artifact', 'workflow_run', 'evaluation', 'incident', 'capsule', 'replay'].map(
+              (k) => (
+                <option key={k}>{k}</option>
+              ),
+            )}
           </select>
         </Field>
         <Field label={c('reference')}>
@@ -332,6 +341,7 @@ function BundleDetail({ project, id }: { project: string; id: string }) {
             <DateValue value={data.created_at} />
           </div>
           <BundleWorkspace bundle={data} />
+          <InterpretationsPanel project={project} bundleId={id} />
         </>
       )}
     </IntelligenceLayout>
@@ -542,9 +552,11 @@ function SourceBuilder({
       </Field>
       <Field label={c('sourceKind')}>
         <select value={kind} onChange={(e) => setKind(e.target.value)}>
-          {['document', 'run', 'artifact', 'demo_observation'].map((k) => (
-            <option key={k}>{k}</option>
-          ))}
+          {sourceKinds
+            .filter((kind) => !['file', 'git'].includes(kind))
+            .map((k) => (
+              <option key={k}>{k}</option>
+            ))}
         </select>
       </Field>
       <Field label={c('title')}>
@@ -580,6 +592,9 @@ function BundleBuilder({
     [predicate, setPredicate] = useState('contains_text'),
     [literal, setLiteral] = useState(''),
     [target, setTarget] = useState(''),
+    [subject, setSubject] = useState(''),
+    [metric, setMetric] = useState('latency_ms'),
+    [maximum, setMaximum] = useState(1000),
     [minimum, setMinimum] = useState(1),
     [ids, setIds] = useState<string[]>([]),
     [busy, setBusy] = useState(false),
@@ -587,6 +602,7 @@ function BundleBuilder({
     focus = useDialogFocus()
   const sources = useCatalog('/brief/sources', sourceSchema, project),
     fixtures = useCatalog('/relay/demo-fixtures', fixtureSchema, project),
+    targets = useCatalog('/relay/targets', targetSchema, project),
     items = sources.error ? [] : (sources.data?.pages.flatMap((p) => p.items) ?? [])
   const valid =
     step === 0
@@ -595,11 +611,24 @@ function BundleBuilder({
         ? !!question.trim() &&
           minimum >= 1 &&
           minimum <= 8 &&
-          (predicate === 'contains_text'
+          ([
+            'contains_text',
+            'tool_succeeded',
+            'source_matches_revision',
+            'configuration_matches',
+          ].includes(predicate)
             ? !!literal.trim()
-            : predicate === 'service_healthy'
-              ? !!target
-              : true)
+            : true) &&
+          (!['service_healthy', 'configuration_matches'].includes(predicate) || !!target) &&
+          (![
+            'workflow_completed',
+            'evaluation_passed',
+            'tool_succeeded',
+            'source_matches_revision',
+            'resource_within_limit',
+          ].includes(predicate) ||
+            /^[A-Za-z0-9_-]{1,64}$/.test(subject)) &&
+          (predicate !== 'resource_within_limit' || (Number.isFinite(maximum) && maximum >= 0))
         : true
   async function save() {
     if (!w.csrf || busy || !permission.data?.permissions['version:create']) return
@@ -615,8 +644,28 @@ function BundleBuilder({
             hypothesis: {
               question: question.trim(),
               predicate,
-              text: predicate === 'contains_text' ? literal : '',
-              target_id: predicate === 'service_healthy' ? target : null,
+              text: [
+                'contains_text',
+                'tool_succeeded',
+                'source_matches_revision',
+                'configuration_matches',
+              ].includes(predicate)
+                ? literal
+                : '',
+              target_id: ['service_healthy', 'configuration_matches'].includes(predicate)
+                ? target
+                : null,
+              subject_id: [
+                'workflow_completed',
+                'evaluation_passed',
+                'tool_succeeded',
+                'source_matches_revision',
+                'resource_within_limit',
+              ].includes(predicate)
+                ? subject
+                : null,
+              metric: predicate === 'resource_within_limit' ? metric : null,
+              maximum: predicate === 'resource_within_limit' ? maximum : null,
               minimum_sources: minimum,
             },
           },
@@ -711,12 +760,17 @@ function BundleBuilder({
             </Field>
             <Field label={c('predicate')}>
               <select value={predicate} onChange={(e) => setPredicate(e.target.value)}>
-                {['contains_text', 'service_healthy', 'run_completed'].map((p) => (
+                {claimPredicates.map((p) => (
                   <option key={p}>{p}</option>
                 ))}
               </select>
             </Field>
-            {predicate === 'contains_text' && (
+            {[
+              'contains_text',
+              'tool_succeeded',
+              'source_matches_revision',
+              'configuration_matches',
+            ].includes(predicate) && (
               <Field label={c('literal')}>
                 <input
                   value={literal}
@@ -725,7 +779,7 @@ function BundleBuilder({
                 />
               </Field>
             )}
-            {predicate === 'service_healthy' && (
+            {['service_healthy', 'configuration_matches'].includes(predicate) && (
               <>
                 <Field label={c('target')}>
                   <select value={target} onChange={(e) => setTarget(e.target.value)}>
@@ -738,10 +792,63 @@ function BundleBuilder({
                             {f.name}
                           </option>
                         ))}
+                    {!targets.error &&
+                      targets.data?.pages
+                        .flatMap((page) => page.items)
+                        .map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.name}
+                          </option>
+                        ))}
                   </select>
                 </Field>
                 <QueryState query={fixtures} />
                 <More query={fixtures} />
+                <QueryState query={targets} />
+                <More query={targets} />
+              </>
+            )}
+            {[
+              'workflow_completed',
+              'evaluation_passed',
+              'tool_succeeded',
+              'source_matches_revision',
+              'resource_within_limit',
+            ].includes(predicate) && (
+              <Field label={c('claimSubject')}>
+                <input
+                  value={subject}
+                  maxLength={64}
+                  pattern="[A-Za-z0-9_-]{1,64}"
+                  onChange={(event) => setSubject(event.target.value)}
+                />
+              </Field>
+            )}
+            {predicate === 'resource_within_limit' && (
+              <>
+                <Field label={c('measuredMetric')}>
+                  <select value={metric} onChange={(event) => setMetric(event.target.value)}>
+                    {[
+                      'latency_ms',
+                      'output_bytes',
+                      'iterations',
+                      'tool_call_attempts',
+                      'memory_bytes',
+                    ].map((value) => (
+                      <option key={value}>{value}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label={c('maximum')}>
+                  <input
+                    type="number"
+                    min={0}
+                    max={1000000000000}
+                    value={maximum}
+                    onChange={(event) => setMaximum(Number(event.target.value))}
+                  />
+                </Field>
+                <Notice>{c('measuredMetricHelp')}</Notice>
               </>
             )}
             <Field label={c('minimum')}>
@@ -765,6 +872,11 @@ function BundleBuilder({
               [c('minimum'), minimum],
               [c('target'), target || null],
               [c('literal'), literal || null],
+              [c('claimSubject'), subject || null],
+              [
+                c('measuredMetric'),
+                predicate === 'resource_within_limit' ? `${metric} ≤ ${maximum}` : null,
+              ],
             ]}
           />
         )}

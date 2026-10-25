@@ -45,12 +45,12 @@ async function sectionScreenshot(page: Page, heading: string, name: string) {
   })
   await page.screenshot({ path: resolve(evidence, name + '.png'), fullPage: true })
 }
-async function confirm(page: Page) {
+async function confirm(page: Page, timeout = 5000) {
   await page
     .getByRole('dialog')
     .getByRole('button', { name: 'Konfirmasi tindakan', exact: true })
     .click()
-  await expect(page.getByRole('dialog')).toBeHidden()
+  await expect(page.getByRole('dialog')).toBeHidden({ timeout })
 }
 async function axe(page: Page) {
   const result = await new AxeBuilder({ page }).analyze()
@@ -136,6 +136,7 @@ test('disposable fixture configuration and signal collection use actual Core rev
   page,
 }) => {
   await page.goto('/relay')
+  await page.getByRole('button', { name: 'Fixture Demo', exact: true }).click()
   await page.getByRole('button', { name: 'Buat Fixture', exact: true }).click()
   await page.getByLabel('Nama', { exact: true }).fill('Browser governed disposable fixture')
   await confirm(page)
@@ -159,6 +160,7 @@ test('Brief catalogs, source inspector and actual three-step bundle creation', a
   await screenshot(page, 'brief-catalog')
   await page.getByRole('button', { name: 'Buat Bundle', exact: true }).click()
   await page.getByLabel('Nama', { exact: true }).fill('Browser Core Evidence Bundle')
+  await page.getByRole('dialog').getByRole('button', { name: 'Muat lainnya', exact: true }).click()
   await page.getByLabel(/Dokumen Pengujian Terisolasi/).check()
   await page.getByRole('dialog').getByRole('button', { name: 'Lanjutkan', exact: true }).click()
   await page
@@ -208,7 +210,7 @@ test('Relay human approval, fixed recovery, causal verification and diagnostic r
   await page.getByRole('button', { name: 'Investigasi bukti', exact: true }).click()
   await confirm(page)
   await expect(page.getByRole('heading', { name: 'Matriks Bukti' })).toBeVisible()
-  await page.getByRole('button', { name: 'Usulkan restart_demo', exact: true }).click()
+  await page.getByRole('button', { name: 'Usulkan tindakan pemulihan', exact: true }).click()
   await page
     .getByLabel('Alasan review')
     .fill('Explicit review of disposable fixture evidence and exact revision')
@@ -323,4 +325,186 @@ test('light theme and English localization use the same Core records', async ({ 
     await screenshot(page, module + '-light-english')
     await axe(page)
   }
+})
+
+test('operator-approved physical file connection captures evidence and supports revocation', async ({
+  page,
+}) => {
+  await page.goto('/brief')
+  await page.getByRole('button', { name: 'Koneksi sumber', exact: true }).click()
+  await page.getByRole('button', { name: 'Registrasi koneksi sumber', exact: true }).click()
+  await page
+    .getByLabel('Koneksi yang disetujui operator', { exact: true })
+    .selectOption('browser_runbooks')
+  await page
+    .getByRole('dialog')
+    .getByLabel('Nama', { exact: true })
+    .fill('Browser physical runbook')
+  await axe(page)
+  await confirm(page)
+  const panel = page
+    .locator('.intel-panel')
+    .filter({ has: page.getByRole('heading', { name: 'Browser physical runbook', exact: true }) })
+  await panel.getByRole('button', { name: 'Kumpulkan snapshot sumber', exact: true }).click()
+  await page.getByLabel('File yang disetujui', { exact: true }).selectOption('runbook')
+  await page.getByRole('dialog').getByLabel('Nama', { exact: true }).fill('Actual runbook snapshot')
+  await confirm(page)
+  const sources = await page.request
+    .get('/api/projects/' + records.project + '/brief/sources')
+    .then((r) => r.json())
+  const source = sources.items.find(
+    (item: { title: string }) => item.title === 'Actual runbook snapshot',
+  )
+  expect(source.source_ref.kind).toBe('file')
+  await panel.getByRole('button', { name: 'Cabut akses', exact: true }).click()
+  await confirm(page)
+  await expect(
+    panel.getByRole('button', { name: 'Kumpulkan snapshot sumber', exact: true }),
+  ).toBeDisabled()
+  await screenshot(page, 'brief-real-file-connection')
+})
+
+test('safe suite authoring and exact human review expose an immutable Factory choice', async ({
+  page,
+}) => {
+  await page.getByRole('button', { name: 'Suite', exact: true }).click()
+  await page.getByRole('button', { name: 'Buat versi suite', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog
+    .getByLabel('Keluarga suite', { exact: true })
+    .fill('browser_operational_observations')
+  await dialog.getByLabel('Nama', { exact: true }).fill('Browser reviewed observation suite')
+  await dialog.getByLabel('Versi evaluasi', { exact: true }).fill('1.0.0')
+  await dialog.getByLabel('Nama skenario', { exact: true }).fill('Observed liquidity')
+  await dialog
+    .getByLabel('Instruksi skenario', { exact: true })
+    .fill('Explain liquidity and solvency using their time horizons.')
+  await dialog.getByLabel('Observasi literal wajib', { exact: true }).fill('Liquidity')
+  await axe(page)
+  await confirm(page)
+  const panel = page.locator('.intel-panel').filter({
+    has: page.getByRole('heading', { name: 'Browser reviewed observation suite', exact: true }),
+  })
+  await panel.getByRole('button', { name: 'Review suite', exact: true }).click()
+  await page
+    .getByRole('dialog')
+    .getByLabel('Alasan review', { exact: true })
+    .fill('Human review of the exact immutable declaration and mandatory security checks.')
+  await confirm(page)
+  const catalog = await page.request
+    .get('/api/projects/' + records.project + '/bench/suites')
+    .then((r) => r.json())
+  expect(
+    catalog.items.some(
+      (item: { name: string }) => item.name === 'Browser reviewed observation suite',
+    ),
+  ).toBe(true)
+  await screenshot(page, 'bench-reviewed-suite-authoring')
+})
+
+test('Core-governed operational protocol executes once and captures verification lineage', async ({
+  page,
+}) => {
+  await page.goto('/relay/' + records.project + '/' + records.operational_incident)
+  await page.getByRole('button', { name: 'Investigasi bukti', exact: true }).click()
+  await confirm(page, 30000)
+  await page.getByRole('button', { name: 'Usulkan tindakan pemulihan', exact: true }).click()
+  await page
+    .getByRole('dialog')
+    .getByLabel('Alasan review', { exact: true })
+    .fill(
+      'Start only the exact stopped isolated process and independently verify its business endpoint.',
+    )
+  await confirm(page, 30000)
+  await expect(
+    page.getByRole('button', { name: 'Jalankan tindakan disetujui', exact: true }),
+  ).toBeDisabled()
+  await page.getByRole('button', { name: 'Setujui hash persis', exact: true }).click()
+  await page
+    .getByRole('dialog')
+    .getByLabel('Alasan review', { exact: true })
+    .fill('Review exact target, action, deadline, isolation and independent health verification.')
+  await confirm(page, 30000)
+  await page.getByRole('button', { name: 'Jalankan tindakan disetujui', exact: true }).click()
+  await confirm(page, 30000)
+  await expect(page.getByText('RECOVERED', { exact: true }).first()).toBeVisible()
+  await page.getByText('Receipt eksekusi', { exact: true }).click()
+  await expect(page.locator('details[open]')).toContainText('admission_hash')
+  await page.getByRole('button', { name: 'Tutup insiden terverifikasi', exact: true }).click()
+  await confirm(page, 30000)
+  const result = await page.request
+    .get('/api/projects/' + records.project + '/relay/' + records.operational_incident)
+    .then((r) => r.json())
+  expect(result.capsule.lineage.verification_observation.payload.healthy).toBe(true)
+  await page.goto('/bench/' + records.project + '/capsules/' + result.capsule_id)
+  await page.getByText('Bukti historis terautentikasi', { exact: true }).click()
+  await expect(page.locator('details[open]')).toContainText('verification_observation')
+  await axe(page)
+  await screenshot(page, 'operational-capsule-lineage')
+})
+
+test('Brief interpretation requires consent and remains a separate informational Core run', async ({
+  page,
+}) => {
+  await page.goto('/brief/' + records.project + '/' + records.bundle)
+  await page
+    .getByRole('button', { name: 'Interpretasi bukti dengan agen assigned', exact: true })
+    .click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('combobox').selectOption(records.assignment!)
+  await expect(
+    dialog.getByRole('button', { name: 'Konfirmasi tindakan', exact: true }),
+  ).toBeDisabled()
+  await dialog.getByRole('checkbox').check()
+  await axe(page)
+  await confirm(page)
+  await expect(
+    page.getByText('Interpretasi model · hanya informasi', { exact: true }),
+  ).toBeVisible()
+  const captured = await page.request
+    .get('/api/projects/' + records.project + '/brief/' + records.bundle + '/interpretations')
+    .then((r) => r.json())
+  expect(captured.items[0].authority).toBe('informational_only')
+  await screenshot(page, 'brief-informational-core-interpretation')
+})
+
+test('approved Git connection preserves an exact real commit and an accessible revision field', async ({
+  page,
+}) => {
+  await page.goto('/brief')
+  await page.getByRole('button', { name: 'Koneksi sumber', exact: true }).click()
+  await page.getByRole('button', { name: 'Registrasi koneksi sumber', exact: true }).click()
+  await page
+    .getByLabel('Koneksi yang disetujui operator', { exact: true })
+    .selectOption('browser_source_history')
+  await page
+    .getByRole('dialog')
+    .getByLabel('Nama', { exact: true })
+    .fill('Browser exact Git source')
+  await confirm(page)
+  const panel = page
+    .locator('.intel-panel')
+    .filter({ has: page.getByRole('heading', { name: 'Browser exact Git source', exact: true }) })
+  await panel.getByRole('button', { name: 'Kumpulkan snapshot sumber', exact: true }).click()
+  await page.getByLabel('File yang disetujui', { exact: true }).selectOption('readme')
+  await page
+    .getByRole('dialog')
+    .getByLabel('Nama', { exact: true })
+    .fill('Actual Git commit snapshot')
+  await page.getByLabel('Revisi Git yang tepat', { exact: true }).fill(records.git_revision!)
+  await axe(page)
+  await confirm(page)
+  const sources = await page.request
+    .get('/api/projects/' + records.project + '/brief/sources')
+    .then((r) => r.json())
+  const source = sources.items.find(
+    (item: { title: string }) => item.title === 'Actual Git commit snapshot',
+  )
+  expect(source.source_ref.kind).toBe('git')
+  const captured = await page.request
+    .get('/api/projects/' + records.project + '/brief/sources/' + source.id)
+    .then((r) => r.json())
+  expect(captured.content.revision).toBe(records.git_revision)
+  expect(captured.content.current_revision).toBe(records.git_revision)
+  await screenshot(page, 'brief-real-git-connection')
 })

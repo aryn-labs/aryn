@@ -45,7 +45,18 @@ export function Badge({
   tone?: 'good' | 'warn' | 'bad' | 'neutral'
 }) {
   const c = useCopy()
-  const good = ['SUPPORTED', 'VERIFIED', 'RECOVERED', 'CLOSED', 'passed', 'support', 'fresh']
+  const good = [
+    'SUPPORTED',
+    'VERIFIED',
+    'RECOVERED',
+    'CLOSED',
+    'passed',
+    'support',
+    'fresh',
+    'healthy',
+    'reviewed',
+    'enabled',
+  ]
   const bad = [
     'FAILED',
     'DEGRADED',
@@ -54,6 +65,7 @@ export function Badge({
     'policy_violation',
     'invalid_evidence',
     'conflict',
+    'unhealthy',
   ]
   const warn = [
     'CONFLICTING',
@@ -63,10 +75,24 @@ export function Badge({
     'stale',
     'unverifiable',
     'runtime_error',
+    'pending_review',
+    'disabled',
   ]
-  const label = ['passed', 'failed', 'support', 'conflict', 'neutral', 'fresh', 'stale'].includes(
-    value,
-  )
+  const label = [
+    'passed',
+    'failed',
+    'support',
+    'conflict',
+    'neutral',
+    'fresh',
+    'stale',
+    'healthy',
+    'unhealthy',
+    'reviewed',
+    'pending_review',
+    'enabled',
+    'disabled',
+  ].includes(value)
     ? c(value)
     : value === 'VERIFIED'
       ? c('verified')
@@ -372,6 +398,7 @@ export function MutationDialog({
   body,
   allowed,
   children,
+  pendingActions,
   onSuccess,
   onClose,
 }: {
@@ -382,6 +409,7 @@ export function MutationDialog({
   body: unknown
   allowed: boolean
   children?: ReactNode
+  pendingActions?: ReactNode
   onSuccess: (result: unknown) => Promise<void> | void
   onClose: () => void
 }) {
@@ -415,6 +443,7 @@ export function MutationDialog({
         <DialogTitle>{title}</DialogTitle>
         <DialogDescription>{description}</DialogDescription>
         {children}
+        {busy && pendingActions}
         {!allowed && <Notice warning>{c('noPermission')}</Notice>}
         {error && (
           <p role="alert">

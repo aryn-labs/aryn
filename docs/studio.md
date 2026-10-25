@@ -144,9 +144,10 @@ masalah, matriks regression/accessibility, residual limitation dan satu sesi UAT
 Ringkasan menampilkan jumlah aktual dari proyek dan aktivitas Core; tidak ada seed agent, riwayat, atau statistik buatan. Agent Factory, Eksekusi, Bench, Persetujuan, Tata Kelola, dan Pengaturan aktif. Workspace/project selector memakai proyek nyata yang dapat dibaca principal. UI berbahasa Indonesia, dengan semantic tokens dark/light, font Geist/Geist Mono, sidebar collapsible, pencarian tabel, loading/error/empty/disconnected states, dialog dengan focus trap, navigasi tab keyboard, serta layout desktop/tablet/mobile.
 
 Projects, Workflows, Runs, Automations, Chat dan Settings menggunakan scope backend
-yang sama. Brief menyediakan scoped evidence; Relay membatasi recovery pada
-fixture/adapter yang telah diotorisasi. Itu tidak membuktikan live infrastructure
-remediation. **Belum diverifikasi/terblokir:** hosted IdP/deployment, native browser/
+yang sama. Brief menyediakan scoped evidence dari sumber aktual; Relay membatasi
+recovery pada layanan Docker disposable terisolasi atau fixture demo yang ditandai.
+Itu tidak membuktikan administrasi infrastruktur pelanggan atau production.
+**Belum diverifikasi/terblokir:** hosted IdP/deployment, native browser/
 network, persistent memory, shared native session administration, background jobs,
 subagents dan raw runtime event forwarding yang belum memenuhi Core enforcement.
 Fitur native config admin tertentu unsupported pada versi terpasang. Audit/usage
@@ -160,6 +161,23 @@ Jika Hermes tidak tersedia, kredensial salah, atau toolsets aktif, indikator men
 Bench juga menampilkan current Accepted Baseline vs Candidate, scenario/grader regressions, score serta latency/token/cost deltas dan promotion decision dari server. Admin dapat menerima verified baseline dengan reason/CAS; suite/evidence transition memerlukan intent governance eksplisit. Critical regression memblokir Factory/Core approval dan publish backend. Publication sah memajukan baseline atomik; existing publication tanpa baseline membutuhkan adoption yang diverifikasi, sehingga candidate tidak mendapat no-baseline bypass. [Kontrak dan lifecycle baseline](https://github.com/aryn-labs/aryn-docs/blob/e826deba288803d8d52d51e176be5e4d8ab0fd04/engineering/aryn/bench-engine.md#accepted-baseline-dan-regression-governance-bn-06) menjelaskan bootstrap, history, migration dan legacy limits.
 
 ## Pengujian dan traceability
+
+Brief menyediakan koneksi file/Git yang disiapkan operator server, predicate klaim
+typed, dan interpretasi informational melalui agen assigned tanpa tools effectful.
+Relay menyediakan target layanan Docker disposable, approval exact payload,
+cancellation sebelum dispatch, verifikasi endpoint independen, serta capsule
+recovered/degraded/unknown. Bench mendukung suite immutable yang direview manusia,
+receipt native Hermes terautentikasi, export regresi signed, dan kandidat incident
+ke skenario dengan review terpisah. Demo Fixtures tetap ditandai eksplisit.
+Kontrak mutakhir ada di [engineering intelligence](https://github.com/aryn-labs/aryn-docs/blob/main/engineering/aryn/intelligence-recovery-contracts.md).
+
+Operator dapat menjalankan API dengan `--operational-bindings <manifest>` dan
+`--evidence-bindings <manifest>` server-side. Browser hanya memilih binding ID
+yang sesuai scope, tanpa host path, Docker socket, endpoint administratif atau
+credential server. `ARYN_TEST_OPERATIONAL_MANIFEST` mengaktifkan layanan Docker
+nyata untuk suite browser intelligence; tanpa opt-in itu, transport test double
+ditandai eksplisit. Live model inference tetap diblokir bila provenance upstream
+9Router tidak lengkap. Verifikasi lokal tidak mengesahkan deployment hosting.
 
 [README Web](../apps/web/README.md) memuat perintah unit, lint, build dan tujuh
 suite browser yang dipelihara. Shell/Home memakai isolated HTTP contracts;

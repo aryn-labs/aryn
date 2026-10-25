@@ -10,7 +10,6 @@ from database.repositories.exceptions import TenantIsolationError
 from database.schema import AgentVersionModel, BenchBaselineModel, BenchComparisonModel, MembershipModel
 from modules.bench.quality_gate import BenchQualityGate, QualityGateFailedError
 from modules.bench.regression import block, compare_evaluations
-from modules.bench.scenarios import get_bench_suite
 from modules.core.audit.logger import AuditLogger
 from modules.core.history import advance_head, receipt_head, verify_head, HistoryUnverifiedError
 from modules.core.permissions.engine import PermissionEngine, PermissionDeniedError
@@ -136,7 +135,7 @@ class BenchRegressionRepository:
             baseline = self.current(context, version.blueprint_id, lock=persist)
         except (QualityGateFailedError, HistoryUnverifiedError) as exc:
             baseline, baseline_error = None, str(exc)
-        suite = get_bench_suite(version.evaluation_reference.suite_id)
+        suite = self.bench.resolve_suite(context, version.evaluation_reference.suite_id)
         candidate, validation_error = None, None
         try:
             candidate = self.bench.validate_stored(context, row, version)
@@ -251,7 +250,7 @@ class BenchRegressionRepository:
         candidate = self.bench.validate_stored(context, candidate_row, version)
         if stored.candidate != self.identity(candidate_row, version, candidate.evidence_format):
             raise QualityGateFailedError("Publication candidate evidence changed.")
-        suite = get_bench_suite(version.evaluation_reference.suite_id)
+        suite = self.bench.resolve_suite(context, version.evaluation_reference.suite_id)
         if (stored.suite_id, stored.evaluation_version, stored.suite_hash) != (suite.suite_id, suite.evaluation_version, suite.suite_hash):
             raise QualityGateFailedError("Publication evaluator configuration is no longer supported.")
         expected = stored.model_copy(update={"state": "bootstrap", "reason": "initial_publication_bootstrap",
@@ -295,11 +294,11 @@ class BenchRegressionRepository:
         if latest.id != evaluation_id:
             raise QualityGateFailedError("Baseline requires the latest evaluation.")
         BenchQualityGate().enforce(result, version.evaluation_reference, signer=self.signer,
-            approval_authority=self.bench.approval_authority())
+            approval_authority=self.bench.approval_authority(), suite=self.bench.resolve_suite(context, result.suite_id))
         if current and current.evaluation.evaluation_id == evaluation_id:
             return current
         comparison = self.compare(context, version.id, persist=True)
-        suite = get_bench_suite(result.suite_id)
+        suite = self.bench.resolve_suite(context, result.suite_id)
         if transition:
             if (approval or current is None or comparison.state != "incompatible"
                     or comparison.reason != "suite_or_evidence_format_changed"):

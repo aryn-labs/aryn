@@ -7,10 +7,11 @@ The replay adapter holds neither Core, a database, a runtime nor a live executor
 import time
 from typing import Literal
 from pydantic import Field
-from database.schema import BenchReplayModel
+from database.schema import BenchReplayModel, IncidentReplayModel
 from modules.core.records import SignedRecords, digest, encoded, identity, now
 from modules.core.history import HistoryUnverifiedError
 from packages.contracts.intelligence import Contract, CapsuleReplay, DemoState
+from packages.contracts.operational import ServiceReplay
 from packages.contracts.bench import (
     OutputContract,
     EvidenceFixture,
@@ -49,7 +50,9 @@ class CapsuleScenario(Contract):
 
 class InMemoryRecoveryReplay:
     def replay(self, snapshot):
-        state = DemoState.model_validate(snapshot).model_dump()
+        # Diagnostic replay copies only the declared logical state. Captured
+        # process identities remain in signed lineage and confer no capability.
+        state = DemoState.model_validate({key: snapshot[key] for key in ("running", "blocking_fault")}).model_dump()
         state["running"] = True
         output = {
             **state,
@@ -79,7 +82,7 @@ class CapsuleReplayService(SignedRecords):
                 "properties": {
                     "running": {"const": True},
                     "blocking_fault": {"type": "boolean"},
-                    "recovered": {"const": capsule["recovered"]},
+                    "recovered": {"const": not capsule["snapshot"]["blocking_fault"]},
                     "operation_count": {"const": 1},
                 },
                 "required": [
@@ -170,8 +173,8 @@ class CapsuleReplayService(SignedRecords):
             _, report = self.add(
                 session,
                 ctx,
-                BenchReplayModel,
-                CapsuleReplay,
+                IncidentReplayModel if capsule.get("target_kind") == "isolated_service" else BenchReplayModel,
+                ServiceReplay if capsule.get("target_kind") == "isolated_service" else CapsuleReplay,
                 "replay",
                 capsule_id=identifier,
                 capsule_digest=capsule["digest"],
@@ -179,6 +182,7 @@ class CapsuleReplayService(SignedRecords):
                 passed=all(result.passed for result in graders),
                 graders=[result.model_dump(mode="json") for result in graders],
                 digest="0" * 64,
+                **({"source_outcome": capsule["outcome"]} if capsule.get("target_kind") == "isolated_service" else {}),
             )
             self.audit(
                 session,
@@ -197,7 +201,7 @@ class CapsuleReplayService(SignedRecords):
 
     def detail(self, ctx, identifier):
         with self.db.session() as session:
-            _, report = self.get(session, BenchReplayModel, ctx, identifier)
+            _, report = self.get_any(session, (IncidentReplayModel, BenchReplayModel), ctx, identifier)
             capsule = self.relay.capsule_in_session(session, ctx, report["capsule_id"])
             if capsule["digest"] != report["capsule_digest"] or report[
                 "digest"
@@ -209,5 +213,5 @@ class CapsuleReplayService(SignedRecords):
 
     def inventory(self, ctx, after="", limit=25):
         with self.db.session() as session:
-            rows, cursor = self.page(session, ctx, BenchReplayModel, after, limit)
+            rows, cursor = self.page_any(session, (IncidentReplayModel, BenchReplayModel), ctx, after, limit)
             return {"items": rows, "next": cursor}

@@ -13,16 +13,11 @@ class NativeBoundaryError(LookupError):
     pass
 
 
-class NativeWorker:
-    def __init__(self, image_id, schemas, *, docker="docker", toolsets=None):
-        if not re.fullmatch(r"sha256:[a-f0-9]{64}", image_id):
-            raise ValueError("Native worker requires an immutable reviewed image ID.")
-        self.image_id = image_id
-        self.schemas = dict(schemas)
-        self.toolsets = dict(toolsets or {})
+class DockerTransport:
+    """Bounded Docker CLI I/O shared by trusted isolated execution adapters."""
+
+    def __init__(self, *, docker="docker"):
         self.docker = docker
-        self._workers = {}
-        self._changes = asyncio.Lock()
 
     async def _command(self, arguments, *, payload=None, timeout=10):
         process = await asyncio.create_subprocess_exec(self.docker, *arguments,
@@ -54,6 +49,18 @@ class NativeWorker:
         if process.returncode != 0 or len(stdout) > 32768:
             raise NativeBoundaryError("Native sandbox operation failed.")
         return stdout
+
+
+class NativeWorker(DockerTransport):
+    def __init__(self, image_id, schemas, *, docker="docker", toolsets=None):
+        if not re.fullmatch(r"sha256:[a-f0-9]{64}", image_id):
+            raise ValueError("Native worker requires an immutable reviewed image ID.")
+        super().__init__(docker=docker)
+        self.image_id = image_id
+        self.schemas = dict(schemas)
+        self.toolsets = dict(toolsets or {})
+        self._workers = {}
+        self._changes = asyncio.Lock()
 
     def profile(self):
         return {"image_id": self.image_id, "network": "none", "read_only_root": True,
@@ -98,6 +105,7 @@ class NativeWorker:
             if seconds <= 0:
                 raise NativeBoundaryError("Native execution deadline expired.")
             try:
+                started = time.monotonic()
                 data = await self._command(["exec", "--interactive", name, "python", "/opt/aryn/native_worker.py"],
                     payload=json.dumps({"name": spec.tool_name, "arguments": call.arguments,
                         "task_id": key}).encode(), timeout=seconds)
@@ -108,6 +116,7 @@ class NativeWorker:
                 return result, {"sandbox": self.profile(), "invocation_hash": evidence_hash(invocation),
                     "run_id": execution.run_id, "organization_id": execution.organization_id,
                     "project_id": execution.project_id, "call_id": call.call_id,
+                    "output_bytes": len(data), "elapsed_seconds": time.monotonic() - started,
                     "input_hash": evidence_hash(call.arguments), "output_hash": evidence_hash(result)}
             except BaseException:
                 await self._remove(key, name)

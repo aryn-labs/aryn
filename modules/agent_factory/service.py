@@ -216,6 +216,13 @@ class AgentFactoryService:
             repo = AgentRepository(session)
             blueprint = repo.get_blueprint(context, blueprint_id)
 
+            if evaluation_reference and evaluation_reference.suite_id.startswith("suite_"):
+                from modules.bench.suites import resolve_suite
+                suite = resolve_suite(session, context, evaluation_reference.suite_id)
+                if (evaluation_reference.evaluation_version != suite.evaluation_version
+                        or not set(suite.required_scenarios).issubset(evaluation_reference.required_scenarios)):
+                    raise QualityGateFailedError("Reviewed suite identity or mandatory scenarios differ.")
+
             resolved_role = role or blueprint.role or "general_agent"
             resolved_objective = objective or blueprint.objective or ""
             resolved_owner = owner or blueprint.owner or context.actor.actor_id
@@ -315,7 +322,7 @@ class AgentFactoryService:
                 )
             if m.status not in {"draft", "rejected", "approved"}:
                 raise InvalidStateTransitionError("Bench evaluation is already active or version is immutable.")
-            self.bench_runner.resolve_suite(version_contract, scenarios)
+            self.bench_runner.resolve_suite(version_contract, scenarios, context=context, session=session)
             # Mark version as evaluating
             self.bench_runner.coordinator._fence()
             self.permission_engine.enforce("run:create", context, context.organization_id, context.project_id, session=session)

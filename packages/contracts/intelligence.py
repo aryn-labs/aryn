@@ -38,7 +38,7 @@ class Record(Contract):
 
 
 class SourceReference(Contract):
-    kind: Literal["artifact", "run", "demo_observation", "document"]
+    kind: Literal["artifact", "run", "tool_activity", "workflow", "evaluation", "file", "git", "demo_observation", "service_observation", "document"]
     id: Identifier
 
 
@@ -52,7 +52,7 @@ class EvidenceSource(Record):
     observed_at: str
     collected_at: str
     sanitized: bool
-    quality: Literal["verified_internal_snapshot", "disposable_demo", "user_document"]
+    quality: Literal["verified_internal_snapshot", "disposable_demo", "user_document", "verified_disposable_observation", "authorized_file", "verified_git_snapshot"]
     max_age_seconds: int = Field(strict=True, ge=1, le=604800)
 
 
@@ -66,19 +66,29 @@ class EvidenceDocument(Record):
 
 class Hypothesis(Contract):
     question: str = Field(min_length=1, max_length=500)
-    predicate: Literal["service_healthy", "contains_text", "run_completed"]
+    predicate: Literal["service_healthy", "contains_text", "run_completed", "workflow_completed",
+        "evaluation_passed", "tool_succeeded", "source_matches_revision", "configuration_matches", "resource_within_limit"]
     text: str = Field(default="", max_length=200)
     minimum_sources: int = Field(default=1, strict=True, ge=1, le=8)
     target_id: Identifier | None = None
+    subject_id: Identifier | None = None
+    metric: Literal["latency_ms", "output_bytes", "iterations", "tool_call_attempts", "memory_bytes"] | None = None
+    maximum: float | None = Field(default=None, ge=0, le=1000000000000)
 
     @model_validator(mode="after")
     def typed_predicate(self):
-        if (self.predicate == "contains_text") != bool(self.text.strip()):
-            raise ValueError("Only contains_text requires a nonempty literal text.")
-        if (self.predicate == "service_healthy") != (self.target_id is not None):
+        if (self.predicate in {"contains_text", "tool_succeeded", "source_matches_revision", "configuration_matches"}) != bool(self.text.strip()):
+            raise ValueError("This typed claim requires its exact literal comparison value.")
+        if (self.predicate in {"service_healthy", "configuration_matches"}) != (self.target_id is not None):
             raise ValueError(
-                "Only service_healthy requires an exact disposable target ID."
+                "Service health/configuration claims require an exact target ID."
             )
+        if (self.predicate in {"workflow_completed", "evaluation_passed", "tool_succeeded", "source_matches_revision", "resource_within_limit"}) and self.subject_id is None:
+            raise ValueError("This typed claim requires an exact subject ID.")
+        if (self.predicate == "resource_within_limit") != (self.metric is not None and self.maximum is not None):
+            raise ValueError("Resource claims require a measured metric and a bounded maximum.")
+        if self.predicate != "resource_within_limit" and (self.metric is not None or self.maximum is not None):
+            raise ValueError("Only resource claims accept metric bounds.")
         return self
 
 
@@ -107,7 +117,7 @@ class EvidenceBundle(Record):
 class EvidenceLink(Record):
     bundle_id: Identifier
     reference_kind: Literal[
-        "run", "artifact", "workflow_run", "incident", "capsule", "replay"
+        "run", "artifact", "workflow_run", "evaluation", "incident", "capsule", "replay"
     ]
     reference_id: Identifier
 
@@ -176,7 +186,7 @@ class Signal(Record):
     source_id: Identifier
     dedup_key: str = Field(min_length=1, max_length=128)
     severity: Literal["low", "medium", "high"]
-    demo: Literal[True] = True
+    demo: bool = True
 
 
 class CollectSignal(Contract):
@@ -210,7 +220,7 @@ class Incident(Record):
     verification_id: Identifier | None = None
     capsule_id: Identifier | None = None
     updated_at: str
-    demo: Literal[True] = True
+    demo: bool = True
 
 
 class IncidentRevision(Contract):
@@ -225,7 +235,7 @@ class Investigation(Record):
     incident_id: Identifier
     bundle_id: Identifier
     readonly: Literal[True] = True
-    diagnosis: Literal["ABSTAIN", "LATEST_DEMO_TELEMETRY_UNHEALTHY"]
+    diagnosis: Literal["ABSTAIN", "LATEST_DEMO_TELEMETRY_UNHEALTHY", "OBSERVED_BUSINESS_PROCESS_STOPPED"]
     reason: str
 
 
@@ -261,7 +271,7 @@ class ActionProposal(Record):
 
 
 class ProposeAction(IncidentRevision):
-    action: Literal["restart_demo"] = "restart_demo"
+    action: Literal["restart_demo", "restart_service"] = "restart_demo"
     target_id: Identifier
     target_revision: Revision
     bundle_id: Identifier

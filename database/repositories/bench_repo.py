@@ -94,7 +94,12 @@ class BenchRepository:
                         or execution.organization_id != context.organization_id or execution.project_id != context.project_id):
                     raise QualityGateFailedError("Execution attestation or tenant boundary differs.")
         BenchQualityGate.validate_evidence(result, evaluation_reference=version.evaluation_reference,
-            signer=self.evidence_signer, approval_authority=self.approval_authority().for_session(self.session) if self.approval_authority() else None)
+            signer=self.evidence_signer, approval_authority=self.approval_authority().for_session(self.session) if self.approval_authority() else None,
+            suite=self.resolve_suite(context, result.suite_id))
+
+    def resolve_suite(self, context, suite_id):
+        from modules.bench.suites import resolve_suite
+        return resolve_suite(self.session, context, suite_id)
 
     def validate_stored(self, context, row, version):
         try:
@@ -159,7 +164,8 @@ class BenchRepository:
             raise QualityGateFailedError("Latest evaluation differs from the version evidence reference.")
         BenchQualityGate().enforce(self.validate_stored(context, latest, version),
             evaluation_reference=version.evaluation_reference, signer=self.evidence_signer,
-            approval_authority=self.approval_authority().for_session(self.session) if self.approval_authority() else None)
+            approval_authority=self.approval_authority().for_session(self.session) if self.approval_authority() else None,
+            suite=self.resolve_suite(context, version.evaluation_reference.suite_id))
         stored_version = AgentRepository(self.session).get_version(context, version_id)
         if stored_version.status not in {"published", "deprecated"}:
             from database.repositories.bench_regression_repo import BenchRegressionRepository

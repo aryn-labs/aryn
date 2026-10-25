@@ -24,10 +24,17 @@ class BenchRunner:
         self.approval_authority = None
         self.coordinator = None
 
-    def resolve_suite(self, version, scenarios=None):
+    def resolve_suite(self, version, scenarios=None, *, context=None, session=None):
         version.verify_integrity(require_canonical=True)
         reference = AgentEvaluationReference.model_validate(version.evaluation_reference.model_dump())
         suite = get_bench_suite(reference.suite_id)
+        if suite is None and context is not None and self.coordinator is not None:
+            from modules.bench.suites import resolve_suite
+            if session is not None:
+                suite = resolve_suite(session, context, reference.suite_id)
+            else:
+                with self.coordinator.db_manager.session() as scoped_session:
+                    suite = resolve_suite(scoped_session, context, reference.suite_id)
         if suite is None:
             raise QualityGateFailedError("Unknown authoritative evaluation suite.")
         if scenarios is not None and scenarios != suite.scenarios:
@@ -64,7 +71,7 @@ class BenchRunner:
     async def evaluate_agent_version(self, context: SecurityContext, version: AgentVersion,
         scenarios: Optional[List[BenchScenario]] = None,
         on_event: Optional[Callable[[str, Dict[str, Any]], Any]] = None) -> BenchEvaluationResult:
-        suite = self.resolve_suite(version, scenarios)
+        suite = self.resolve_suite(version, scenarios, context=context)
         preflight_timeout = min(version.budget_policy.timeout_seconds,
             version.constraints.max_execution_time_seconds,
             getattr(self.runtime_adapter, "timeout", version.budget_policy.timeout_seconds),
@@ -88,6 +95,13 @@ class BenchRunner:
                 if self.coordinator is None or caps.enabled_toolsets or not caps.supports_governed_tool_turns:
                     raise QualityGateFailedError("MCP fixture evaluation requires confined Core tool mediation.")
                 self.coordinator.mcp_tools.pins(context, version, set(version.tool_grants))
+            if scenario.runtime_requirements.write_isolation == "isolated_worker":
+                if (self.coordinator is None or caps.enabled_toolsets or not caps.supports_governed_tool_turns
+                        or self.coordinator.mcp_tools.native_worker is None):
+                    raise QualityGateFailedError("Native Bench requires reviewed Core mediation and an immutable isolated worker.")
+                pins = self.coordinator.mcp_tools.pins(context, version, set(version.tool_grants))
+                if any(not self.coordinator.mcp_tools.current(context, name, binding).native for name, binding in pins.items()):
+                    raise QualityGateFailedError("Native Bench cannot admit another tool transport.")
             if scenario.runtime_requirements.write_isolation in {"read_only_https_fixture", "read_only_github_fixture"}:
                 if self.coordinator is None or caps.enabled_toolsets or not caps.supports_governed_tool_turns:
                     raise QualityGateFailedError("HTTPS fixture evaluation requires confined Core tool mediation.")
@@ -146,6 +160,15 @@ class BenchRunner:
                 requested_model=version.model, observed_at=datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 runtime_status="failed", latency_seconds=0, capabilities=caps.model_dump(mode="json"),
             )
+            if scenario.runtime_requirements.write_isolation == "isolated_worker":
+                execution.capabilities["details"]["native_worker"] = self.coordinator.mcp_tools.native_worker.profile()
+                pins = self.coordinator.mcp_tools.pins(context, version, set(version.tool_grants))
+                for name in scenario.allowed_tools:
+                    if name in pins:
+                        entry = self.coordinator.mcp_tools.current(context, name, pins[name])
+                        approval = self.approval_authority.verify_approval(entry.owner_context,
+                            "native_tool_binding", entry.approval.binding_id, entry.approval.binding_hash)
+                        execution.approval_records.append(approval.model_dump(mode="json"))
             started = time.perf_counter()
             try:
                 observed = await self._execute(request, context, allowed_tools, version) if self.coordinator is not None else await asyncio.wait_for(self._execute(request, context, allowed_tools), timeout=timeout)

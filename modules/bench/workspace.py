@@ -25,11 +25,54 @@ def public(value):
 
 
 class BenchWorkspace(SignedRecords):
+    def scenario_projection(self, session, ctx, scenario):
+        execution = scenario.get("execution")
+        usage = execution.get("usage") if isinstance(execution, dict) else None
+        value = {**scenario, "usage_availability": "measured" if usage is not None else "unavailable",
+            "measured_usage": usage, "tool_activity": [], "tool_activity_available": False}
+        if usage is None:
+            # Historical serialized totals remain intact in signed storage.
+            # Read projections must not present absent measurements as zero.
+            value.update(input_tokens=None, output_tokens=None, total_tokens=None)
+        if not execution or not execution.get("run_id"):
+            return value
+        from database.repositories.run_state_repo import RunStateRepository
+        from database.repositories.audit_repo import AuditRepository
+        from database.schema import AuditEventModel
+        try:
+            run = RunStateRepository(session).get_run(ctx, execution["run_id"])
+            if not self.core.stored_result(run).execution_claim_verified:
+                return value
+            events = session.query(AuditEventModel).filter_by(organization_id=ctx.organization_id,
+                project_id=ctx.project_id, resource_id=run.id, event_type="core.tool.result").order_by(
+                AuditEventModel.occurred_at, AuditEventModel.event_id).limit(33).all()
+            if len(events) > 32 or any(not AuditRepository.verify_event_integrity(event, self.db.evidence_signer) for event in events):
+                return value
+            value["tool_activity"] = [{"event_id": event.event_id, "occurred_at": timestamp(event.occurred_at),
+                "status": event.status, "receipt": json.loads(event.redacted_payload_json)} for event in events]
+            value["tool_activity_available"] = True
+        except (EntityNotFoundError, HistoryUnverifiedError, ValueError):
+            pass
+        return value
+
     def suites(self, ctx):
         with self.db.session() as session:
             self.authorize(session, ctx)
-            return {"items": [public(suite.model_dump(mode="json"))
-                              for suite in get_bench_suite_registry().suites()]}
+            return {"items": [public(suite.model_dump(mode="json")) for suite in self.definitions(session, ctx)]}
+
+    def definitions(self, session, ctx):
+        self.authorize(session, ctx)
+        items = list(get_bench_suite_registry().suites())
+        from database.schema import BenchSuiteVersionModel
+        from modules.bench.suites import resolve_suite
+        rows = session.query(BenchSuiteVersionModel).filter_by(organization_id=ctx.organization_id,
+            project_id=ctx.project_id).order_by(BenchSuiteVersionModel.created_at.desc(), BenchSuiteVersionModel.id.desc()).limit(100).all()
+        for row in rows:
+            try:
+                items.append(resolve_suite(session, ctx, row.id))
+            except Exception:
+                pass  # Unreviewed/unverified versions cannot be selected.
+        return items
 
     def project(self, session, ctx, row, detail=False):
         repo = BenchRepository(session, self.db.evidence_signer)
@@ -70,7 +113,8 @@ class BenchWorkspace(SignedRecords):
             "requested_model": provenance.get("requested_model"),
             **({"regression": {key: comparison[key] for key in ("state", "reason", "promotion_blocked")}
                 if comparison else None} if not detail else {}),
-            **({"scenarios": decoded(row.details_json, list), "provenance": provenance,
+            **({"scenarios": [self.scenario_projection(session, ctx, scenario)
+                for scenario in decoded(row.details_json, list)], "provenance": provenance,
                 "regression": comparison, "baseline": baseline,
                 "current_evaluation": stored.evaluation_id == row.id,
                 "promotion_eligible": bool(verified and row.passed == 1 and stored.evaluation_id == row.id

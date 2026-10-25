@@ -1,7 +1,101 @@
 export const intelligenceEn = {
+  healthy: 'Healthy',
+  unhealthy: 'Unhealthy',
+  reviewed: 'Reviewed',
+  pending_review: 'Pending review',
+  enabled: 'Enabled',
+  disabled: 'Disabled',
   bench: 'Bench',
   relay: 'Relay',
   brief: 'Brief',
+  connections: 'Source connections',
+  targets: 'Operational targets',
+  cancelExecution: 'Cancel pending dispatch',
+  cancellationHelp:
+    'Core can fence a dispatch that has not started. An already dispatched effect may require independent verification or reconciliation.',
+  cancellationConfirmed:
+    'Core confirmed that the pending dispatch was cancelled before any effect.',
+  cancellationUncertain:
+    'The external effect cannot be confirmed cancelled. Verify or reconcile its outcome before another action.',
+  approvalExpiry: 'Proposal expiry',
+  actionReceipt: 'Execution receipt',
+  captureCapsule: 'Capture incident checkpoint',
+  openCapsule: 'Open capsule',
+  capturedOutcome: 'Captured outcome',
+  archivedLineage: 'Authenticated historical evidence',
+  select: 'Select',
+  description: 'Description',
+  registerConnection: 'Register source connection',
+  registerTarget: 'Register operational target',
+  trustedBindingHelp:
+    'Select a connection prepared by the server operator. Registration grants access only within this project.',
+  bindingsUnavailable: 'The server operator has not configured an eligible connection.',
+  approvedConnection: 'Operator-approved connection',
+  approvedFile: 'Approved file',
+  operationalBoundary:
+    'Disposable isolated services only. Recovery requires an exact Core approval and independent endpoint verification.',
+  connectionIdentity: 'Configuration identity',
+  measurementCheckpoint:
+    'This is the last collected measurement. Collect a new observation to check the current service.',
+  observeTarget: 'Collect health observation',
+  revokeGrant: 'Revoke access',
+  enableGrant: 'Enable access',
+  signalDedupHelp:
+    'Core derives signal identity from the measured target state and deduplicates repeated observations.',
+  sourceConnectionHelp:
+    'Collect approved local files or raw Git blobs. Changed, missing or revoked sources cannot support current claims.',
+  collectSource: 'Collect source snapshot',
+  gitRevision: 'Exact Git revision',
+  gitRevisionHelp:
+    'Leave empty to capture the current HEAD. Historical revisions retain their exact identity.',
+  claimSubject: 'Exact subject ID',
+  measuredMetric: 'Measured resource',
+  maximum: 'Maximum',
+  measuredMetricHelp:
+    'Missing measurements remain unavailable. A configured resource limit is not a measurement.',
+  scenarioIdentity: 'Scenario ID',
+  scenarioName: 'Scenario name',
+  scenarioPrompt: 'Scenario instruction',
+  expectedLiteral: 'Required literal observation',
+  forbiddenLiteral: 'Forbidden literal observation',
+  executionEnvironment: 'Execution environment',
+  withoutTools: 'Confined model without tools',
+  isolatedWorker: 'Isolated native Hermes worker',
+  requiredNativeTools: 'Required native tools',
+  nativeSuiteHelp:
+    'An Agent Version must pin the current human-reviewed native actions. A suite never grants tool permission.',
+  timeoutSeconds: 'Timeout in seconds',
+  mandatoryGraders:
+    'Core always adds identity, integrity, confinement, output and resource checks. Every scenario is required.',
+  authorSuite: 'Author suite version',
+  authorRevision: 'Author next version',
+  reviewDeclaration: 'Review exact declaration',
+  reviewSuite: 'Review suite',
+  suiteFamily: 'Suite family',
+  evaluationVersion: 'Evaluation version',
+  suiteAuthoringHelp:
+    'Create an immutable declarative suite. Human review is required before an agent can select it.',
+  suiteReviewHelp:
+    'Review the exact immutable declaration and digest. Review grants no model or tool authority.',
+  addScenario: 'Add scenario',
+  removeScenario: 'Remove scenario',
+  regressionCandidates: 'Regression candidates',
+  candidateHelp:
+    'A verified failure or capsule can become a proposed scenario. Human review is required before authoring a suite; promotion remains a separate Core decision.',
+  reviewCandidate: 'Review candidate',
+  authorFromCandidate: 'Author from reviewed candidate',
+  createCandidate: 'Propose regression scenario',
+  exportRegression: 'Download signed regression report',
+  toolActivity: 'Authenticated tool activity',
+  interpretations: 'Model interpretations',
+  interpretationHelp:
+    'Interpretation is informational and separate from direct evidence. Only an assigned agent without effectful tools is eligible; Core checks its identity, budget and publication authority.',
+  interpretEvidence: 'Interpret evidence with assigned agent',
+  modelInterpretation: 'Model interpretation · informational only',
+  capturedEvidenceStatus: 'Evidence status at interpretation',
+  interpretationAgent: 'Assigned interpretation agent',
+  remoteConsent:
+    'I approve sending the selected sanitized evidence to the configured model, within the displayed budget.',
   benchDescription: 'Evaluation Lab · evidence, safety and regression',
   relayDescription: 'Incident & Recovery Center',
   briefDescription: 'Evidence Intelligence Workspace',
@@ -99,7 +193,7 @@ export const intelligenceEn = {
   investigation: 'Investigation',
   investigate: 'Investigate evidence',
   proposal: 'Action Proposal',
-  propose: 'Propose restart_demo',
+  propose: 'Propose recovery action',
   approve: 'Approve exact hash',
   execute: 'Execute approved action',
   reconcile: 'Reconcile unknown outcome',
@@ -153,7 +247,7 @@ export const intelligenceEn = {
   passedHelp:
     'Passed and verified are separate. Historical or unverified results cannot authorize publication.',
   suitesHelp:
-    'Server registry defines scenarios and graders. Browser suite editing is unavailable.',
+    'Built-in and reviewed immutable suite versions share the same Core evaluation and promotion gates.',
   noComparison: 'Comparison is unavailable; no promotion decision can be inferred.',
   noTrace: 'Only recorded measurements are shown. Missing cost or granular trace is unavailable.',
   versionLifecycle: 'Open exact version in Agent Factory',
@@ -169,6 +263,100 @@ export const intelligenceEn = {
 }
 export const intelligenceId: typeof intelligenceEn = {
   ...intelligenceEn,
+  healthy: 'Sehat',
+  unhealthy: 'Tidak sehat',
+  reviewed: 'Ditinjau',
+  pending_review: 'Menunggu tinjauan',
+  enabled: 'Aktif',
+  disabled: 'Nonaktif',
+  connections: 'Koneksi sumber',
+  targets: 'Target operasional',
+  cancelExecution: 'Batalkan dispatch tertunda',
+  cancellationHelp:
+    'Core dapat menghentikan dispatch yang belum dimulai. Efek yang telah dikirim mungkin memerlukan verifikasi independen atau rekonsiliasi.',
+  cancellationConfirmed:
+    'Core mengonfirmasi dispatch tertunda dibatalkan sebelum menimbulkan efek.',
+  cancellationUncertain:
+    'Pembatalan efek eksternal belum dapat dikonfirmasi. Verifikasi atau rekonsiliasi hasilnya sebelum tindakan lain.',
+  approvalExpiry: 'Kedaluwarsa proposal',
+  actionReceipt: 'Receipt eksekusi',
+  captureCapsule: 'Simpan checkpoint insiden',
+  openCapsule: 'Buka capsule',
+  capturedOutcome: 'Hasil saat checkpoint',
+  archivedLineage: 'Bukti historis terautentikasi',
+  select: 'Pilih',
+  description: 'Deskripsi',
+  registerConnection: 'Registrasi koneksi sumber',
+  registerTarget: 'Registrasi target operasional',
+  trustedBindingHelp:
+    'Pilih koneksi yang disiapkan operator server. Registrasi hanya memberikan akses dalam project ini.',
+  bindingsUnavailable: 'Operator server belum mengonfigurasi koneksi yang memenuhi syarat.',
+  approvedConnection: 'Koneksi yang disetujui operator',
+  approvedFile: 'File yang disetujui',
+  operationalBoundary:
+    'Hanya layanan disposable yang terisolasi. Pemulihan memerlukan approval Core yang tepat dan verifikasi endpoint independen.',
+  connectionIdentity: 'Identitas konfigurasi',
+  measurementCheckpoint:
+    'Ini pengukuran terakhir yang dikumpulkan. Kumpulkan observasi baru untuk memeriksa layanan saat ini.',
+  observeTarget: 'Kumpulkan observasi kesehatan',
+  revokeGrant: 'Cabut akses',
+  enableGrant: 'Aktifkan akses',
+  signalDedupHelp:
+    'Core menetapkan identitas sinyal dari keadaan target terukur dan menggabungkan observasi berulang.',
+  sourceConnectionHelp:
+    'Kumpulkan file lokal atau blob Git yang disetujui. Sumber berubah, hilang, atau dicabut tidak mendukung klaim saat ini.',
+  collectSource: 'Kumpulkan snapshot sumber',
+  gitRevision: 'Revisi Git yang tepat',
+  gitRevisionHelp:
+    'Kosongkan untuk menangkap HEAD saat ini. Revisi historis mempertahankan identitas aslinya.',
+  claimSubject: 'ID subjek yang tepat',
+  measuredMetric: 'Sumber daya terukur',
+  maximum: 'Maksimum',
+  measuredMetricHelp:
+    'Pengukuran yang hilang tetap tidak tersedia. Batas sumber daya bukan pengukuran.',
+  scenarioIdentity: 'ID skenario',
+  scenarioName: 'Nama skenario',
+  scenarioPrompt: 'Instruksi skenario',
+  expectedLiteral: 'Observasi literal wajib',
+  forbiddenLiteral: 'Observasi literal terlarang',
+  executionEnvironment: 'Lingkungan eksekusi',
+  withoutTools: 'Model terkurung tanpa tools',
+  isolatedWorker: 'Worker native Hermes terisolasi',
+  requiredNativeTools: 'Tools native wajib',
+  nativeSuiteHelp:
+    'Agent Version harus mengikat tindakan native yang direview manusia. Suite tidak memberikan izin tools.',
+  timeoutSeconds: 'Timeout dalam detik',
+  mandatoryGraders:
+    'Core selalu menambahkan pemeriksaan identitas, integritas, isolasi, output, dan sumber daya. Semua skenario wajib.',
+  authorSuite: 'Buat versi suite',
+  authorRevision: 'Buat versi berikutnya',
+  reviewDeclaration: 'Periksa deklarasi yang tepat',
+  reviewSuite: 'Review suite',
+  suiteFamily: 'Keluarga suite',
+  evaluationVersion: 'Versi evaluasi',
+  suiteAuthoringHelp:
+    'Buat suite deklaratif immutable. Review manusia wajib sebelum agen dapat memilihnya.',
+  suiteReviewHelp:
+    'Periksa deklarasi immutable dan digest yang tepat. Review tidak memberikan otoritas model atau tools.',
+  addScenario: 'Tambah skenario',
+  removeScenario: 'Hapus skenario',
+  regressionCandidates: 'Kandidat regresi',
+  candidateHelp:
+    'Kegagalan atau capsule terverifikasi dapat menjadi usulan skenario. Review manusia wajib sebelum membuat suite; promosi tetap keputusan Core terpisah.',
+  reviewCandidate: 'Review kandidat',
+  authorFromCandidate: 'Buat dari kandidat yang direview',
+  createCandidate: 'Usulkan skenario regresi',
+  exportRegression: 'Unduh laporan regresi bertanda tangan',
+  toolActivity: 'Aktivitas tools terautentikasi',
+  interpretations: 'Interpretasi model',
+  interpretationHelp:
+    'Interpretasi bersifat informatif dan terpisah dari bukti langsung. Hanya agen assigned tanpa tools yang menimbulkan efek dapat dipilih; Core memeriksa identitas, budget, dan otoritas publikasinya.',
+  interpretEvidence: 'Interpretasi bukti dengan agen assigned',
+  modelInterpretation: 'Interpretasi model · hanya informasi',
+  capturedEvidenceStatus: 'Status bukti saat interpretasi',
+  interpretationAgent: 'Agen interpretasi assigned',
+  remoteConsent:
+    'Saya menyetujui pengiriman bukti tersanitasi yang dipilih ke model terkonfigurasi, dalam budget yang ditampilkan.',
   benchDescription: 'Lab Evaluasi · bukti, keamanan dan regresi',
   briefDescription: 'Ruang Kerja Kecerdasan Bukti',
   relayDescription: 'Pusat Insiden & Pemulihan',
@@ -264,7 +452,7 @@ export const intelligenceId: typeof intelligenceEn = {
   investigation: 'Investigasi',
   investigate: 'Investigasi bukti',
   proposal: 'Proposal Tindakan',
-  propose: 'Usulkan restart_demo',
+  propose: 'Usulkan tindakan pemulihan',
   approve: 'Setujui hash persis',
   execute: 'Jalankan tindakan disetujui',
   reconcile: 'Rekonsiliasi outcome unknown',
@@ -319,7 +507,7 @@ export const intelligenceId: typeof intelligenceEn = {
   passedHelp:
     'Lulus dan terverifikasi adalah dua penilaian berbeda. Hasil historis atau tidak terverifikasi tidak mengotorisasi publikasi.',
   suitesHelp:
-    'Registry server menentukan skenario dan grader. Penyuntingan suite browser belum tersedia.',
+    'Suite bawaan dan versi immutable yang direview menggunakan gate evaluasi dan promosi Core yang sama.',
   noComparison: 'Perbandingan tidak tersedia; keputusan promosi tidak dapat disimpulkan.',
   noTrace:
     'Hanya pengukuran yang tercatat ditampilkan. Biaya atau trace granular yang hilang tidak tersedia.',

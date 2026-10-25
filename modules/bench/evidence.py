@@ -108,7 +108,8 @@ def validate_evaluation(evaluation, suite, *, reference=None, signer=None, appro
     if reference is not None and captured_reference != reference:
         raise ValueError("Captured promotion reference differs from current agent configuration.")
     from modules.bench.scenarios import get_bench_suite
-    if get_bench_suite(captured_reference.suite_id).suite_id != suite.suite_id:
+    resolved = suite if captured_reference.suite_id == suite.suite_id else get_bench_suite(captured_reference.suite_id)
+    if resolved is None or resolved.suite_id != suite.suite_id:
         raise ValueError("Promotion suite differs.")
     suite_count, suite_score, suite_state, suite_decision = aggregate_suite(suite, evaluation.scenario_results)
     expected_suite = SuiteAggregateResult(passed=suite_decision.passed, total_scenarios=len(suite.scenarios),

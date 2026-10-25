@@ -39,6 +39,8 @@ import {
   type Evaluation,
 } from '@/features/intelligence/api'
 import { ProjectName } from '@/features/brief/BriefPage'
+import { SuiteAuthoringPanel } from './SuiteAuthoringPanel'
+import { ScenarioCandidateDialog } from './ScenarioCandidateDialog'
 
 export function BenchPage() {
   const c = useCopy(),
@@ -210,6 +212,7 @@ function Suites({ project }: { project: string }) {
   const query = useSuites(project)
   return (
     <>
+      <SuiteAuthoringPanel project={project} />
       <QueryState query={query} empty={!query.data?.items.length} />
       <div className="intel-stack">
         {!query.error &&
@@ -306,6 +309,7 @@ function EvaluationDetail({ project, id }: { project: string; id: string }) {
     [accept, setAccept] = useState(false),
     [reason, setReason] = useState(''),
     [transition, setTransition] = useState(false),
+    [candidate, setCandidate] = useState(false),
     permission = useIntelligenceContext(project),
     cache = useQueryClient()
   return (
@@ -340,6 +344,25 @@ function EvaluationDetail({ project, id }: { project: string; id: string }) {
             </div>
           </div>
           {!data.verified && <Notice warning>{c('passedHelp')}</Notice>}
+          <div className="intel-actions">
+            {data.verified && data.regression && (
+              <a
+                className="intel-back"
+                href={base(project) + `/bench/evaluations/${id}/regression/download`}
+              >
+                {c('exportRegression')}
+              </a>
+            )}
+            <Button
+              variant="secondary"
+              disabled={
+                !data.verified || data.passed || !permission.data?.permissions['version:create']
+              }
+              onClick={() => setCandidate(true)}
+            >
+              {c('createCandidate')}
+            </Button>
+          </div>
           {!!data.regression?.critical_regressions.length && (
             <Notice warning>
               {c('blocked')} · {data.regression.reason} ·{' '}
@@ -392,6 +415,19 @@ function EvaluationDetail({ project, id }: { project: string; id: string }) {
                       />
                       <h3>{c('actualOutput')}</h3>
                       <pre>{s.actual_output}</pre>
+                      <h3>{c('toolActivity')}</h3>
+                      {s.tool_activity_available ? (
+                        s.tool_activity.map((event) => (
+                          <details className="intel-row" key={event.event_id}>
+                            <summary>
+                              <Badge value={event.status} /> <DateValue value={event.occurred_at} />
+                            </summary>
+                            <JsonFacts data={event.receipt} />
+                          </details>
+                        ))
+                      ) : (
+                        <Notice>{c('unavailable')}</Notice>
+                      )}
                       <h3>{c('graders')}</h3>
                       {s.grader_results.length ? (
                         s.grader_results.map((g) => (
@@ -507,6 +543,14 @@ function EvaluationDetail({ project, id }: { project: string; id: string }) {
             />
           </Field>
         </MutationDialog>
+      )}
+      {candidate && data && (
+        <ScenarioCandidateDialog
+          project={project}
+          sourceKind="evaluation"
+          sourceId={id}
+          onClose={() => setCandidate(false)}
+        />
       )}
     </IntelligenceLayout>
   )
@@ -691,6 +735,7 @@ function CapsuleDetail({ project, id }: { project: string; id: string }) {
     data = query.error ? undefined : query.data,
     permission = useIntelligenceContext(project),
     [confirm, setConfirm] = useState(false),
+    [candidate, setCandidate] = useState(false),
     navigate = useNavigate()
   return (
     <IntelligenceLayout module="bench" back refresh={() => void query.refetch()}>
@@ -699,6 +744,17 @@ function CapsuleDetail({ project, id }: { project: string; id: string }) {
         <>
           <h2 className="intel-title">{c('capsule')}</h2>
           <Notice warning>{c('replayBoundary')}</Notice>
+          {data.outcome && (
+            <Notice warning={data.outcome !== 'RECOVERED'}>
+              {c('capturedOutcome')}: {data.outcome} · {data.failure_reason}
+            </Notice>
+          )}
+          {data.lineage && (
+            <details>
+              <summary>{c('archivedLineage')}</summary>
+              <JsonFacts data={data.lineage} />
+            </details>
+          )}
           <Panel title={c('provenance')}>
             <Facts
               values={[
@@ -722,6 +778,13 @@ function CapsuleDetail({ project, id }: { project: string; id: string }) {
             >
               {c('replay')}
             </Button>
+            <Button
+              variant="secondary"
+              disabled={!permission.data?.permissions['version:create']}
+              onClick={() => setCandidate(true)}
+            >
+              {c('createCandidate')}
+            </Button>
           </Panel>
         </>
       )}
@@ -741,6 +804,14 @@ function CapsuleDetail({ project, id }: { project: string; id: string }) {
               params: { projectId: project, replayId: replay.id },
             })
           }}
+        />
+      )}
+      {candidate && data && (
+        <ScenarioCandidateDialog
+          project={project}
+          sourceKind="capsule"
+          sourceId={id}
+          onClose={() => setCandidate(false)}
         />
       )}
     </IntelligenceLayout>

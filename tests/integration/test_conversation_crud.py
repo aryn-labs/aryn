@@ -209,6 +209,10 @@ def test_upgrade_existing_conversation_does_not_rewrite_evidence(chat_studio):
         connection.execute(text("DROP TABLE project_mutations"))
         connection.execute(text("ALTER TABLE projects DROP COLUMN description"))
         connection.execute(text("ALTER TABLE projects DROP COLUMN generation"))
+        for table in ("incident_capsule_replays", "incident_capsules", "brief_interpretations",
+                "evidence_references", "evidence_connections", "bench_scenario_candidates", "bench_suite_versions"):
+            assert connection.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar() == 0
+            connection.execute(text(f"DROP TABLE {table}"))
         config = Config("alembic.ini")
         config.attributes["connection"] = connection
         command.stamp(config, "022_chat_preferences")

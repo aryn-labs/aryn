@@ -11,6 +11,7 @@ from database.schema import (
     RelayExecutionModel as ExecutionRow,
     RelayVerificationModel as VerificationRow,
     RelayCapsuleModel as CapsuleRow,
+    IncidentCapsuleModel,
 )
 from database.repositories.exceptions import InvalidStateTransitionError
 from modules.core.records import SignedRecords, digest, now
@@ -36,6 +37,13 @@ from packages.contracts.intelligence import (
     Hypothesis,
 )
 from modules.relay.recovery import DisposableRecoveryExecutor, DemoHealthVerifier
+from modules.relay.targets import OperationalTargetOperations
+from modules.relay.capsules import OperationalCapsules
+from packages.contracts.operational import (
+    service_target, ServiceObservation, ServiceProposal, ServiceExecution,
+    ServiceVerification,
+)
+import time
 
 
 TRANSITIONS = {
@@ -50,12 +58,13 @@ TRANSITIONS = {
 }
 
 
-class RelayService(SignedRecords):
-    def __init__(self, core, brief):
+class RelayService(OperationalTargetOperations, OperationalCapsules, SignedRecords):
+    def __init__(self, core, brief, targets=None):
         super().__init__(core)
         self.brief = brief
         self.approvals = self.db.approval_authority
         self.executor = DisposableRecoveryExecutor(self)
+        self.targets = targets
 
     def event(self, session, ctx, incident, event, old=None, reference_id=None):
         self.add(
@@ -95,24 +104,28 @@ class RelayService(SignedRecords):
         self.event(session, ctx, incident, event, old, reference_id)
 
     def observation(self, session, ctx, fixture, reason):
+        operational = service_target(fixture)
         _, observed = self.add(
             session,
             ctx,
             ObservationRow,
-            DemoObservation,
+            ServiceObservation if operational else DemoObservation,
             "observation",
             target_id=fixture["id"],
             target_revision=fixture["revision"],
             running=fixture["running"],
             blocking_fault=fixture["blocking_fault"],
-            healthy=fixture["running"] and not fixture["blocking_fault"],
+            healthy=fixture["probe"]["healthy"] if operational else fixture["running"] and not fixture["blocking_fault"],
             reason=reason,
+            **({"binding_hash": fixture["binding_hash"], "configuration_hash": fixture["configuration_hash"],
+                "probe": fixture["probe"]} if operational else {}),
         )
         source = self.brief.ingest_in_session(
             session,
             ctx,
-            {"kind": "demo_observation", "id": observed["id"]},
-            "Disposable demo health observation",
+            {"kind": "service_observation" if operational else "demo_observation", "id": observed["id"]},
+            "Independent service health observation" if operational else "Disposable demo health observation",
+            max_age_seconds=60 if operational else 86400,
         )
         return observed, source
 
@@ -140,6 +153,8 @@ class RelayService(SignedRecords):
         with self.db.session(write=True) as session:
             self.authorize(session, ctx, "version:create")
             row, fixture = self.get(session, FixtureRow, ctx, identifier, True)
+            if service_target(fixture):
+                raise InvalidStateTransitionError("Database fixture mutation cannot change an operational target.")
             if fixture["revision"] != body.expected_revision:
                 raise InvalidStateTransitionError("Demo revision changed.")
             fixture.update(
@@ -164,7 +179,13 @@ class RelayService(SignedRecords):
     def signal(self, ctx, body):
         with self.db.session(write=True) as session:
             self.authorize(session, ctx, "run:create")
-            _, fixture = self.get(session, FixtureRow, ctx, body.target_id, True)
+            target_row, fixture = self.get(session, FixtureRow, ctx, body.target_id, True)
+            operational = service_target(fixture)
+            if operational:
+                self.refresh_target(session, ctx, target_row, fixture)
+                self.observation(session, ctx, fixture, "collection")
+                body = body.model_copy(update={"dedup_key": digest([fixture["id"], fixture["instance"], fixture["revision"]]),
+                    "severity": "high"})
             existing = (
                 session.query(IncidentRow)
                 .filter_by(
@@ -207,8 +228,9 @@ class RelayService(SignedRecords):
             source = self.brief.ingest_in_session(
                 session,
                 ctx,
-                {"kind": "demo_observation", "id": last.id},
+                {"kind": "service_observation" if operational else "demo_observation", "id": last.id},
                 "Original disposable incident signal",
+                max_age_seconds=60 if operational else 86400,
             )
             _, signal = self.add(
                 session,
@@ -218,6 +240,7 @@ class RelayService(SignedRecords):
                 "signal",
                 **body.model_dump(),
                 source_id=source["id"],
+                demo=not operational,
             )
             _, incident = self.add(
                 session,
@@ -225,7 +248,7 @@ class RelayService(SignedRecords):
                 IncidentRow,
                 Incident,
                 "incident",
-                title="Disposable demo: " + fixture["name"],
+                title=("Isolated service: " if operational else "Disposable demo: ") + fixture["name"],
                 target_id=fixture["id"],
                 signal_id=signal["id"],
                 dedup_key=body.dedup_key,
@@ -234,6 +257,7 @@ class RelayService(SignedRecords):
                 status="OPEN",
                 revision=1,
                 updated_at=now(),
+                demo=not operational,
             )
             self.event(
                 session, ctx, incident, "signal.received", reference_id=signal["id"]
@@ -241,10 +265,12 @@ class RelayService(SignedRecords):
             self.authorize(session, ctx, "run:create")
             return incident
 
-    def incident_for_mutation(self, session, ctx, identifier, revision=None):
+    def incident_for_mutation(self, session, ctx, identifier, revision=None, *, refresh=True):
         self.authorize(session, ctx, "run:create")
         _, initial = self.get(session, IncidentRow, ctx, identifier)
         target, fixture = self.get(session, FixtureRow, ctx, initial["target_id"], True)
+        if refresh:
+            self.refresh_target(session, ctx, target, fixture)
         row, incident = self.get(session, IncidentRow, ctx, identifier, True)
         if revision is not None and incident["revision"] != revision:
             raise InvalidStateTransitionError(
@@ -254,10 +280,19 @@ class RelayService(SignedRecords):
 
     def investigate(self, ctx, identifier, body):
         with self.db.session(write=True) as session:
-            row, incident, _, fixture = self.incident_for_mutation(
+            row, incident, target, fixture = self.incident_for_mutation(
                 session, ctx, identifier, body.expected_revision
             )
             source_ids = body.source_ids
+            operational = service_target(fixture)
+            if operational:
+                self.observation(session, ctx, fixture, "collection")
+                if source_ids is None:
+                    # An old incident signal may no longer be fresh. Collect a
+                    # second actual endpoint measurement, rather than relabeling
+                    # old evidence or making the operator repeat investigation.
+                    self.refresh_target(session, ctx, target, fixture)
+                    self.observation(session, ctx, fixture, "collection")
             if source_ids is None:
                 observed = (
                     session.query(ObservationRow)
@@ -276,8 +311,9 @@ class RelayService(SignedRecords):
                     self.brief.ingest_in_session(
                         session,
                         ctx,
-                        {"kind": "demo_observation", "id": item.id},
-                        "Read-only demo investigation",
+                        {"kind": "service_observation" if operational else "demo_observation", "id": item.id},
+                        "Read-only incident investigation",
+                        max_age_seconds=60 if operational else 86400,
                     )["id"]
                     for item in observed
                 ]
@@ -306,8 +342,9 @@ class RelayService(SignedRecords):
                 "investigation",
                 incident_id=identifier,
                 bundle_id=bundle["id"],
-                diagnosis="LATEST_DEMO_TELEMETRY_UNHEALTHY" if grounded else "ABSTAIN",
-                reason="Verified demo snapshots include conflicting health observations; no production root cause is inferred."
+                diagnosis=("OBSERVED_BUSINESS_PROCESS_STOPPED" if operational else "LATEST_DEMO_TELEMETRY_UNHEALTHY") if grounded else "ABSTAIN",
+                reason="Verified independent measurements show the business process stopped; no deeper root cause is inferred."
+                if grounded and operational else "Verified demo snapshots include conflicting health observations; no production root cause is inferred."
                 if grounded
                 else "Abstain: insufficient fresh verified evidence.",
             )
@@ -372,11 +409,20 @@ class RelayService(SignedRecords):
                     "Proposal target, revision or investigation bundle differs."
                 )
             bundle = self.grounding(session, ctx, body.bundle_id, fixture)
+            operational = service_target(fixture)
+            if body.action != ("restart_service" if operational else "restart_demo"):
+                raise InvalidStateTransitionError("Action does not match the registered target kind.")
+            extra = {}
+            if operational:
+                extra = {"binding_hash": fixture["binding_hash"], "configuration_hash": fixture["configuration_hash"],
+                    "instance": fixture["instance"], "expires_at": time.time() + 300,
+                    "execution_profile": self.target_binding(ctx, fixture)["profile"]}
+                self.validate_service_proposal(session, ctx, fixture, {**extra, "action": body.action})
             _, proposal = self.add(
                 session,
                 ctx,
                 ProposalRow,
-                ActionProposal,
+                ServiceProposal if operational else ActionProposal,
                 "proposal",
                 incident_id=identifier,
                 target_id=fixture["id"],
@@ -386,6 +432,7 @@ class RelayService(SignedRecords):
                 action=body.action,
                 reason=self.clean(body.reason),
                 payload_hash="0" * 64,
+                **extra,
             )
             incident["proposal_id"] = proposal["id"]
             self.transition(
@@ -427,6 +474,8 @@ class RelayService(SignedRecords):
                     "Target changed since proposal review."
                 )
             self.grounding(session, ctx, proposal["bundle_id"], fixture)
+            if service_target(fixture):
+                self.validate_service_proposal(session, ctx, fixture, proposal)
             approval = self.approvals.grant_approval(
                 ctx,
                 "relay_action",
@@ -440,8 +489,8 @@ class RelayService(SignedRecords):
 
     def execute(self, ctx, identifier, body):
         with self.db.session(write=True) as session:
-            row, incident, _, fixture = self.incident_for_mutation(
-                session, ctx, identifier
+            row, incident, target, fixture = self.incident_for_mutation(
+                session, ctx, identifier, refresh=False
             )
             existing = (
                 session.query(ExecutionRow)
@@ -469,6 +518,7 @@ class RelayService(SignedRecords):
                         "Recovery key belongs to a different immutable request."
                     )
                 return self.detail_in_session(session, ctx, identifier)
+            self.refresh_target(session, ctx, target, fixture)
             proposal = self.current_proposal(session, ctx, incident, body.payload_hash)
             if (
                 proposal["id"] != body.proposal_id
@@ -478,6 +528,12 @@ class RelayService(SignedRecords):
                     "The current proposal or disposable target revision changed."
                 )
             self.grounding(session, ctx, proposal["bundle_id"], fixture)
+            operational = service_target(fixture)
+            if operational:
+                from packages.contracts.core import ActorType
+                if ctx.actor.actor_type != ActorType.USER:
+                    raise PermissionDeniedError("Operational dispatch requires the current human operator; a model cannot inherit control-plane authority.")
+                self.validate_service_proposal(session, ctx, fixture, proposal)
             approval = self.approvals.verify_approval(
                 ctx,
                 "relay_action",
@@ -486,11 +542,11 @@ class RelayService(SignedRecords):
                 session=session,
             )
             self.core._fence()
-            _, execution = self.add(
+            effect, execution = self.add(
                 session,
                 ctx,
                 ExecutionRow,
-                RecoveryExecution,
+                ServiceExecution if operational else RecoveryExecution,
                 "recovery",
                 incident_id=identifier,
                 proposal_id=proposal["id"],
@@ -510,10 +566,11 @@ class RelayService(SignedRecords):
                 },
                 status="running",
                 before_revision=fixture["revision"],
-                before_snapshot={
-                    key: fixture[key] for key in ("running", "blocking_fault")
-                },
+                before_snapshot=self.state_snapshot(fixture),
+                **({"deadline_at": time.time() + 15, "admission": {}} if operational else {}),
             )
+            if operational:
+                self.admit_service(session, ctx, effect, execution, target, fixture, proposal)
             incident["execution_id"] = execution["id"]
             self.transition(
                 session,
@@ -527,7 +584,10 @@ class RelayService(SignedRecords):
             self.authorize(session, ctx, "run:create")
         # The durable claim is committed before the fixed effect; no blind retry.
         try:
-            self.executor.apply(ctx, execution["id"])
+            if operational:
+                self.apply_service(ctx, execution["id"])
+            else:
+                self.executor.apply(ctx, execution["id"])
             self.verify(ctx, identifier)
         except Exception as exc:
             from packages.contracts.core import Actor, ActorType, SecurityContext
@@ -611,7 +671,8 @@ class RelayService(SignedRecords):
                 raise InvalidStateTransitionError(
                     "Only an explicitly unresolved effect can be reconciled."
                 )
-            recovered = DemoHealthVerifier.observe(
+            operational = service_target(fixture)
+            recovered = (self.service_health if operational else DemoHealthVerifier.observe)(
                 fixture, execution, allow_unexecuted=reconcile
             )
             observation, _ = self.observation(session, ctx, fixture, "verification")
@@ -619,7 +680,7 @@ class RelayService(SignedRecords):
                 session,
                 ctx,
                 VerificationRow,
-                RecoveryVerification,
+                ServiceVerification if operational else RecoveryVerification,
                 "verification",
                 incident_id=identifier,
                 execution_id=execution["id"],
@@ -627,7 +688,7 @@ class RelayService(SignedRecords):
                 observation_id=observation["id"],
                 target_revision=fixture["revision"],
                 contract={
-                    "kind": "demo_health_v1",
+                    "kind": "isolated_service_health" if operational else "demo_health_v1",
                     "require_running": True,
                     "require_no_blocking_fault": True,
                 },
@@ -653,6 +714,36 @@ class RelayService(SignedRecords):
                 session, ctx, "version:approve" if reconcile else "run:create"
             )
 
+    def cancel(self, ctx, identifier, body):
+        """Fence pending dispatch. An already sent external effect is not undone."""
+        with self.db.session(write=True) as session:
+            self.authorize(session, ctx, "run:cancel")
+            row, incident, _, _ = self.incident_for_mutation(session, ctx, identifier, body.expected_revision, refresh=False)
+            confirmed, reason = False, "no_pending_dispatch"
+            if incident["status"] == "PROPOSED":
+                incident["proposal_id"] = None
+                self.transition(session, ctx, row, incident, "INVESTIGATING", "proposal.cancelled")
+                confirmed, reason = True, "proposal_invalidated_before_dispatch"
+            elif incident["status"] == "EXECUTING":
+                effect, execution = self.get(session, ExecutionRow, ctx, incident["execution_id"], True)
+                if execution["status"] == "running" and execution["owner_id"] == self.core.authority.owner_id:
+                    # Dispatch holds these same target/incident/execution locks
+                    # through its fixed external call. If cancellation wins the
+                    # locks, no dispatch can have started; its callback is fenced.
+                    execution.update(status="denied", error_code="cancelled_before_dispatch")
+                    self.put(session, ctx, effect, execution)
+                    self.transition(session, ctx, row, incident, "DEGRADED", "dispatch.cancelled", execution["id"])
+                    confirmed, reason = True, "cancelled_before_dispatch"
+                else:
+                    reason = "effect_already_dispatched_requires_verification"
+            elif incident["status"] == "OUTCOME_UNKNOWN":
+                reason = "unknown_outcome_requires_reconciliation_without_redrive"
+            self.audit(session, ctx, "relay.cancellation.requested", identifier,
+                cancellation_confirmed=confirmed, reason=reason)
+            self.authorize(session, ctx, "run:cancel")
+            return {"cancellation_confirmed": confirmed, "reason": reason,
+                "incident": self.detail_in_session(session, ctx, identifier)}
+
     def close(self, ctx, identifier, body):
         with self.db.session(write=True) as session:
             row, incident, _, fixture = self.incident_for_mutation(
@@ -668,32 +759,22 @@ class RelayService(SignedRecords):
             _, execution = self.get(
                 session, ExecutionRow, ctx, incident["execution_id"]
             )
-            if not verification["recovered"] or not DemoHealthVerifier.observe(
+            operational = service_target(fixture)
+            if not verification["recovered"] or not (self.service_health if operational else DemoHealthVerifier.observe)(
                 fixture, execution
             ):
                 raise InvalidStateTransitionError(
                     "Recovered health is no longer verified."
                 )
             _, proposal = self.get(session, ProposalRow, ctx, incident["proposal_id"])
-            _, capsule = self.add(
-                session,
-                ctx,
-                CapsuleRow,
-                IncidentCapsule,
-                "capsule",
-                incident_id=identifier,
-                bundle_id=proposal["bundle_id"],
-                bundle_digest=proposal["bundle_digest"],
-                proposal_id=proposal["id"],
-                proposal_hash=proposal["payload_hash"],
-                verification_id=verification["id"],
-                scenario_id="relay_demo_recovery",
-                snapshot=execution["before_snapshot"],
-                digest="0" * 64,
-            )
-            self.brief.link(
-                session, ctx, capsule["bundle_id"], "capsule", capsule["id"]
-            )
+            if operational:
+                capsule = self.capture_operational_capsule(session, ctx, incident, proposal, execution, verification)
+            else:
+                _, capsule = self.add(session, ctx, CapsuleRow, IncidentCapsule, "capsule",
+                    incident_id=identifier, bundle_id=proposal["bundle_id"], bundle_digest=proposal["bundle_digest"],
+                    proposal_id=proposal["id"], proposal_hash=proposal["payload_hash"], verification_id=verification["id"],
+                    scenario_id="relay_demo_recovery", snapshot=execution["before_snapshot"], digest="0" * 64)
+                self.brief.link(session, ctx, capsule["bundle_id"], "capsule", capsule["id"])
             incident["capsule_id"] = capsule["id"]
             self.transition(
                 session, ctx, row, incident, "CLOSED", "incident.closed", capsule["id"]
@@ -721,7 +802,8 @@ class RelayService(SignedRecords):
             ("capsule", CapsuleRow),
         ):
             details[field] = (
-                self.get(session, cls, ctx, incident[field + "_id"])[1]
+                (self.get_any(session, (IncidentCapsuleModel, CapsuleRow), ctx, incident[field + "_id"])[1]
+                    if field == "capsule" else self.get(session, cls, ctx, incident[field + "_id"])[1])
                 if incident[field + "_id"]
                 else None
             )
@@ -801,7 +883,9 @@ class RelayService(SignedRecords):
     def capsule_in_session(self, session, ctx, identifier):
         from modules.core.history import HistoryUnverifiedError
 
-        _, capsule = self.get(session, CapsuleRow, ctx, identifier)
+        row, capsule = self.get_any(session, (IncidentCapsuleModel, CapsuleRow), ctx, identifier)
+        if isinstance(row, IncidentCapsuleModel):
+            return self.validate_operational_capsule(session, ctx, capsule)
         _, incident = self.get(session, IncidentRow, ctx, capsule["incident_id"])
         _, proposal = self.get(session, ProposalRow, ctx, capsule["proposal_id"])
         _, verification = self.get(

@@ -28,11 +28,34 @@ export const contextSchema = z.object({
   project_id: z.string(),
   permissions: z.record(z.string(), z.boolean()),
 })
+export const sourceKinds = [
+  'artifact',
+  'run',
+  'tool_activity',
+  'workflow',
+  'evaluation',
+  'file',
+  'git',
+  'demo_observation',
+  'service_observation',
+  'document',
+] as const
+export const claimPredicates = [
+  'service_healthy',
+  'contains_text',
+  'run_completed',
+  'workflow_completed',
+  'evaluation_passed',
+  'tool_succeeded',
+  'source_matches_revision',
+  'configuration_matches',
+  'resource_within_limit',
+] as const
 export const sourceSchema = z.object({
   ...scope,
   title: z.string(),
   source_ref: z.object({
-    kind: z.enum(['artifact', 'run', 'demo_observation', 'document']),
+    kind: z.enum(sourceKinds),
     id: z.string(),
   }),
   source_digest: z.string(),
@@ -63,10 +86,13 @@ export const bundleSchema = z.object({
   title: z.string(),
   hypothesis: z.object({
     question: z.string(),
-    predicate: z.enum(['service_healthy', 'contains_text', 'run_completed']),
+    predicate: z.enum(claimPredicates),
     text: z.string(),
     minimum_sources: z.number(),
     target_id: z.string().nullable(),
+    subject_id: z.string().nullable().optional(),
+    metric: z.string().nullable().optional(),
+    maximum: z.number().nullable().optional(),
   }),
   source_ids: z.array(z.string()),
   source_digests: z.record(z.string(), z.string()),
@@ -86,7 +112,15 @@ export const bundleSchema = z.object({
 export const linkSchema = z.object({
   ...scope,
   bundle_id: z.string(),
-  reference_kind: z.enum(['run', 'artifact', 'workflow_run', 'incident', 'capsule', 'replay']),
+  reference_kind: z.enum([
+    'run',
+    'artifact',
+    'workflow_run',
+    'evaluation',
+    'incident',
+    'capsule',
+    'replay',
+  ]),
   reference_id: z.string(),
 })
 export const fixtureSchema = z.object({
@@ -97,6 +131,106 @@ export const fixtureSchema = z.object({
   running: z.boolean(),
   blocking_fault: z.boolean(),
   updated_at: z.string(),
+  target_kind: z.literal('isolated_service').optional(),
+  binding_id: z.string().optional(),
+  binding_hash: z.string().optional(),
+  configuration_hash: z.string().optional(),
+  enabled: z.boolean().optional(),
+  instance: z.string().optional(),
+  probe: z
+    .object({
+      healthy: z.boolean(),
+      business_status: z.number().nullable(),
+      business_available: z.boolean(),
+      latency_ms: z.number(),
+      observed_at: z.number(),
+    })
+    .optional(),
+})
+export const targetSchema = fixtureSchema.extend({
+  target_kind: z.literal('isolated_service'),
+  binding_id: z.string(),
+  binding_hash: z.string(),
+  configuration_hash: z.string(),
+  enabled: z.boolean(),
+  instance: z.string(),
+})
+export const connectionSchema = z.object({
+  ...scope,
+  name: z.string(),
+  kind: z.enum(['file', 'git']),
+  binding_id: z.string(),
+  binding_hash: z.string(),
+  configuration_hash: z.string(),
+  revision: z.number(),
+  enabled: z.boolean(),
+  file_keys: z.array(z.string()),
+})
+export const nativeToolCatalogSchema = z.object({
+  organization_id: z.string(),
+  project_id: z.string(),
+  configured: z.boolean(),
+  tools: z.array(z.string()),
+})
+export const suiteVersionSchema = z.object({
+  ...scope,
+  family_key: z.string(),
+  evaluation_version: z.string(),
+  previous_version_id: z.string().nullable(),
+  author_id: z.string(),
+  candidate_id: z.string().nullable(),
+  definition: z.record(z.string(), z.unknown()),
+  digest: z.string(),
+  reviewed: z.boolean(),
+})
+export const scenarioDeclarationSchema = z.object({
+  scenario_id: z.string(),
+  name: z.string(),
+  prompt: z.string(),
+  expected_text: z.string(),
+  forbidden_text: z.string(),
+  tools: z.array(z.string()),
+  isolation: z.enum(['no_tools', 'isolated_worker']),
+  timeout_seconds: z.number(),
+})
+export const candidateSchema = z.object({
+  ...scope,
+  source_kind: z.enum(['capsule', 'evaluation']),
+  source_id: z.string(),
+  source_digest: z.string(),
+  scenario: scenarioDeclarationSchema,
+  reason: z.string(),
+  author_id: z.string(),
+  digest: z.string(),
+  reviewed: z.boolean(),
+})
+export const interpretationSchema = z.object({
+  ...scope,
+  bundle_id: z.string(),
+  bundle_digest: z.string(),
+  core_run_id: z.string(),
+  evaluation_digest: z.string(),
+  evidence_status: z.string(),
+  text: z.string(),
+  classification: z.literal('model_interpretation'),
+  authority: z.literal('informational_only'),
+  digest: z.string(),
+})
+export const bindingCatalogSchema = z.object({
+  organization_id: z.string(),
+  project_id: z.string(),
+  configured: z.boolean(),
+  items: z.array(
+    z.object({
+      binding_id: z.string(),
+      binding_hash: z.string(),
+      kind: z.enum(['file', 'git']).optional(),
+      file_keys: z.array(z.string()).optional(),
+      environment_id: z.string().optional(),
+      profile: z.record(z.string(), z.unknown()).optional(),
+      allowed_actions: z.array(z.string()).optional(),
+    }),
+  ),
 })
 export const incidentSchema = z.object({
   ...scope,
@@ -112,11 +246,11 @@ export const incidentSchema = z.object({
   execution_id: z.string().nullable(),
   verification_id: z.string().nullable(),
   capsule_id: z.string().nullable(),
-  demo: z.literal(true),
+  demo: z.boolean(),
 })
 export const proposalSchema = z.object({
   id: z.string(),
-  action: z.literal('restart_demo'),
+  action: z.enum(['restart_demo', 'restart_service']),
   target_id: z.string(),
   target_revision: z.number(),
   bundle_id: z.string(),
@@ -125,6 +259,9 @@ export const proposalSchema = z.object({
   reason: z.string(),
   preconditions: z.string(),
   reversible_intent: z.string(),
+  expires_at: z.number().optional(),
+  configuration_hash: z.string().optional(),
+  binding_hash: z.string().optional(),
   verification: z.object({
     kind: z.string(),
     require_running: z.boolean(),
@@ -136,7 +273,11 @@ export const capsuleSchema = z.object({
   incident_id: z.string(),
   bundle_id: z.string(),
   digest: z.string(),
-  recovered: z.literal(true),
+  recovered: z.boolean().nullable(),
+  outcome: z.enum(['RECOVERED', 'DEGRADED', 'OUTCOME_UNKNOWN']).optional(),
+  failure_reason: z.string().nullable().optional(),
+  lineage: z.record(z.string(), z.unknown()).optional(),
+  scenario_candidate: z.record(z.string(), z.unknown()).optional(),
   snapshot: z.object({ running: z.boolean(), blocking_fault: z.boolean() }),
   scenario_id: z.string(),
   scenario_version: z.string(),
@@ -172,6 +313,8 @@ export const incidentDetailSchema = incidentSchema.extend({
       before_revision: z.number(),
       after_revision: z.number().nullable(),
       error_code: z.string().nullable(),
+      deadline_at: z.number().optional(),
+      action_receipt: z.record(z.string(), z.unknown()).nullable().optional(),
     })
     .nullable(),
   verification: z
@@ -208,7 +351,19 @@ export const scenarioSchema = z.object({
   latency_seconds: z.number(),
   model: z.string().nullable().optional(),
   runtime: z.record(z.string(), z.unknown()).nullable().optional(),
-  total_tokens: z.number().default(0),
+  total_tokens: z.number().nullable().default(null),
+  usage_availability: z.enum(['measured', 'unavailable']).default('unavailable'),
+  tool_activity_available: z.boolean().default(false),
+  tool_activity: z
+    .array(
+      z.object({
+        event_id: z.string(),
+        occurred_at: z.string(),
+        status: z.string(),
+        receipt: z.record(z.string(), z.unknown()),
+      }),
+    )
+    .default([]),
   grader_results: z.array(graderSchema).default([]),
   execution: z
     .object({
@@ -332,6 +487,7 @@ export const replaySchema = z.object({
   provider: z.null(),
   live_write_calls: z.literal(0),
   promotion_evidence: z.literal(false),
+  source_outcome: z.enum(['RECOVERED', 'DEGRADED', 'OUTCOME_UNKNOWN']).optional(),
   passed: z.boolean(),
   graders: z.array(graderSchema),
   digest: z.string(),

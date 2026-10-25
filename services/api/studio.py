@@ -49,7 +49,6 @@ from modules.agent_factory.editor import AgentEditor, EditorConflictError
 from packages.contracts.agent_builder import WorkingCopyInput, WorkingCopyView, GenerationInput, LayoutInput, LayoutView, LifecycleProjection, StopInput, StopReceipt
 from modules.bench.quality_gate import QualityGateFailedError
 from modules.bench.runner import BenchRunner
-from modules.bench.scenarios import get_bench_suite_registry
 from modules.core.approvals.engine import (
     ApprovalRequiredError,
     PayloadHashMismatchError,
@@ -206,6 +205,8 @@ def create_app(
     authentication: AuthenticationSettings | None = None,
     identity_provider=None,
     native_worker=None,
+    operational_targets=None,
+    local_evidence=None,
 ):
     from packages.config import get_settings
     settings = get_settings()
@@ -434,10 +435,20 @@ def create_app(
                         403, "Token keamanan sesi tidak valid. Muat ulang Studio."
                     )
         try:
+            import re
+            # Cancellation must reach Core while an admitted operation is
+            # waiting. Identity, CSRF, scoped permissions and durable Core
+            # locks still apply; a process-wide mutation queue cannot provide
+            # cancellation fencing for the operation it is blocking behind.
+            core_cancellation = request.method == "POST" and re.fullmatch(
+                r"/api/projects/[A-Za-z0-9_-]+/(?:runs|workflow-runs|relay)/[A-Za-z0-9_-]+/cancel",
+                request.url.path,
+            ) is not None
             if (
                 is_api
                 and request.method not in {"GET", "HEAD"}
                 and request.url.path != "/api/session"
+                and not core_cancellation
             ):
                 async with mutation_lock:
                     response = await call_next(request)
@@ -905,13 +916,14 @@ def create_app(
             # Hold strong references for the duration of the verified projection.
             # SQLAlchemy's weak identity map otherwise re-fetches every audit/version.
             stored_records = {"versions": version_records}
+            from modules.bench.workspace import BenchWorkspace
             data = {
                 "evaluation_suites": [
                     {"suite_id": suite.suite_id, "evaluation_version": suite.evaluation_version,
                      "aliases": suite.aliases, "name": suite.name,
                      "scenarios": [{"scenario_id": scenario.scenario_id, "name": scenario.name,
                                     "category": scenario.category} for scenario in suite.scenarios]}
-                    for suite in get_bench_suite_registry().suites()
+                    for suite in BenchWorkspace(coordinator).definitions(s, ctx)
                 ],
                 "blueprints": blueprints,
                 "versions": versions,
@@ -1164,7 +1176,7 @@ def create_app(
         with db.session() as s:
             v = AgentRepository(s).get_version(ctx, version_id)
             contract = AgentVersion.from_stored(v)
-            suite = factory.bench_runner.resolve_suite(contract)
+            suite = factory.bench_runner.resolve_suite(contract, context=ctx, session=s)
             # Core budget preflight covers every scenario in the authoritative suite.
             for scenario in suite.scenarios:
                 coordinator.budget_engine.check_preflight(
@@ -1326,7 +1338,7 @@ def create_app(
     from services.api.executions import register_executions
     register_executions(app, workspace_reads, editor, context)
     from services.api.intelligence import register_intelligence
-    register_intelligence(app, coordinator, context)
+    register_intelligence(app, coordinator, context, operational_targets=operational_targets, local_evidence=local_evidence)
     from services.api.automations import register_automations
     async def automation_runtime():
         await require_runtime()

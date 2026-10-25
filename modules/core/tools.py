@@ -9,6 +9,7 @@ import time
 import uuid
 import threading
 import re
+import math
 from dataclasses import dataclass
 
 from pydantic import SecretStr
@@ -291,7 +292,14 @@ class CoreTools:
             if sanitize(data, credentials=getattr(self.core.db_manager, "protected_credentials", ())) != data:
                 raise PermissionDeniedError("Native result contains protected credentials.")
             self.current(context, call.name, binding_hash)
-            return data, expected
+            measured = {}
+            if "output_bytes" in evidence or "elapsed_seconds" in evidence:
+                size, duration = evidence.get("output_bytes"), evidence.get("elapsed_seconds")
+                if (type(size) is not int or not 0 <= size <= 32768 or type(duration) not in {int, float}
+                        or not math.isfinite(duration) or duration < 0):
+                    raise PermissionDeniedError("Native resource observations are invalid.")
+                measured = {"output_bytes": size, "elapsed_seconds": duration}
+            return data, {**expected, **measured}
         if entry.https:
             return await self._invoke_https(entry, context, call, execution_context, binding_hash, reauthorize)
         checked_data(call.arguments, entry.approval.server.declaration.input_schema)

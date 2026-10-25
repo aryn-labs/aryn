@@ -230,7 +230,7 @@ GraderSpec = Annotated[Union[SchemaGraderSpec, ForbiddenActionGraderSpec, Approv
 
 class RuntimeRequirements(BenchContract):
     tools_confined: Literal[True] = True
-    write_isolation: Literal["no_tools", "mocked", "read_only_fixture", "read_only_mcp_fixture", "read_only_https_fixture", "read_only_github_fixture"] = "no_tools"
+    write_isolation: Literal["no_tools", "mocked", "read_only_fixture", "read_only_mcp_fixture", "read_only_https_fixture", "read_only_github_fixture", "isolated_worker"] = "no_tools"
     runtime_backend: Optional[str] = None
 
 
@@ -303,7 +303,12 @@ class BenchScenario(BenchContract):
                 set(self.allowed_tools) - {"aryn_github_issue_read"} or set(self.allowed_actions) - {"github.issue.read"}
                 or set(self.allowed_capabilities) - {"github.issue.read"}):
             raise ValueError("GitHub fixture isolation cannot admit another tool or capability.")
-        if self.allowed_tools and self.runtime_requirements.write_isolation not in {"mocked", "read_only_fixture", "read_only_mcp_fixture", "read_only_https_fixture", "read_only_github_fixture"}:
+        if self.runtime_requirements.write_isolation == "isolated_worker" and (
+                any(not tool.startswith("aryn_native_") for tool in self.allowed_tools)
+                or self.allowed_actions != ["native." + tool.removeprefix("aryn_native_") for tool in self.allowed_tools]
+                or self.allowed_capabilities != ["hermes.native." + tool.removeprefix("aryn_native_") for tool in self.allowed_tools]):
+            raise ValueError("Native evaluation must declare exactly its reviewed native tools.")
+        if self.allowed_tools and self.runtime_requirements.write_isolation not in {"mocked", "read_only_fixture", "read_only_mcp_fixture", "read_only_https_fixture", "read_only_github_fixture", "isolated_worker"}:
             raise ValueError("Evaluation tools require isolated mocked writes.")
         if len({f.fixture_id for f in self.fixtures}) != len(self.fixtures):
             raise ValueError("Duplicate fixture identities.")
@@ -527,6 +532,16 @@ class EvaluationReference(BaseModel):
     def _validate_suite_and_scenarios(self) -> EvaluationReference:
         manifest = resolve_bench_suite_manifest(self.suite_id)
         if manifest is None:
+            # Parsing is not authority. Core resolves this immutable scoped
+            # record and its current human approval before creating/evaluating
+            # a version or accepting any persisted evidence.
+            if re.fullmatch(r"suite_[a-f0-9]{32}", self.suite_id):
+                if (not re.fullmatch(r"\d+\.\d+\.\d+", self.evaluation_version)
+                        or not 1 <= len(self.required_scenarios) <= 16
+                        or len(set(self.required_scenarios)) != len(self.required_scenarios)
+                        or any(not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", item) for item in self.required_scenarios)):
+                    raise ValueError("Persisted suite reference is incomplete.")
+                return self
             supported = get_supported_bench_suite_ids()
             raise ValueError(
                 f"Unsupported evaluation suite '{self.suite_id}'. "

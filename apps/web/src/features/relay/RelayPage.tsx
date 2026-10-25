@@ -6,6 +6,7 @@ import {
   useRecord,
 } from '@/components/intelligence/hooks'
 import { useState } from 'react'
+import { z } from '@/lib/types/validation'
 import { useQueryClient } from '@tanstack/react-query'
 import { useParams, useSearch } from '@tanstack/react-router'
 import { useWorkspace } from '@/app/providers/WorkspaceProvider'
@@ -18,6 +19,7 @@ import {
   Facts,
   Field,
   IntelligenceLayout,
+  JsonFacts,
   More,
   MutationDialog,
   Notice,
@@ -31,9 +33,16 @@ import {
   incidentSchema,
   incidentDetailSchema,
   fixtureSchema,
+  capsuleSchema,
   type Incident,
+  base,
+  request,
+  scoped,
+  write,
 } from '@/features/intelligence/api'
+import { ApiError } from '@/lib/api/client'
 import { BundleWorkspace, ProjectName } from '@/features/brief/BriefPage'
+import { OperationalTargetsPanel } from './OperationalTargetsPanel'
 
 export function RelayPage() {
   const c = useCopy(),
@@ -45,20 +54,26 @@ export function RelayPage() {
   return (
     <IntelligenceLayout
       module="relay"
-      tabs={['incidents', 'capsules', 'fixtures']}
+      tabs={['incidents', 'targets', 'capsules', 'fixtures']}
       tab={tab}
       onTab={setTab}
       actions={
-        <Button disabled={!w.project} onClick={() => setCreate(true)}>
-          {c('createFixture')}
-        </Button>
+        tab === 'fixtures' ? (
+          <Button disabled={!w.project} onClick={() => setCreate(true)}>
+            {c('createFixture')}
+          </Button>
+        ) : undefined
       }
     >
-      <Notice warning>{c('demoBoundary')}</Notice>
-      {tab === 'fixtures' ? (
+      {tab === 'fixtures' && <Notice warning>{c('demoBoundary')}</Notice>}
+      {tab === 'targets' ? (
+        <OperationalTargetsPanel project={filters.project || w.project?.id || ''} />
+      ) : tab === 'fixtures' ? (
         <FixtureCatalog project={filters.project || w.project?.id || ''} />
+      ) : tab === 'capsules' ? (
+        <CapsuleCatalog filters={filters} />
       ) : (
-        <IncidentCatalog filters={filters} capsules={tab === 'capsules'} />
+        <IncidentCatalog filters={filters} />
       )}
       {create && (
         <FixtureCreate
@@ -69,37 +84,69 @@ export function RelayPage() {
     </IntelligenceLayout>
   )
 }
-function IncidentCatalog({
-  filters,
-  capsules,
-}: {
-  filters: ReturnType<typeof useFilters>
-  capsules: boolean
-}) {
+function CapsuleCatalog({ filters }: { filters: ReturnType<typeof useFilters> }) {
+  const c = useCopy(),
+    query = useCatalog('/relay/capsules', capsuleSchema, filters.project)
+  const items = query.error ? [] : (query.data?.pages.flatMap((page) => page.items) ?? [])
+  return (
+    <>
+      <CatalogFilters filters={filters} />
+      <QueryState query={query} empty={!items.length} />
+      <div className="intel-stack">
+        {items
+          .filter(
+            (item) =>
+              !filters.term ||
+              item.id.includes(filters.term) ||
+              item.incident_id.includes(filters.term),
+          )
+          .map((item) => (
+            <Panel key={item.id} title={item.id}>
+              <Badge
+                value={item.outcome ?? (item.recovered === true ? 'RECOVERED' : 'unavailable')}
+              />
+              <DateValue value={item.created_at} />
+              <Facts
+                values={[
+                  [c('project'), <ProjectName id={item.project_id} />],
+                  [
+                    c('incidents'),
+                    <ResourceLink
+                      project={item.project_id}
+                      kind="incident"
+                      id={item.incident_id}
+                    />,
+                  ],
+                  [c('reason'), item.failure_reason ?? null],
+                ]}
+              />
+              <ResourceLink project={item.project_id} kind="capsule" id={item.id}>
+                {c('openCapsule')}
+              </ResourceLink>
+            </Panel>
+          ))}
+      </div>
+      <More query={query} />
+    </>
+  )
+}
+function IncidentCatalog({ filters }: { filters: ReturnType<typeof useFilters> }) {
   const c = useCopy(),
     query = useCatalog('/relay', incidentSchema, filters.project, {
       q: filters.term,
-      status: capsules ? 'CLOSED' : filters.status,
+      status: filters.status,
     }),
     items = query.error ? [] : (query.data?.pages.flatMap((p) => p.items) ?? [])
   return (
     <>
-      <CatalogFilters filters={filters} states={capsules ? [] : incidentStates} />
+      <CatalogFilters filters={filters} states={incidentStates} />
       <QueryState query={query} empty={!items.length} />
       {items.length > 0 && (
         <div className="intel-table-wrap">
           <table className="intel-table">
             <thead>
               <tr>
-                {[
-                  'incidents',
-                  'severity',
-                  'status',
-                  'target',
-                  'project',
-                  'updated',
-                  ...(capsules ? ['capsule'] : []),
-                ].map((k) => (
+                {['incidents', 'severity', 'status', 'target', 'project', 'updated'].map((k) => (
                   <th key={k}>{c(k)}</th>
                 ))}
               </tr>
@@ -128,13 +175,6 @@ function IncidentCatalog({
                   <td>
                     <DateValue value={i.updated_at} />
                   </td>
-                  {capsules && (
-                    <td>
-                      {i.capsule_id && (
-                        <ResourceLink kind="capsule" project={i.project_id} id={i.capsule_id} />
-                      )}
-                    </td>
-                  )}
                 </tr>
               ))}
             </tbody>
@@ -189,7 +229,8 @@ function FixtureCreate({
 function FixtureCatalog({ project }: { project: string }) {
   const c = useCopy(),
     w = useWorkspace(),
-    [owner, setOwner] = useState(project),
+    [selectedOwner, setOwner] = useState(''),
+    owner = selectedOwner || project || w.project?.id || '',
     query = useCatalog('/relay/demo-fixtures', fixtureSchema, owner),
     permission = useIntelligenceContext(owner),
     [action, setAction] = useState<{
@@ -318,23 +359,87 @@ export function IncidentDetailPage() {
     </ScopeGuard>
   )
 }
+function PendingCancellation({
+  project,
+  id,
+  onResult,
+}: {
+  project: string
+  id: string
+  onResult: (confirmed: boolean) => void
+}) {
+  const c = useCopy(),
+    w = useWorkspace(),
+    permission = useIntelligenceContext(project)
+  const [busy, setBusy] = useState(false),
+    [failed, setFailed] = useState(false),
+    [confirmed, setConfirmed] = useState<boolean | null>(null)
+  async function cancel() {
+    if (busy || !w.context || !w.csrf || !permission.data?.permissions['run:cancel']) return
+    setBusy(true)
+    setFailed(false)
+    try {
+      const current = scoped(
+        await request(base(project) + '/relay/' + id, incidentDetailSchema),
+        w.context.organization.id,
+        project,
+      )
+      if (current.id !== id) throw new ApiError(502, 'errors.scope')
+      const result = await write(
+        base(project) + '/relay/' + id + '/cancel',
+        { expected_revision: current.revision },
+        z.object({ cancellation_confirmed: z.boolean() }),
+        w.csrf,
+      )
+      setConfirmed(result.cancellation_confirmed)
+      onResult(result.cancellation_confirmed)
+    } catch {
+      setFailed(true)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div aria-live="polite">
+      <Notice>{c('cancellationHelp')}</Notice>
+      <Button
+        variant="secondary"
+        disabled={busy || confirmed !== null || !permission.data?.permissions['run:cancel']}
+        onClick={() => void cancel()}
+      >
+        {c('cancelExecution')}
+      </Button>
+      {confirmed !== null && (
+        <Notice warning={!confirmed}>
+          {c(confirmed ? 'cancellationConfirmed' : 'cancellationUncertain')}
+        </Notice>
+      )}
+      {failed && <p role="alert">{c('conflictError')}</p>}
+    </div>
+  )
+}
 function IncidentDetail({ project, id }: { project: string; id: string }) {
   const c = useCopy(),
     query = useRecord(project, '/relay', id, incidentDetailSchema),
     permission = useIntelligenceContext(project),
     data = query.error ? undefined : query.data,
     [reason, setReason] = useState(''),
+    [cancellation, setCancellation] = useState<boolean | null>(null),
     [action, setAction] = useState<{ name: string; body: Record<string, unknown> } | null>(null),
     cache = useQueryClient()
   function start(name: string, i: Incident) {
     setReason('')
     const body: Record<string, unknown> =
-      name === 'investigate' || name === 'reconcile' || name === 'close'
+      name === 'investigate' ||
+      name === 'reconcile' ||
+      name === 'close' ||
+      name === 'cancel' ||
+      name === 'capsule'
         ? { expected_revision: i.revision }
         : name === 'proposals'
           ? {
               expected_revision: i.revision,
-              action: 'restart_demo',
+              action: i.demo ? 'restart_demo' : 'restart_service',
               target_id: i.target_id,
               target_revision: i.fixture.revision,
               bundle_id: i.bundle_id,
@@ -358,6 +463,8 @@ function IncidentDetail({ project, id }: { project: string; id: string }) {
     execute: 'execute',
     reconcile: 'reconcile',
     close: 'close',
+    cancel: 'cancelExecution',
+    capsule: 'captureCapsule',
   }
   return (
     <IntelligenceLayout module="relay" back refresh={() => void query.refetch()}>
@@ -374,8 +481,23 @@ function IncidentDetail({ project, id }: { project: string; id: string }) {
             <Badge value={data.status} />
             <Badge value={data.severity} tone={data.severity === 'high' ? 'bad' : 'warn'} />
           </div>
-          <Notice warning>{c('demoBoundary')}</Notice>
+          <Notice warning>{c(data.demo ? 'demoBoundary' : 'operationalBoundary')}</Notice>
           {data.status === 'OUTCOME_UNKNOWN' && <Notice warning>{c('unknown')}</Notice>}
+          {cancellation !== null && (
+            <Notice warning={!cancellation}>
+              {c(cancellation ? 'cancellationConfirmed' : 'cancellationUncertain')}
+            </Notice>
+          )}
+          <Button
+            variant="secondary"
+            disabled={
+              !permission.data?.permissions['run:cancel'] ||
+              !['PROPOSED', 'EXECUTING', 'OUTCOME_UNKNOWN'].includes(data.status)
+            }
+            onClick={() => start('cancel', data)}
+          >
+            {c('cancelExecution')}
+          </Button>
           <Panel title={c('lifecycle')}>
             <ol className="intel-steps">
               {incidentStates.map((state) => (
@@ -441,6 +563,15 @@ function IncidentDetail({ project, id }: { project: string; id: string }) {
                         [c('payloadHash'), <code>{data.proposal.payload_hash}</code>],
                         [c('digest'), <code>{data.proposal.bundle_digest}</code>],
                         [c('reason'), data.proposal.reason],
+                        [c('connectionIdentity'), data.proposal.configuration_hash ?? null],
+                        [
+                          c('approvalExpiry'),
+                          data.proposal.expires_at ? (
+                            <DateValue
+                              value={new Date(data.proposal.expires_at * 1000).toISOString()}
+                            />
+                          ) : null,
+                        ],
                       ]}
                     />
                     <details>
@@ -523,6 +654,12 @@ function IncidentDetail({ project, id }: { project: string; id: string }) {
                     ]}
                   />
                 )}
+                {data.execution?.action_receipt && (
+                  <details>
+                    <summary>{c('actionReceipt')}</summary>
+                    <JsonFacts data={data.execution.action_receipt} />
+                  </details>
+                )}
                 {data.verification ? (
                   <>
                     <Badge value={data.verification.recovered ? 'RECOVERED' : 'DEGRADED'} />
@@ -546,6 +683,19 @@ function IncidentDetail({ project, id }: { project: string; id: string }) {
                   >
                     {c('reconcile')}
                   </Button>
+                  {!data.demo && (
+                    <Button
+                      variant="secondary"
+                      disabled={
+                        !run ||
+                        !['DEGRADED', 'OUTCOME_UNKNOWN'].includes(data.status) ||
+                        !data.execution
+                      }
+                      onClick={() => start('capsule', data)}
+                    >
+                      {c('captureCapsule')}
+                    </Button>
+                  )}
                   <Button
                     disabled={
                       !run ||
@@ -586,16 +736,38 @@ function IncidentDetail({ project, id }: { project: string; id: string }) {
       {action && (
         <MutationDialog
           title={c(names[action.name] ?? action.name)}
-          description={action.name === 'reconcile' ? c('unknown') : c('demoBoundary')}
+          description={c(
+            action.name === 'cancel'
+              ? 'cancellationHelp'
+              : action.name === 'reconcile'
+                ? 'unknown'
+                : data?.demo
+                  ? 'demoBoundary'
+                  : 'operationalBoundary',
+          )}
           project={project}
           path={'/relay/' + id + '/' + action.name}
           body={{ ...action.body, ...(mayReason ? { reason: reason.trim() } : {}) }}
+          pendingActions={
+            action.name === 'execute' ? (
+              <PendingCancellation project={project} id={id} onResult={setCancellation} />
+            ) : undefined
+          }
           allowed={
-            (action.name === 'approve' || action.name === 'reconcile' ? review : run) &&
+            (action.name === 'cancel'
+              ? !!permission.data?.permissions['run:cancel']
+              : action.name === 'approve' || action.name === 'reconcile'
+                ? review
+                : run) &&
             (!mayReason || !!reason.trim())
           }
           onClose={() => setAction(null)}
-          onSuccess={async () => {
+          onSuccess={async (result) => {
+            if (action.name === 'cancel')
+              setCancellation(
+                z.object({ cancellation_confirmed: z.boolean() }).parse(result)
+                  .cancellation_confirmed,
+              )
             await query.refetch()
             await cache.invalidateQueries({ queryKey: ['intelligence-catalog'] })
           }}

@@ -2,7 +2,7 @@
 
 import json
 import datetime
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, or_, select, union_all, literal
 from database.repositories.exceptions import EntityNotFoundError
 from modules.core.history import advance_head, verify_head, HistoryUnverifiedError
 from modules.core.workflows.executor import encoded, digest, identity, now
@@ -10,10 +10,12 @@ from packages.contracts.core import AuditStatus
 
 
 class SignedRecords:
-    def __init__(self, core):
+    def __init__(self, core=None, *, db_manager=None):
         self.core = core
-        self.db = core.db_manager
-        self.permissions = core.permission_engine
+        self.db = core.db_manager if core is not None else db_manager
+        self.permissions = core.permission_engine if core is not None else getattr(self.db, "permission_engine", None)
+        if self.db is None or self.permissions is None:
+            raise ValueError("Signed records require the existing Core database and permission authority.")
 
     def authorize(self, session, ctx, action="run:read"):
         self.permissions.enforce(
@@ -122,6 +124,31 @@ class SignedRecords:
         self.core.audit_logger.record(
             event, ctx, subject, AuditStatus.COMPLETED, details, session=session
         )
+
+    def get_any(self, session, classes, ctx, identifier):
+        """Resolve additive evidence formats without rewriting signed history."""
+        self.authorize(session, ctx)
+        matches = [cls for cls in classes if session.query(cls.id).filter_by(id=identifier,
+            organization_id=ctx.organization_id, project_id=ctx.project_id).first()]
+        if len(matches) != 1:
+            raise EntityNotFoundError("Scoped evidence resource unavailable or ambiguous.")
+        return self.get(session, matches[0], ctx, identifier)
+
+    def page_any(self, session, classes, ctx, after="", limit=25):
+        self.authorize(session, ctx)
+        if not 1 <= limit <= 100 or not classes:
+            raise ValueError("Evidence page bounds differ.")
+        rows = union_all(*[select(cls.id, cls.created_at, literal(cls.__tablename__).label("record_kind")).where(
+            cls.organization_id == ctx.organization_id, cls.project_id == ctx.project_id) for cls in classes]).subquery()
+        query = select(rows)
+        if after:
+            cursor, _ = self.get_any(session, classes, ctx, after)
+            query = query.where(or_(rows.c.created_at < cursor.created_at,
+                and_(rows.c.created_at == cursor.created_at, rows.c.id < cursor.id)))
+        page = session.execute(query.order_by(rows.c.created_at.desc(), rows.c.id.desc()).limit(limit + 1)).all()
+        types = {cls.__tablename__: cls for cls in classes}
+        return ([self.get(session, types[row.record_kind], ctx, row.id)[1] for row in page[:limit]],
+            page[limit - 1].id if len(page) > limit else None)
 
     def page(self, session, ctx, cls, after="", limit=25, q="", status="", *, conditions=(), **filters):
         self.authorize(session, ctx)

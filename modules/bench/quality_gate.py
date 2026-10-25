@@ -12,9 +12,9 @@ class BenchQualityGate:
     def __init__(self, min_score_threshold=1.0):
         self.min_score_threshold = min_score_threshold
 
-    def enforce(self, evaluation, evaluation_reference=None, *, signer=None, approval_authority=None):
-        self.validate_evidence(evaluation, evaluation_reference, signer=signer, approval_authority=approval_authority)
-        suite = get_bench_suite(evaluation.suite_id)
+    def enforce(self, evaluation, evaluation_reference=None, *, signer=None, approval_authority=None, suite=None):
+        self.validate_evidence(evaluation, evaluation_reference, signer=signer, approval_authority=approval_authority, suite=suite)
+        suite = suite or get_bench_suite(evaluation.suite_id)
         threshold = max(suite.min_score_threshold, evaluation_reference.min_score_threshold
                         if evaluation_reference else self.min_score_threshold)
         required = set(suite.required_scenarios) | set(evaluation_reference.required_scenarios if evaluation_reference else [])
@@ -26,14 +26,14 @@ class BenchQualityGate:
                 f"does not meet required threshold {threshold}. Failed scenarios ({len(failures)}): {failures}.")
 
     @staticmethod
-    def validate_evidence(evaluation, evaluation_reference=None, *, signer=None, approval_authority=None):
-        suite = get_bench_suite(evaluation.suite_id)
+    def validate_evidence(evaluation, evaluation_reference=None, *, signer=None, approval_authority=None, suite=None):
+        suite = suite or get_bench_suite(evaluation.suite_id)
         if suite is None:
             raise QualityGateFailedError(f"Quality gate rejected unknown Bench suite '{evaluation.suite_id}'.")
         try:
             if evaluation_reference is not None:
                 reference = AgentEvaluationReference.model_validate(evaluation_reference.model_dump())
-                expected = get_bench_suite(reference.suite_id)
+                expected = suite if reference.suite_id == suite.suite_id else get_bench_suite(reference.suite_id)
                 if expected.suite_id != suite.suite_id or reference.evaluation_version != evaluation.evaluation_version:
                     raise ValueError("Evaluation reference differs.")
                 if reference.evaluation_id is not None and reference.evaluation_id != evaluation.evaluation_id:

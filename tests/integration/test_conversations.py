@@ -230,7 +230,9 @@ def test_chat_migration_is_additive_and_empty_roundtrip(tmp_path):
         command.upgrade(config, "020_core_automations")
         before = set(inspect(connection).get_table_names())
         command.upgrade(config, "head")
-        assert set(inspect(connection).get_table_names()) - before == {"chat_conversations", "chat_turns", "chat_provider_consents", "studio_preferences", "chat_conversation_changes", "project_mutations"}
+        assert set(inspect(connection).get_table_names()) - before == {"chat_conversations", "chat_turns", "chat_provider_consents", "studio_preferences", "chat_conversation_changes", "project_mutations",
+            "bench_suite_versions", "bench_scenario_candidates", "evidence_connections", "evidence_references",
+            "brief_interpretations", "incident_capsules", "incident_capsule_replays"}
         command.downgrade(config, "020_core_automations")
         assert set(inspect(connection).get_table_names()) == before
         command.upgrade(config, "head")
