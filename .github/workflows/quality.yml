@@ -190,7 +190,9 @@ jobs:
           python - <<'PY'
           import pathlib, tomllib
           packages = tomllib.loads(pathlib.Path('uv.lock').read_text())['package']
-          pending, selected = ['jsonschema', 'aiohttp', 'pyjwt', 'urllib3'], {}
+          # Replace SDK transitive packages affected by current advisories too,
+          # using the same reviewed, hashed application dependency closure.
+          pending, selected = ['jsonschema', 'aiohttp', 'pyjwt', 'urllib3', 'certifi', 'filelock', 'setuptools', 'pillow'], {}
           while pending:
               name = pending.pop()
               if name in selected:

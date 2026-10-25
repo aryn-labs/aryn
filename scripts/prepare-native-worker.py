@@ -27,7 +27,7 @@ def main():
     subprocess.run(["uv", "export", "--project", str(source), "--frozen", "--no-dev", "--no-emit-project",
         "--format", "requirements-txt", "--output-file", str(output / "requirements.txt")], check=True, stdout=subprocess.DEVNULL)
     root = Path(__file__).resolve().parents[1]
-    subprocess.run(["uv", "export", "--project", str(root), "--frozen", "--extra", "dev", "--no-emit-project",
+    subprocess.run(["uv", "export", "--project", str(root), "--frozen", "--extra", "dev", "--extra", "runtime", "--no-emit-project",
         "--format", "requirements-txt", "--output-file", str(output / "security-constraints.txt")], check=True, stdout=subprocess.DEVNULL)
     shutil.copyfile(root / "services/runtime/native_worker.py", output / "native_worker.py")
     (output / "Dockerfile").write_text(f"""FROM {args.base_image}
